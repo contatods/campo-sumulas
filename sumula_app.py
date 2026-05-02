@@ -58,8 +58,18 @@ print("╔═══════════════════════�
 print("║  Súmulas Digital Score  —  v1.1.0            ║")
 print("╚══════════════════════════════════════════════╝\n")
 print("⏳ Carregando fontes e módulos...")
+_fonts_raw = load_fonts()   # base64 puro
 
-FONTS = load_fonts()
+# Monta URLs completas para uso no browser (data:)
+def _b64_url(b64, mime='font/truetype'):
+    return f"data:{mime};base64,{b64}" if b64 else ""
+
+FONTS = {
+    "black": _b64_url(_fonts_raw["black"]),
+    "bold":  _b64_url(_fonts_raw["bold"]),
+    "reg":   _b64_url(_fonts_raw["reg"]),
+    "light": _b64_url(_fonts_raw["light"]),
+}
 
 # ── Logo padrão Digital Score (carregada do arquivo ds_logo.png) ────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -73,11 +83,30 @@ if AI_ATIVO:
     print("  ✓ IA ativa (Anthropic Claude Haiku) — cálculo inteligente de rounds")
 else:
     print("  ○  IA inativa (defina ANTHROPIC_API_KEY para ativar)")
+# Prepara fontes em disco para WeasyPrint (muito mais rápido que base64)
+FONTS_PDF = {}
 if HAS_PDF_GEN:
-    print("  ✓ WeasyPrint — geração automática de PDF ativa")
+    try:
+        import tempfile, base64 as _b64
+        _font_tmp = tempfile.mkdtemp(prefix='sumulas_pdf_')
+        _fmap = {'black':'Lato-Black.ttf','bold':'Lato-Bold.ttf',
+                 'reg':'Lato-Regular.ttf','light':'Lato-Light.ttf'}
+        for _k, _fname in _fmap.items():
+            _raw = _fonts_raw.get(_k, '')
+            if _raw:
+                _p = os.path.join(_font_tmp, _fname)
+                with open(_p, 'wb') as _f:
+                    _f.write(_b64.b64decode(_raw))
+                FONTS_PDF[_k] = f'file://{_p}'
+            else:
+                FONTS_PDF[_k] = ''
+        print(f"  ✓ WeasyPrint — PDF ativo (fontes em {_font_tmp})")
+    except Exception as _e:
+        print(f"  ⚠  WeasyPrint: erro ao preparar fontes ({_e}) — usando HTML")
+        HAS_PDF_GEN = False
 else:
     print("  ○  WeasyPrint não instalado — ZIP conterá HTML")
-    print("     Para ativar PDF: pip install weasyprint")
+    print("     Para ativar PDF: pip3 install weasyprint")
 print()
 
 
@@ -1737,34 +1766,39 @@ class SumulaHandler(BaseHTTPRequestHandler):
         html = render_workout(ev, wkt, FONTS, logo, logo_evt)
         self._send(200, 'text/html; charset=utf-8', html.encode('utf-8'))
 
-    @staticmethod
-    def _html_para_arquivo(html_str):
-        """Converte HTML para PDF (se WeasyPrint disponível) ou retorna HTML.
-        Retorna (bytes, extensão).
-        """
-        if HAS_PDF_GEN:
-            try:
-                pdf = WP_HTML(string=html_str).write_pdf()
-                return pdf, '.pdf'
-            except Exception as e:
-                print(f"  ⚠  PDF falhou ({e}) — usando HTML como fallback")
-        return html_str.encode('utf-8'), '.html'
-
     def _handle_generate(self, body):
         cfg      = body['config']
         ev       = cfg.get('evento', {})
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
         logo_evt = ev.get('logo_evento', '')
-        atletas  = cfg.get('atletas', [])   # lista de atletas da categoria atual
+        atletas  = cfg.get('atletas', [])
         workouts = cfg['workouts']
-        assign_workout_numbers(workouts)   # recalcula com slots Express
-        enriquecer_workouts(workouts)      # calcula n_rounds por IA/algoritmo
+        assign_workout_numbers(workouts)
+        enriquecer_workouts(workouts)
+
+        # Escolhe fontes: file:// para PDF (rápido), data: para HTML
+        use_pdf  = HAS_PDF_GEN and bool(FONTS_PDF)
+        fonts    = FONTS_PDF if use_pdf else FONTS
+        ext      = '.pdf'  if use_pdf else '.html'
+
+        def _render(wkt, atleta=None):
+            return render_workout(ev, wkt, fonts, logo, logo_evt, atleta)
+
+        def _to_bytes(html):
+            if use_pdf:
+                try:
+                    return WP_HTML(string=html).write_pdf()
+                except Exception as e:
+                    print(f"  ⚠  PDF falhou ({e})")
+                    # Fallback: gera HTML com fontes data: para não perder o arquivo
+                    return render_workout(ev, wkt, FONTS, logo, logo_evt,
+                                         atleta if 'atleta' in dir() else None
+                                         ).encode('utf-8')
+            return html.encode('utf-8')
 
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
             if atletas:
-                # Uma súmula por atleta × por workout
-                # Organização: WKT01_TWENTIES / 001_Joao_Silva.html (ou .pdf)
                 for wkt in workouts:
                     num_w  = wkt.get('numero', 1)
                     nome_w = wkt.get('nome', 'wkt')
@@ -1773,17 +1807,15 @@ class SumulaHandler(BaseHTTPRequestHandler):
                         nome_a  = atleta.get('nome', 'atleta')
                         num_a   = atleta.get('numero', '')
                         prefixo = f"{sanitize(num_a)}_" if num_a else ""
-                        html    = render_workout(ev, wkt, FONTS, logo, logo_evt, atleta)
-                        conteudo, ext = self._html_para_arquivo(html)
-                        zf.writestr(f"{pasta}/{prefixo}{sanitize(nome_a)}{ext}", conteudo)
+                        html    = render_workout(ev, wkt, fonts, logo, logo_evt, atleta)
+                        zf.writestr(f"{pasta}/{prefixo}{sanitize(nome_a)}{ext}",
+                                    _to_bytes(html))
             else:
-                # Sem atletas: um modelo em branco por workout
                 for wkt in workouts:
                     num  = wkt.get('numero', 1)
                     nome = wkt.get('nome', 'wkt')
-                    html = render_workout(ev, wkt, FONTS, logo, logo_evt)
-                    conteudo, ext = self._html_para_arquivo(html)
-                    zf.writestr(f"{num:02d}_{sanitize(nome)}{ext}", conteudo)
+                    html = render_workout(ev, wkt, fonts, logo, logo_evt)
+                    zf.writestr(f"{num:02d}_{sanitize(nome)}{ext}", _to_bytes(html))
 
         cat = sanitize(ev.get('categoria', '') or ev.get('nome', 'sumulas'))
         self._send(200, 'application/zip', buf.getvalue(),

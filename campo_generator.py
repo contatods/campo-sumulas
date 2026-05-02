@@ -814,10 +814,10 @@ TMPL_STR = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <title>Súmula – {{ wkt.nome }}</title>
 <style>
-@font-face{font-family:'Lato';font-weight:900;src:url('data:font/truetype;base64,{{ fonts.black }}') format('truetype')}
-@font-face{font-family:'Lato';font-weight:700;src:url('data:font/truetype;base64,{{ fonts.bold  }}') format('truetype')}
-@font-face{font-family:'Lato';font-weight:400;src:url('data:font/truetype;base64,{{ fonts.reg   }}') format('truetype')}
-@font-face{font-family:'Lato';font-weight:300;src:url('data:font/truetype;base64,{{ fonts.light }}') format('truetype')}
+{% if fonts.black %}@font-face{font-family:'Lato';font-weight:900;src:url('{{ fonts.black }}') format('truetype')}{% endif %}
+{% if fonts.bold  %}@font-face{font-family:'Lato';font-weight:700;src:url('{{ fonts.bold  }}') format('truetype')}{% endif %}
+{% if fonts.reg   %}@font-face{font-family:'Lato';font-weight:400;src:url('{{ fonts.reg   }}') format('truetype')}{% endif %}
+{% if fonts.light %}@font-face{font-family:'Lato';font-weight:300;src:url('{{ fonts.light }}') format('truetype')}{% endif %}
 {{ css }}
 </style>
 </head>
