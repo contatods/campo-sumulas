@@ -8,6 +8,7 @@ venv/
 
 # Mac
 .DS_Store
+Icon?
 
 # Outputs temporários
 *.zip
