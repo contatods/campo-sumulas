@@ -17,15 +17,29 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.2.5'
+VERSION = '1.2.6'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
+
+# Tipos de workout suportados (canônicos). Frontend e parsers só devem produzir
+# valores deste conjunto; adicionar um novo tipo começa por aqui.
+WORKOUT_TIPOS = frozenset({'for_time', 'amrap', 'express'})
 
 
 class BadRequest(ValueError):
     """Payload inválido — handler devolve 400 com a mensagem."""
     pass
+
+
+def _validate_workout_tipos(workouts):
+    """Garante que cada workout tem 'tipo' válido. Levanta BadRequest se não."""
+    for i, w in enumerate(workouts):
+        tipo = (w or {}).get('tipo')
+        if tipo not in WORKOUT_TIPOS:
+            raise BadRequest(
+                f"workouts[{i}].tipo inválido ({tipo!r}); use um de {sorted(WORKOUT_TIPOS)}"
+            )
 
 def _resolve_logo(value):
     """Retorna uma data-URL de logo.
@@ -692,6 +706,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
         workouts = cfg.get('workouts')
         if not isinstance(workouts, list) or not workouts:
             raise BadRequest("config.workouts deve ser lista não-vazia")
+        _validate_workout_tipos(workouts)
         try:
             idx = int(body.get('workout_index', 0))
         except (TypeError, ValueError):
@@ -714,6 +729,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
         workouts = cfg.get('workouts')
         if not isinstance(workouts, list) or not workouts:
             raise BadRequest("config.workouts deve ser lista não-vazia")
+        _validate_workout_tipos(workouts)
         ev       = cfg.get('evento', {}) or {}
         atletas  = cfg.get('atletas', []) or []
         logo     = _resolve_logo(ev.get('logo_empresa', ''))

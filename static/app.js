@@ -9,9 +9,13 @@ let config = {
 let editingIdx  = -1;   // -1 = new workout
 let previewIdx  = -1;
 let importedData = null;  // resultado completo do último import (pra trocar categoria sem reimportar)
-const STATE_KEY     = 'ds_sumulas_v1_state';
-const IMPORT_KEY    = 'ds_sumulas_v1_import';
-const LABEL_COL_KEY = 'ds_sumulas_v1_show_label';
+const STATE_KEY      = 'ds_sumulas_v1_state';
+const IMPORT_KEY     = 'ds_sumulas_v1_import';
+const LABEL_COL_KEY  = 'ds_sumulas_v1_show_label';
+// Versão do schema do snapshot salvo em localStorage. Bump quando mudar shape de
+// `config` (campos novos obrigatórios, renames, etc.) — state com versão antiga
+// é descartado em vez de carregado errado.
+const SCHEMA_VERSION = 1;
 
 // ═══════════════════════════════════════════════════════════════════
 //  EVENTO
@@ -818,7 +822,7 @@ function saveState() {
 }
 
 function _persistNow() {
-  const snapshot = { config, previewIdx };
+  const snapshot = { version: SCHEMA_VERSION, config, previewIdx };
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify(snapshot));
     if (importedData) localStorage.setItem(IMPORT_KEY, JSON.stringify(importedData));
@@ -844,7 +848,11 @@ function loadState() {
     const raw = localStorage.getItem(STATE_KEY);
     if (raw) {
       const snap = JSON.parse(raw);
-      if (snap && snap.config) {
+      // Versão do schema obrigatória — descarta state com formato antigo
+      if (snap && snap.version !== SCHEMA_VERSION) {
+        console.info(`localStorage state com schema antigo (v${snap.version}); descartando.`);
+        clearState();
+      } else if (snap && snap.config) {
         // Garante que logo padrão DS sobrevive ao restaurar config sem logo
         if (!snap.config.evento.logo_empresa) snap.config.evento.logo_empresa = DS_LOGO_PADRAO;
         config = snap.config;
