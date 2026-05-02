@@ -1,9 +1,10 @@
 """Funções puras: ordenação, numeração, parsers de duração e estimativa de rounds."""
-import sumula_app
+from parsers import _atleta_sort_key, assign_workout_numbers
+from ai_rounds import _extrair_minutos, _estimar_rounds_algoritmico
 
 
 def test_atleta_sort_key_ordena_por_bateria_raia_numerica_nome(atletas_desordenados):
-    ordered = sorted(atletas_desordenados, key=sumula_app._atleta_sort_key)
+    ordered = sorted(atletas_desordenados, key=_atleta_sort_key)
     assert [a["nome"] for a in ordered] == ["Ana", "Diana", "Bruno", "Carlos"]
     # Ana(A,2) → Diana(A,3) → Bruno(B,1) → Carlos(B,10) — raia 10 vem depois de 2 (numérica)
 
@@ -14,7 +15,7 @@ def test_assign_workout_numbers_express_ocupa_dois_slots():
         {"nome": "B", "tipo": "express"},
         {"nome": "C", "tipo": "amrap"},
     ]
-    sumula_app.assign_workout_numbers(workouts)
+    assign_workout_numbers(workouts)
     assert workouts[0]["numero"] == 1
     assert workouts[1]["numero"] == 2
     assert workouts[1]["numero_f2"] == 3
@@ -25,12 +26,11 @@ def test_assign_workout_numbers_express_ocupa_dois_slots():
 
 
 def test_extrair_minutos_aceita_formatos_comuns():
-    f = sumula_app._extrair_minutos
-    assert f("AMRAP 5 MIN") == 5
-    assert f("00:00 → 05:00 · AMRAP 5 MIN") == 5
-    assert f("AMRAP 12 minutos") == 12
-    assert f("") is None
-    assert f("sem minutos aqui") is None
+    assert _extrair_minutos("AMRAP 5 MIN") == 5
+    assert _extrair_minutos("00:00 → 05:00 · AMRAP 5 MIN") == 5
+    assert _extrair_minutos("AMRAP 12 minutos") == 12
+    assert _extrair_minutos("") is None
+    assert _extrair_minutos("sem minutos aqui") is None
 
 
 def test_estimar_rounds_algoritmico_retorna_inteiro_razoavel():
@@ -38,6 +38,6 @@ def test_estimar_rounds_algoritmico_retorna_inteiro_razoavel():
         {"nome": "PULL-UPS", "reps": 10},
         {"nome": "THRUSTERS", "reps": 10},
     ]
-    n = sumula_app._estimar_rounds_algoritmico(movs, "AMRAP 5 MIN")
+    n = _estimar_rounds_algoritmico(movs, "AMRAP 5 MIN")
     assert isinstance(n, int)
     assert n >= 2  # mínimo de 2 linhas no scorecard

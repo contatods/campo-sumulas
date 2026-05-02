@@ -1,5 +1,5 @@
 """Parsers heurísticos: texto livre de workout e Excel do organizador."""
-import sumula_app
+from parsers import parse_workout_text, parse_excel
 
 
 def test_parse_workout_text_for_time_extrai_movimentos_e_time_cap():
@@ -10,7 +10,7 @@ def test_parse_workout_text_for_time_extrai_movimentos_e_time_cap():
         "20 Devil's Presses\n"
         "Time cap: 9 min"
     )
-    wkt = sumula_app.parse_workout_text(texto, numero=1)
+    wkt = parse_workout_text(texto, numero=1)
     assert wkt["nome"] == "TWENTIES"
     assert wkt["tipo"] == "for_time"
     assert wkt["time_cap"] == "9 min"
@@ -21,7 +21,7 @@ def test_parse_workout_text_for_time_extrai_movimentos_e_time_cap():
 
 
 def test_parse_excel_modelo_retorna_estrutura_valida(modelo_xlsx_bytes):
-    result = sumula_app.parse_excel(modelo_xlsx_bytes)
+    result = parse_excel(modelo_xlsx_bytes)
     assert isinstance(result, dict)
     # Modelo é formato simples (não-grade): tem evento + workouts no topo
     assert "workouts" in result
