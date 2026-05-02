@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Súmulas Digital Score — v{{VERSION}}</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<!-- ══ Header ═══════════════════════════════════════════════════════════════ -->
+<header class="hdr">
+  <span class="hdr-logo">Súmulas</span>
+  <div class="hdr-divider"></div>
+  <span class="hdr-title">Digital Score</span>
+  <div class="hdr-right">
+    <span class="hdr-version">v{{VERSION}}</span>
+    <span id="aiBadge" title="IA estimando rounds AMRAP via Claude Haiku" style="display:none;font-size:9px;font-weight:700;color:#5A9;letter-spacing:.1em;
+      background:rgba(90,153,90,.12);border:1px solid rgba(90,153,90,.3);
+      padding:2px 7px;border-radius:10px;text-transform:uppercase;cursor:help">IA</span>
+    <span class="hdr-brand">© Digital Score</span>
+  </div>
+</header>
+
+<!-- ══ Main layout ══════════════════════════════════════════════════════════ -->
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-scroll">
+
+      <!-- Categoria switcher (aparece quando há import com várias categorias) -->
+      <div class="cat-switcher" id="catSwitcher">
+        <div class="cs-label">Categoria</div>
+        <button class="cs-btn" onclick="reabrirSeletorCategoria()">
+          <span class="cs-name" id="csName">—</span>
+          <span class="cs-meta" id="csMeta"></span>
+          <span class="cs-arrow">▼</span>
+        </button>
+      </div>
+
+      <!-- Evento -->
+      <div class="sec">
+        <div class="sec-hdr">
+          <span class="sec-title">Evento</span>
+          <button class="sec-action" id="btnToggleEvento" onclick="toggleEventoForm()">Editar</button>
+        </div>
+        <div class="sec-body">
+          <div id="eventoDisplay" class="ev-display" onclick="toggleEventoForm()">
+            <div class="ev-empty">Clique para configurar o evento</div>
+          </div>
+          <div id="eventoForm" style="display:none;padding-top:10px">
+            <div class="field">
+              <label>Nome do Evento</label>
+              <input id="evNome" type="text" placeholder="Ex: SUN 2026" oninput="onEventoChange()">
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label>Categoria</label>
+                <input id="evCat" type="text" placeholder="Ex: RX MASCULINO" oninput="onEventoChange()">
+              </div>
+              <div class="field w80">
+                <label>Data</label>
+                <input id="evData" type="text" placeholder="2026" oninput="onEventoChange()">
+              </div>
+            </div>
+            <div class="field-row" style="margin-top:6px">
+              <div class="field">
+                <label>Logo do Evento <span style="font-size:9px;opacity:.6">(JPG/PNG — aparece no header)</span></label>
+                <div class="logo-upload-wrap" id="logoEventoWrap" onclick="document.getElementById('inputLogoEvento').click()">
+                  <img id="logoEventoPreview" style="display:none;height:28px;object-fit:contain">
+                  <span id="logoEventoPlaceholder">Clique para selecionar</span>
+                </div>
+                <input id="inputLogoEvento" type="file" accept="image/*" style="display:none" onchange="onLogoEvento(this)">
+              </div>
+              <div class="field">
+                <label>Logo Digital Score <span style="font-size:9px;opacity:.6">(aparece no header)</span></label>
+                <div class="logo-upload-wrap" id="logoEmpresaWrap" onclick="document.getElementById('inputLogoEmpresa').click()">
+                  <img id="logoEmpresaPreview" style="display:none;height:28px;object-fit:contain">
+                  <span id="logoEmpresaPlaceholder">Clique para selecionar</span>
+                </div>
+                <input id="inputLogoEmpresa" type="file" accept="image/*" style="display:none" onchange="onLogoEmpresa(this)">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Workouts -->
+      <div class="sec">
+        <div class="sec-hdr">
+          <span class="sec-title">Workouts</span>
+          <button class="sec-action" onclick="novoWorkout()">+ Novo</button>
+        </div>
+        <div id="workoutList">
+          <div class="wkt-empty">Nenhum workout ainda.<br>Clique em "+ Novo" para começar.</div>
+        </div>
+        <div class="status-bar" id="wktStatus"></div>
+      </div>
+
+      <!-- Atletas -->
+      <div class="sec" id="secAtletas" style="display:none">
+        <div class="sec-hdr">
+          <span class="sec-title">Atletas</span>
+          <span class="sec-count" id="atlCount">0</span>
+          <button class="sec-action" onclick="limparAtletas()" title="Remover todos os atletas">Limpar</button>
+        </div>
+        <div class="sec-body" id="atletasList" style="padding:0 10px 8px"></div>
+      </div>
+
+      <!-- Importar -->
+      <div class="sec">
+        <div class="sec-hdr">
+          <span class="sec-title">Importar</span>
+        </div>
+        <div class="sec-body">
+          <div class="import-btns">
+            <button class="btn-import" onclick="triggerImport('excel')">📊 Importar Excel (.xlsx)</button>
+          </div>
+          <div class="import-hint">Importe todas as categorias e workouts<br>a partir do seu arquivo Excel</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Generate -->
+    <div class="sidebar-footer">
+      <button class="btn-generate" id="btnGerar" onclick="gerarZIP()" disabled>
+        <span class="bg-icon">⬇</span>
+        <div class="spinner"></div>
+        <div class="bg-text">
+          <span class="bg-main" id="btnGerarLabel">Gerar súmulas</span>
+          <span class="bg-sub" id="btnGerarSub">Adicione um workout pra começar</span>
+        </div>
+      </button>
+      <button class="btn-clear-all" id="btnClearAll" onclick="limparTudo()" style="display:none">Limpar tudo</button>
+    </div>
+  </aside>
+
+  <!-- ── Editor panel (slides in) ─────────────────────────────────────────── -->
+  <div class="editor" id="editor">
+    <div class="ed-hdr">
+      <span class="ed-hdr-title" id="edTitle">Novo Workout</span>
+      <label class="ed-opt" title="Mostrar a coluna Label nas tabelas de movimento">
+        <input type="checkbox" id="chkLabel" onchange="toggleLabelCol()">
+        <span>Label</span>
+      </label>
+      <button class="ed-close" onclick="fecharEditor()" title="Fechar">×</button>
+    </div>
+    <div class="ed-body">
+
+      <!-- Campos básicos -->
+      <div class="field">
+        <label>Nome do Workout</label>
+        <input id="edNome" type="text" placeholder="Ex: TWENTIES">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Tipo</label>
+          <select id="edTipo" onchange="onTipoChange()">
+            <option value="for_time">For Time</option>
+            <option value="amrap">AMRAP</option>
+            <option value="express">Express (2 fases)</option>
+          </select>
+        </div>
+        <div class="field w100">
+          <label>Time Cap</label>
+          <input id="edTimeCap" type="text" placeholder="Ex: 10 min">
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Movimentos (for_time / amrap) -->
+      <div id="secMovimentos">
+        <div class="mov-section-hdr">Movimentos</div>
+        <div class="mov-table" id="movTable">
+          <div class="mov-table-hdr">
+            <span class="mth-nome">Movimento</span>
+            <span class="mth-reps">Reps</span>
+            <span class="mth-label">Label</span>
+            <span class="mth-ctrl">Ações</span>
+          </div>
+          <div id="movTableBody">
+            <div class="empty-table">Adicione movimentos abaixo</div>
+          </div>
+        </div>
+        <div class="mov-actions">
+          <button class="btn-mov" onclick="addMov('main')">+ Movimento</button>
+          <button class="btn-mov" onclick="addSep('main')">⁝ Separador</button>
+          <button class="btn-mov" onclick="addChegada('main')" id="btnChegadaMain">✓ Chegada</button>
+        </div>
+      </div>
+
+      <!-- Express (tabs F1 / F2) -->
+      <div id="secExpress" style="display:none">
+        <div class="express-tabs">
+          <button type="button" class="ex-tab active" data-tab="f1" onclick="switchExpressTab('f1')">Fórmula 1 — AMRAP</button>
+          <button type="button" class="ex-tab" data-tab="f2" onclick="switchExpressTab('f2')">Fórmula 2 — For Time</button>
+        </div>
+
+        <!-- Painel F1 -->
+        <div class="ex-panel" id="exPanelF1">
+          <div class="field-row">
+            <div class="field w80">
+              <label>Início</label>
+              <input id="edF1Start" type="text" placeholder="00:00" maxlength="5">
+            </div>
+            <div class="field w80">
+              <label>Fim</label>
+              <input id="edF1End" type="text" placeholder="05:00" maxlength="5">
+            </div>
+            <div class="field">
+              <label>Tipo</label>
+              <div class="ex-tipo">AMRAP</div>
+            </div>
+          </div>
+          <div class="mov-table" id="movTableF1" style="margin-top:14px">
+            <div class="mov-table-hdr">
+              <span class="mth-nome">Movimento</span>
+              <span class="mth-reps">Reps</span>
+              <span class="mth-label">Label</span>
+              <span class="mth-ctrl">Ações</span>
+            </div>
+            <div id="movTableF1Body">
+              <div class="empty-table">Adicione movimentos abaixo</div>
+            </div>
+          </div>
+          <div class="mov-actions">
+            <button class="btn-mov" onclick="addMov('f1')">+ Movimento</button>
+            <button class="btn-mov" onclick="addSep('f1')">⁝ Separador</button>
+          </div>
+        </div>
+
+        <!-- Painel F2 -->
+        <div class="ex-panel" id="exPanelF2" style="display:none">
+          <div class="field-row">
+            <div class="field w80">
+              <label>Início</label>
+              <input id="edF2Start" type="text" placeholder="06:00" maxlength="5">
+            </div>
+            <div class="field w80">
+              <label>Fim</label>
+              <input id="edF2End" type="text" placeholder="12:00" maxlength="5">
+            </div>
+            <div class="field">
+              <label>Tipo</label>
+              <div class="ex-tipo">For Time</div>
+            </div>
+          </div>
+          <div class="mov-table" id="movTableF2" style="margin-top:14px">
+            <div class="mov-table-hdr">
+              <span class="mth-nome">Movimento</span>
+              <span class="mth-reps">Reps</span>
+              <span class="mth-label">Label</span>
+              <span class="mth-ctrl">Ações</span>
+            </div>
+            <div id="movTableF2Body">
+              <div class="empty-table">Adicione movimentos abaixo</div>
+            </div>
+          </div>
+          <div class="mov-actions">
+            <button class="btn-mov" onclick="addMov('f2')">+ Movimento</button>
+            <button class="btn-mov" onclick="addSep('f2')">⁝ Separador</button>
+            <button class="btn-mov" onclick="addChegada('f2')">✓ Chegada</button>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Texto livre (opcional) -->
+      <div class="field">
+        <label>Texto livre (opcional)</label>
+        <textarea id="edDescricao" placeholder="Ex: &quot;For time:&quot; ou &quot;Time cap: 10 minutos&quot;"></textarea>
+        <span class="field-help">Aparece <strong>acima</strong> da tabela de movimentos. Deixe em branco se a tabela já é suficiente.</span>
+      </div>
+
+    </div>
+    <div class="ed-footer">
+      <button class="btn-primary" onclick="salvarWorkout()">Salvar e Visualizar</button>
+      <button class="btn-secondary" onclick="fecharEditor()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- ── Preview panel ─────────────────────────────────────────────────────── -->
+  <div class="preview" id="preview">
+    <div class="preview-bar">
+      <span class="pb-label">Visualização</span>
+      <span class="pb-name" id="pbName">—</span>
+      <span class="pb-hint">Ctrl+P para imprimir / salvar como PDF</span>
+    </div>
+    <div class="preview-empty" id="previewEmpty">
+      <!-- Estado: nenhum workout ainda — onboarding com CTAs -->
+      <div id="emptyOnboarding" style="display:flex;flex-direction:column;align-items:center;gap:14px;width:100%">
+        <div class="pe-text">Comece por aqui</div>
+        <div class="empty-cta-grid">
+          <button class="cta-card" onclick="triggerImport('excel')">
+            <span class="cta-icon">📊</span>
+            <span class="cta-title">Importar Excel</span>
+            <span class="cta-sub">Categorias, workouts<br>e atletas em um arquivo</span>
+          </button>
+          <button class="cta-card" onclick="novoWorkout()">
+            <span class="cta-icon">➕</span>
+            <span class="cta-title">Criar workout</span>
+            <span class="cta-sub">Configure manualmente<br>do zero</span>
+          </button>
+        </div>
+      </div>
+      <!-- Estado: já tem workouts mas nenhum selecionado -->
+      <div id="emptyNoSelection" style="display:none;flex-direction:column;align-items:center;gap:12px">
+        <div class="pe-icon">◻</div>
+        <div class="pe-text">Nenhum workout selecionado</div>
+        <div class="pe-sub">Selecione um workout na lista para ver a súmula</div>
+      </div>
+    </div>
+    <iframe id="previewFrame" class="preview-frame"></iframe>
+  </div>
+
+</div><!-- /layout -->
+
+<!-- Hidden file inputs -->
+<input type="file" id="fileExcel" accept=".xlsx,.xls" style="display:none" onchange="handleImport(this,'excel')">
+
+<!-- Modal: seletor de categoria -->
+<div id="catModal" style="display:none">
+  <div class="modal-overlay">
+    <div class="modal">
+      <div class="modal-title">Selecionar Categoria</div>
+      <div class="modal-sub" id="catModalSub">Escolha a categoria para gerar as súmulas:</div>
+      <div class="cat-grid" id="catGrid"></div>
+      <button class="modal-cancel" onclick="document.getElementById('catModal').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Logo padrão DS injetada server-side antes do app.js -->
+<script>const DS_LOGO_PADRAO = "{{DS_LOGO_PADRAO_B64}}";</script>
+<script src="/app.js"></script>
+</body>
+</html>
