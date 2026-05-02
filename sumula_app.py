@@ -9,7 +9,7 @@ import json, os, io, zipfile, threading, webbrowser, sys, base64, re
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from campo_generator import render_workout, load_fonts, img_b64, sanitize
+from campo_generator import render_workout, render_workout_combined, load_fonts, img_b64, sanitize
 
 PORT = int(os.environ.get('PORT', 8765))
 # Render sempre define PORT via env — usa isso para detectar ambiente cloud
@@ -332,6 +332,17 @@ def _parse_atletas(wb):
             resultado[cat].append(atleta)
 
     return resultado
+
+
+def _atleta_sort_key(a):
+    """Chave de ordenação para impressão sequencial: bateria → raia → nome.
+    Raia é tratada numericamente quando possível ("10" depois de "2")."""
+    bateria  = str(a.get('bateria', '') or '').strip().upper()
+    raia_raw = str(a.get('raia', '') or '').strip()
+    m = re.match(r'^(\d+)', raia_raw)
+    raia_num = int(m.group(1)) if m else 10**9
+    nome = str(a.get('nome', '') or '').strip().lower()
+    return (bateria, raia_num, raia_raw.lower(), nome)
 
 
 def assign_workout_numbers(workouts):
@@ -1752,46 +1763,39 @@ class SumulaHandler(BaseHTTPRequestHandler):
         assign_workout_numbers(workouts)
         enriquecer_workouts(workouts)
 
+        if atletas:
+            atletas = sorted(atletas, key=_atleta_sort_key)
+
         # Escolhe fontes: file:// para PDF (rápido), data: para HTML
         use_pdf  = HAS_PDF_GEN and bool(FONTS_PDF)
         fonts    = FONTS_PDF if use_pdf else FONTS
         ext      = '.pdf'  if use_pdf else '.html'
 
-        def _render(wkt, atleta=None):
-            return render_workout(ev, wkt, fonts, logo, logo_evt, atleta)
-
-        def _to_bytes(html):
-            if use_pdf:
-                try:
-                    return WP_HTML(string=html).write_pdf()
-                except Exception as e:
-                    print(f"  ⚠  PDF falhou ({e})")
-                    # Fallback: gera HTML com fontes data: para não perder o arquivo
-                    return render_workout(ev, wkt, FONTS, logo, logo_evt,
-                                         atleta if 'atleta' in dir() else None
-                                         ).encode('utf-8')
-            return html.encode('utf-8')
-
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
             if atletas:
+                # Um HTML combinado por workout (todos atletas como páginas A4 sequenciais).
+                # Ctrl+P no browser gera o PDF da categoria inteira de uma vez.
                 for wkt in workouts:
-                    num_w  = wkt.get('numero', 1)
-                    nome_w = wkt.get('nome', 'wkt')
-                    pasta  = f"WKT{num_w:02d}_{sanitize(nome_w)}"
-                    for atleta in atletas:
-                        nome_a  = atleta.get('nome', 'atleta')
-                        num_a   = atleta.get('numero', '')
-                        prefixo = f"{sanitize(num_a)}_" if num_a else ""
-                        html    = render_workout(ev, wkt, fonts, logo, logo_evt, atleta)
-                        zf.writestr(f"{pasta}/{prefixo}{sanitize(nome_a)}{ext}",
-                                    _to_bytes(html))
+                    num  = wkt.get('numero', 1)
+                    nome = wkt.get('nome', 'wkt')
+                    html = render_workout_combined(ev, wkt, FONTS, logo, logo_evt, atletas)
+                    zf.writestr(f"{num:02d}_{sanitize(nome)}.html",
+                                html.encode('utf-8'))
             else:
                 for wkt in workouts:
                     num  = wkt.get('numero', 1)
                     nome = wkt.get('nome', 'wkt')
                     html = render_workout(ev, wkt, fonts, logo, logo_evt)
-                    zf.writestr(f"{num:02d}_{sanitize(nome)}{ext}", _to_bytes(html))
+                    if use_pdf:
+                        try:
+                            data = WP_HTML(string=html).write_pdf()
+                        except Exception as e:
+                            print(f"  ⚠  PDF falhou ({e})")
+                            data = render_workout(ev, wkt, FONTS, logo, logo_evt).encode('utf-8')
+                    else:
+                        data = html.encode('utf-8')
+                    zf.writestr(f"{num:02d}_{sanitize(nome)}{ext}", data)
 
         cat = sanitize(ev.get('categoria', '') or ev.get('nome', 'sumulas'))
         self._send(200, 'application/zip', buf.getvalue(),

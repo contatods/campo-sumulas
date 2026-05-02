@@ -109,11 +109,16 @@ CSS = """
 body{
   font-family:'Lato',Arial,sans-serif;
   color:var(--ink);background:var(--w);
-  width:194mm;font-size:8pt;
+  font-size:8pt;
   -webkit-print-color-adjust:exact;print-color-adjust:exact;
+}
+.page{
+  width:194mm;
   position:relative;
   display:flex;flex-direction:column;min-height:281mm;
+  page-break-after:always;break-after:page;
 }
+.page:last-child{page-break-after:auto;break-after:auto}
 .page-footer{margin-top:auto;}
 .ds-credit{
   text-align:center;font-size:5pt;color:#bbb;
@@ -245,7 +250,7 @@ body{
 .fline-filled{
   font-size:9pt;font-weight:700;color:var(--ink);
   letter-spacing:.03em;padding-bottom:0.5mm;
-  border-bottom:1.5px solid var(--ink);
+  border-bottom:none;
 }
 
 /* ══════════════════════════════════════════════════════
@@ -808,7 +813,7 @@ SCORE_BOX_MACRO = r"""
 {% endmacro %}
 """
 
-TMPL_STR = r"""<!DOCTYPE html>
+DOC_TMPL_STR = r"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -822,6 +827,13 @@ TMPL_STR = r"""<!DOCTYPE html>
 </style>
 </head>
 <body>
+{% for page in pages %}{{ page|safe }}{% endfor %}
+</body>
+</html>
+"""
+
+
+PAGE_TMPL_STR = r"""<div class="page">
 
 <div class="a4-marker"></div>
 
@@ -966,18 +978,31 @@ TMPL_STR = r"""<!DOCTYPE html>
   <div class="ds-credit">Gerada pelo sistema Digital Score · Todos os direitos reservados à Digital Score · Reprodução proibida sem autorização</div>
 </div>
 
-</body>
-</html>
+</div>
 """
 
 
-def render_workout(ev, wkt, fonts, logo_src, logo_evento="", atleta=None):
-    """Renderiza uma súmula HTML completa para um workout.
-    Se logo_src nao for fornecida, usa a logo padrao Digital Score embutida.
-    """
-    logo_final   = logo_src  # padrão definido em sumula_app.py
-    logo_evt_src = logo_evento if logo_evento else ""
-    tmpl = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + SCORE_BOX_MACRO + TMPL_STR)
-    return tmpl.render(ev=ev, wkt=wkt, fonts=fonts, css=CSS,
-                       logo_src=logo_final, logo_evento_src=logo_evt_src,
+def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
+    tmpl = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + SCORE_BOX_MACRO + PAGE_TMPL_STR)
+    return tmpl.render(ev=ev, wkt=wkt,
+                       logo_src=logo_src, logo_evento_src=logo_evento_src,
                        atleta=atleta)
+
+
+def render_workout(ev, wkt, fonts, logo_src, logo_evento="", atleta=None):
+    """Renderiza uma súmula HTML completa (1 página) para um workout."""
+    logo_evt_src = logo_evento or ""
+    page = _render_page(ev, wkt, logo_src, logo_evt_src, atleta)
+    doc = Template(DOC_TMPL_STR)
+    return doc.render(wkt=wkt, fonts=fonts, css=CSS, pages=[page])
+
+
+def render_workout_combined(ev, wkt, fonts, logo_src, logo_evento, atletas):
+    """Renderiza um único HTML com N páginas-súmula (1 por atleta).
+    Fontes, logos e CSS aparecem só uma vez no documento; cada atleta vira
+    uma página A4 separada via page-break-after. Ctrl+P imprime o lote inteiro.
+    """
+    logo_evt_src = logo_evento or ""
+    pages = [_render_page(ev, wkt, logo_src, logo_evt_src, a) for a in atletas]
+    doc = Template(DOC_TMPL_STR)
+    return doc.render(wkt=wkt, fonts=fonts, css=CSS, pages=pages)

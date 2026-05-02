@@ -12,3 +12,6 @@ venv/
 # Outputs temporários
 *.zip
 exemplo/
+
+# Claude Code (sessão local)
+.claude/
