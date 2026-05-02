@@ -828,6 +828,68 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .toast.ok{background:#1A3A1A;color:#6C6;border:1px solid #2A4A2A}
 .toast.err{background:#3A1A1A;color:#C66;border:1px solid #4A2A2A}
 
+/* ── Categoria switcher (no topo da sidebar quando há import) ── */
+.cat-switcher{display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2)}
+.cat-switcher.show{display:block}
+.cs-label{font-size:8px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--text4);margin-bottom:4px}
+.cs-btn{width:100%;display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface3);
+  border:1px solid var(--border3);color:var(--text);border-radius:var(--radius);cursor:pointer;
+  font-family:inherit;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  transition:border-color .12s,background .12s}
+.cs-btn:hover{border-color:#3A3A3A;background:#202020}
+.cs-name{flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cs-meta{font-size:9px;font-weight:700;color:var(--text3);letter-spacing:.08em}
+.cs-arrow{color:var(--text3);font-size:10px}
+
+/* ── Section count badge ── */
+.sec-count{font-size:9px;font-weight:700;color:var(--text3);background:var(--surface3);
+  border:1px solid var(--border3);padding:1px 6px;border-radius:8px;letter-spacing:.05em}
+
+/* ── Atletas list ── */
+.atl-empty{padding:10px 4px;font-size:10.5px;color:var(--text4);text-align:center;font-style:italic;line-height:1.5}
+.atl-order-hint{font-size:8.5px;color:var(--text4);letter-spacing:.1em;text-transform:uppercase;
+  text-align:center;padding:6px 4px 4px;border-top:1px dashed var(--border2);margin-top:4px}
+.atl-bat-group{margin-bottom:6px}
+.atl-bat-group:last-child{margin-bottom:0}
+.atl-bat-hdr{display:flex;align-items:center;gap:6px;padding:5px 4px;cursor:pointer;
+  font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--text2);
+  border-radius:var(--radius);transition:background .1s}
+.atl-bat-hdr:hover{background:var(--surface2)}
+.atl-bat-toggle{font-size:8px;color:var(--text4);width:9px;display:inline-block;transition:transform .15s}
+.atl-bat-group.collapsed .atl-bat-toggle{transform:rotate(-90deg)}
+.atl-bat-name{flex:1}
+.atl-bat-count{font-size:9px;font-weight:700;color:var(--text3);
+  background:var(--surface3);padding:1px 6px;border-radius:8px}
+.atl-bat-body{padding:2px 0 4px}
+.atl-bat-group.collapsed .atl-bat-body{display:none}
+.atl-card{display:flex;align-items:center;gap:8px;padding:4px 6px 4px 14px;
+  font-size:10.5px;color:var(--text2);border-radius:var(--radius);
+  transition:background .1s}
+.atl-card:hover{background:var(--surface2)}
+.atl-raia{font-size:9px;font-weight:700;color:var(--text3);min-width:22px;text-align:center;
+  background:var(--surface3);padding:1px 4px;border-radius:2px;letter-spacing:.04em}
+.atl-nome{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atl-rm{background:none;border:none;color:var(--text4);cursor:pointer;font-size:13px;
+  line-height:1;padding:0 4px;border-radius:var(--radius);opacity:0;transition:opacity .12s,color .12s}
+.atl-card:hover .atl-rm{opacity:1}
+.atl-rm:hover{color:var(--red)}
+
+/* ── Empty state CTAs (preview vazio sem workouts) ── */
+.empty-cta-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:520px;width:100%;padding:0 24px;margin-top:8px}
+.cta-card{background:var(--surface);border:1px solid var(--border3);border-radius:6px;
+  padding:22px 18px;text-align:center;cursor:pointer;color:var(--text2);
+  transition:border-color .15s,background .15s,transform .12s;font-family:inherit}
+.cta-card:hover{border-color:#3A3A3A;background:var(--surface2);color:var(--text);transform:translateY(-1px)}
+.cta-icon{font-size:28px;line-height:1;margin-bottom:10px;display:block}
+.cta-title{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:5px}
+.cta-sub{font-size:9.5px;color:var(--text4);letter-spacing:.06em;line-height:1.5}
+
+/* ── Limpar tudo (link discreto) ── */
+.btn-clear-all{background:none;border:none;color:var(--text4);cursor:pointer;
+  font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  padding:6px;width:100%;text-align:center;transition:color .12s}
+.btn-clear-all:hover{color:var(--red)}
+
 /* ── Modal de categoria ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;
   align-items:center;justify-content:center;z-index:100}
@@ -870,6 +932,16 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
   <aside class="sidebar">
     <div class="sidebar-scroll">
+
+      <!-- Categoria switcher (aparece quando há import com várias categorias) -->
+      <div class="cat-switcher" id="catSwitcher">
+        <div class="cs-label">Categoria</div>
+        <button class="cs-btn" onclick="reabrirSeletorCategoria()">
+          <span class="cs-name" id="csName">—</span>
+          <span class="cs-meta" id="csMeta"></span>
+          <span class="cs-arrow">▼</span>
+        </button>
+      </div>
 
       <!-- Evento -->
       <div class="sec">
@@ -930,6 +1002,16 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         <div class="status-bar" id="wktStatus"></div>
       </div>
 
+      <!-- Atletas -->
+      <div class="sec" id="secAtletas" style="display:none">
+        <div class="sec-hdr">
+          <span class="sec-title">Atletas</span>
+          <span class="sec-count" id="atlCount">0</span>
+          <button class="sec-action" onclick="limparAtletas()" title="Remover todos os atletas">Limpar</button>
+        </div>
+        <div class="sec-body" id="atletasList" style="padding:0 10px 8px"></div>
+      </div>
+
       <!-- Importar -->
       <div class="sec">
         <div class="sec-hdr">
@@ -951,6 +1033,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         <div class="spinner"></div>
         <span id="btnGerarLabel">⬇&nbsp;&nbsp;Gerar Súmulas (ZIP)</span>
       </button>
+      <button class="btn-clear-all" id="btnClearAll" onclick="limparTudo()" style="display:none">Limpar tudo</button>
     </div>
   </aside>
 
@@ -1087,9 +1170,28 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
       <span class="pb-hint">Ctrl+P para imprimir / salvar como PDF</span>
     </div>
     <div class="preview-empty" id="previewEmpty">
-      <div class="pe-icon">◻</div>
-      <div class="pe-text">Nenhum workout selecionado</div>
-      <div class="pe-sub">Crie ou selecione um workout para ver a súmula aqui</div>
+      <!-- Estado: nenhum workout ainda — onboarding com CTAs -->
+      <div id="emptyOnboarding" style="display:flex;flex-direction:column;align-items:center;gap:14px;width:100%">
+        <div class="pe-text">Comece por aqui</div>
+        <div class="empty-cta-grid">
+          <button class="cta-card" onclick="triggerImport('excel')">
+            <span class="cta-icon">📊</span>
+            <span class="cta-title">Importar Excel</span>
+            <span class="cta-sub">Categorias, workouts<br>e atletas em um arquivo</span>
+          </button>
+          <button class="cta-card" onclick="novoWorkout()">
+            <span class="cta-icon">➕</span>
+            <span class="cta-title">Criar workout</span>
+            <span class="cta-sub">Configure manualmente<br>do zero</span>
+          </button>
+        </div>
+      </div>
+      <!-- Estado: já tem workouts mas nenhum selecionado -->
+      <div id="emptyNoSelection" style="display:none;flex-direction:column;align-items:center;gap:12px">
+        <div class="pe-icon">◻</div>
+        <div class="pe-text">Nenhum workout selecionado</div>
+        <div class="pe-sub">Selecione um workout na lista para ver a súmula</div>
+      </div>
     </div>
     <iframe id="previewFrame" class="preview-frame"></iframe>
   </div>
@@ -1123,8 +1225,19 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     if (s.ai_ativo)  document.getElementById('aiBadge').style.display  = '';
     if (s.pdf_ativo) document.getElementById('pdfBadge').style.display = '';
     window.PDF_ATIVO = !!s.pdf_ativo;
-    atualizarBotaoGerar();
   }).catch(()=>{ window.PDF_ATIVO = false; });
+  loadState();
+  renderEventoDisplay();
+  renderWorkoutList();
+  renderAtletasList();
+  renderCategoriaSwitcher();
+  updateClearAllVisibility();
+  atualizarBotaoGerar();
+  updateEmptyState();
+  // Se restaurou um workout selecionado, renderiza preview
+  if (previewIdx >= 0 && previewIdx < config.workouts.length) {
+    previewWorkout(previewIdx);
+  }
 })();
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1135,8 +1248,11 @@ let config = {
   workouts: [],
   atletas: []   // atletas da categoria atual (pode estar vazio)
 };
-let editingIdx = -1;   // -1 = new workout
+let editingIdx  = -1;   // -1 = new workout
 let previewIdx  = -1;
+let importedData = null;  // resultado completo do último import (pra trocar categoria sem reimportar)
+const STATE_KEY    = 'ds_sumulas_v1_state';
+const IMPORT_KEY   = 'ds_sumulas_v1_import';
 
 // ═══════════════════════════════════════════════════════════════════
 //  EVENTO
@@ -1160,6 +1276,13 @@ function toggleEventoForm() {
       empImg.style.display = '';
       empPh.style.display  = 'none';
     }
+    const evtImg = document.getElementById('logoEventoPreview');
+    const evtPh  = document.getElementById('logoEventoPlaceholder');
+    if (config.evento.logo_evento) {
+      evtImg.src = config.evento.logo_evento;
+      evtImg.style.display = '';
+      evtPh.style.display  = 'none';
+    }
   }
 }
 
@@ -1170,6 +1293,7 @@ function onEventoChange() {
   renderEventoDisplay();
   atualizarBotaoGerar();
   refreshPreview();
+  saveState();
 }
 
 function onLogoEvento(input) {
@@ -1182,6 +1306,7 @@ function onLogoEvento(input) {
     img.src = e.target.result; img.style.display = '';
     ph.style.display = 'none';
     refreshPreview();
+    saveState();
   };
   reader.readAsDataURL(input.files[0]);
 }
@@ -1196,6 +1321,7 @@ function onLogoEmpresa(input) {
     img.src = e.target.result; img.style.display = '';
     ph.style.display = 'none';
     refreshPreview();
+    saveState();
   };
   reader.readAsDataURL(input.files[0]);
 }
@@ -1392,7 +1518,9 @@ function salvarWorkout() {
   fecharEditor();
   renderWorkoutList();
   atualizarBotaoGerar();
+  updateClearAllVisibility();
   previewWorkout(previewIdx);
+  saveState();
   toast('Workout salvo!', 'ok');
 }
 
@@ -1403,12 +1531,14 @@ function deletarWorkout(idx) {
   if (previewIdx >= config.workouts.length) previewIdx = config.workouts.length - 1;
   renderWorkoutList();
   atualizarBotaoGerar();
+  updateClearAllVisibility();
   if (previewIdx >= 0) previewWorkout(previewIdx);
   else {
-    document.getElementById('previewEmpty').style.display = '';
     document.getElementById('previewFrame').style.display = 'none';
     document.getElementById('pbName').textContent = '—';
+    updateEmptyState();
   }
+  saveState();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1631,6 +1761,10 @@ function mostrarSeletorCategoria(data) {
   const cats = data.categorias || Object.keys(data.por_categoria || {});
   if (!cats.length) { toast('Nenhuma categoria encontrada no arquivo', 'err'); return; }
 
+  // Cacheia o resultado pra permitir trocar de categoria depois sem reimportar.
+  importedData = data;
+  saveState();
+
   const sub = document.getElementById('catModalSub');
   sub.textContent = `${cats.length} categorias encontradas. Escolha qual gerar as súmulas:`;
 
@@ -1640,28 +1774,45 @@ function mostrarSeletorCategoria(data) {
     const btn = document.createElement('button');
     btn.className = 'cat-btn';
     const wkts = (data.por_categoria[cat] || []).length;
-    btn.innerHTML = `<strong>${esc(cat)}</strong><br><span style="font-size:9px;opacity:.6">${wkts} workout(s)</span>`;
+    const atl  = ((data.atletas_por_categoria || {})[cat] || []).length;
+    const meta = atl ? `${wkts} wkt · ${atl} atl` : `${wkts} workout(s)`;
+    btn.innerHTML = `<strong>${esc(cat)}</strong><br><span style="font-size:9px;opacity:.6">${meta}</span>`;
     btn.onclick = () => {
       document.getElementById('catModal').style.display = 'none';
-      const workouts = data.por_categoria[cat] || [];
-      const atletasCat = (data.atletas_por_categoria || {})[cat] || [];
-      config.evento.nome      = data.evento_nome || config.evento.nome || 'Sun2026';
-      config.evento.categoria = cat;
-      document.getElementById('evNome').value = config.evento.nome;
-      document.getElementById('evCat').value  = cat;
-      renderEventoDisplay();
-      config.workouts = workouts;
-      config.atletas  = atletasCat;
-      previewIdx = 0;
-      renderWorkoutList();
-      atualizarBotaoGerar();
-      if (workouts.length) previewWorkout(0);
-      const msgAtletas = atletasCat.length ? ` · ${atletasCat.length} atleta(s)` : '';
-      toast(`${cat} — ${workouts.length} workout(s)${msgAtletas} importado(s)`, 'ok');
+      aplicarCategoria(cat);
     };
     grid.appendChild(btn);
   });
   document.getElementById('catModal').style.display = '';
+}
+
+function aplicarCategoria(cat) {
+  if (!importedData) return;
+  const workouts   = importedData.por_categoria[cat] || [];
+  const atletasCat = (importedData.atletas_por_categoria || {})[cat] || [];
+  config.evento.nome      = importedData.evento_nome || config.evento.nome || 'Sun2026';
+  config.evento.categoria = cat;
+  document.getElementById('evNome').value = config.evento.nome;
+  document.getElementById('evCat').value  = cat;
+  renderEventoDisplay();
+  config.workouts = workouts;
+  config.atletas  = atletasCat;
+  previewIdx = workouts.length ? 0 : -1;
+  renderWorkoutList();
+  renderAtletasList();
+  renderCategoriaSwitcher();
+  atualizarBotaoGerar();
+  updateClearAllVisibility();
+  if (workouts.length) previewWorkout(0);
+  else updateEmptyState();
+  saveState();
+  const msgAtletas = atletasCat.length ? ` · ${atletasCat.length} atleta(s)` : '';
+  toast(`${cat} — ${workouts.length} workout(s)${msgAtletas}`, 'ok');
+}
+
+function reabrirSeletorCategoria() {
+  if (!importedData) return;
+  mostrarSeletorCategoria(importedData);
 }
 
 function aplicarImport(result) {
@@ -1677,11 +1828,218 @@ function aplicarImport(result) {
     previewIdx = 0;
     renderWorkoutList();
     atualizarBotaoGerar();
+    updateClearAllVisibility();
     previewWorkout(0);
+    saveState();
     toast(`${result.workouts.length} workout(s) importado(s)`, 'ok');
   } else {
     toast('Nenhum workout encontrado no arquivo', 'err');
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ATLETAS
+// ═══════════════════════════════════════════════════════════════════
+function renderAtletasList() {
+  const sec  = document.getElementById('secAtletas');
+  const list = document.getElementById('atletasList');
+  const cnt  = document.getElementById('atlCount');
+  const n = config.atletas.length;
+  cnt.textContent = n;
+  if (!n) {
+    sec.style.display = 'none';
+    list.innerHTML = '';
+    return;
+  }
+  sec.style.display = '';
+
+  // Agrupa por bateria (mantém ordem original — já vem ordenada do backend)
+  const groups = {};
+  const order  = [];
+  config.atletas.forEach((a, i) => {
+    const bat = (a.bateria || '—').toString().trim() || '—';
+    if (!groups[bat]) { groups[bat] = []; order.push(bat); }
+    groups[bat].push({ a, i });
+  });
+
+  list.innerHTML = order.map(bat => {
+    const items = groups[bat];
+    const rows = items.map(({ a, i }) => `
+      <div class="atl-card">
+        <span class="atl-raia">${esc(a.raia || '—')}</span>
+        <span class="atl-nome" title="${esc((a.box || '') + (a.numero ? ' · #' + a.numero : ''))}">${esc(a.nome || '')}</span>
+        <button class="atl-rm" onclick="removerAtleta(${i})" title="Remover atleta">×</button>
+      </div>`).join('');
+    return `
+      <div class="atl-bat-group">
+        <div class="atl-bat-hdr" onclick="toggleAtlGroup(this)">
+          <span class="atl-bat-toggle">▾</span>
+          <span class="atl-bat-name">Bateria ${esc(bat)}</span>
+          <span class="atl-bat-count">${items.length}</span>
+        </div>
+        <div class="atl-bat-body">${rows}</div>
+      </div>`;
+  }).join('') + `<div class="atl-order-hint">Ordem de impressão: bateria → raia → nome</div>`;
+}
+
+function toggleAtlGroup(hdrEl) {
+  hdrEl.parentElement.classList.toggle('collapsed');
+}
+
+function removerAtleta(idx) {
+  const a = config.atletas[idx];
+  if (!a) return;
+  config.atletas.splice(idx, 1);
+  renderAtletasList();
+  atualizarBotaoGerar();
+  saveState();
+}
+
+function limparAtletas() {
+  if (!config.atletas.length) return;
+  if (!confirm(`Remover todos os ${config.atletas.length} atletas?`)) return;
+  config.atletas = [];
+  renderAtletasList();
+  atualizarBotaoGerar();
+  saveState();
+  toast('Atletas removidos', 'ok');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CATEGORIA SWITCHER
+// ═══════════════════════════════════════════════════════════════════
+function renderCategoriaSwitcher() {
+  const el = document.getElementById('catSwitcher');
+  if (!importedData || !(importedData.categorias || []).length) {
+    el.classList.remove('show');
+    return;
+  }
+  const cats = importedData.categorias || Object.keys(importedData.por_categoria || {});
+  if (cats.length < 2) {
+    // Com 1 categoria só, switcher não agrega valor
+    el.classList.remove('show');
+    return;
+  }
+  document.getElementById('csName').textContent = config.evento.categoria || cats[0];
+  document.getElementById('csMeta').textContent = `${cats.length} cat`;
+  el.classList.add('show');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  EMPTY STATE / CLEAR
+// ═══════════════════════════════════════════════════════════════════
+function updateEmptyState() {
+  const wrap     = document.getElementById('previewEmpty');
+  const onboard  = document.getElementById('emptyOnboarding');
+  const noSelect = document.getElementById('emptyNoSelection');
+  const frame    = document.getElementById('previewFrame');
+  // Se tem workout selecionado e iframe visível, não toca em nada
+  if (frame.style.display === 'block') return;
+  wrap.style.display = '';
+  if (config.workouts.length === 0) {
+    onboard.style.display  = 'flex';
+    noSelect.style.display = 'none';
+  } else {
+    onboard.style.display  = 'none';
+    noSelect.style.display = 'flex';
+  }
+}
+
+function updateClearAllVisibility() {
+  const btn = document.getElementById('btnClearAll');
+  const hasData = config.workouts.length || config.atletas.length
+    || config.evento.nome || importedData;
+  btn.style.display = hasData ? '' : 'none';
+}
+
+function limparTudo() {
+  if (!confirm('Apagar evento, workouts, atletas e categorias importadas?\nEsta ação não pode ser desfeita.')) return;
+  config = {
+    evento: { nome: "", categoria: "", data: "", logo_empresa: DS_LOGO_PADRAO, logo_evento: "" },
+    workouts: [],
+    atletas: []
+  };
+  importedData = null;
+  previewIdx = -1;
+  editingIdx = -1;
+  clearState();
+  // Reseta inputs do form de evento
+  ['evNome','evCat','evData'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  ['logoEventoPreview','logoEmpresaPreview'].forEach(id => {
+    const el=document.getElementById(id); if(el){el.src=''; el.style.display='none';}
+  });
+  ['logoEventoPlaceholder','logoEmpresaPlaceholder'].forEach(id => {
+    const el=document.getElementById(id); if(el) el.style.display='';
+  });
+  document.getElementById('eventoForm').style.display = 'none';
+  document.getElementById('btnToggleEvento').textContent = 'Editar';
+  document.getElementById('previewFrame').style.display = 'none';
+  document.getElementById('pbName').textContent = '—';
+  renderEventoDisplay();
+  renderWorkoutList();
+  renderAtletasList();
+  renderCategoriaSwitcher();
+  atualizarBotaoGerar();
+  updateClearAllVisibility();
+  updateEmptyState();
+  toast('Tudo limpo', 'ok');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PERSISTÊNCIA (localStorage)
+// ═══════════════════════════════════════════════════════════════════
+let _saveTimer = null;
+function saveState() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(_persistNow, 400);
+}
+
+function _persistNow() {
+  const snapshot = { config, previewIdx };
+  try {
+    localStorage.setItem(STATE_KEY, JSON.stringify(snapshot));
+    if (importedData) localStorage.setItem(IMPORT_KEY, JSON.stringify(importedData));
+    else              localStorage.removeItem(IMPORT_KEY);
+  } catch (e) {
+    // QuotaExceededError → tenta sem logos do evento (geralmente o mais pesado)
+    try {
+      const lite = JSON.parse(JSON.stringify(snapshot));
+      lite.config.evento.logo_evento = '';
+      lite.config.evento.logo_empresa = '';
+      localStorage.setItem(STATE_KEY, JSON.stringify(lite));
+      if (importedData) localStorage.setItem(IMPORT_KEY, JSON.stringify(importedData));
+      console.warn('Persistência sem logos (cota cheia):', e.message);
+    } catch (e2) {
+      console.error('Falha ao persistir:', e2);
+    }
+  }
+  updateClearAllVisibility();
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STATE_KEY);
+    if (raw) {
+      const snap = JSON.parse(raw);
+      if (snap && snap.config) {
+        // Garante que logo padrão DS sobrevive ao restaurar config sem logo
+        if (!snap.config.evento.logo_empresa) snap.config.evento.logo_empresa = DS_LOGO_PADRAO;
+        config = snap.config;
+        previewIdx = (typeof snap.previewIdx === 'number') ? snap.previewIdx : -1;
+      }
+    }
+    const rawImp = localStorage.getItem(IMPORT_KEY);
+    if (rawImp) importedData = JSON.parse(rawImp);
+  } catch (e) {
+    console.warn('Falha ao restaurar estado:', e);
+  }
+}
+
+function clearState() {
+  try {
+    localStorage.removeItem(STATE_KEY);
+    localStorage.removeItem(IMPORT_KEY);
+  } catch (e) { /* ignore */ }
 }
 
 // ═══════════════════════════════════════════════════════════════════
