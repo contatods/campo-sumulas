@@ -47,11 +47,9 @@ except ImportError:
 AI_KEY   = os.environ.get('ANTHROPIC_API_KEY', '')
 AI_ATIVO = HAS_ANTHROPIC and bool(AI_KEY)
 
-# ── PDF automático (WeasyPrint) — opcional ──────────────────────────────────────
-try:
-    from weasyprint import HTML as WP_HTML; HAS_PDF_GEN = True
-except (ImportError, Exception):
-    HAS_PDF_GEN = False
+# ── PDF automático (WeasyPrint) — desativado (incompatibilidade de CSS com flexbox)
+HAS_PDF_GEN = False
+WP_HTML     = None
 
 # ── Carregar fontes na inicialização ────────────────────────────────────────────
 print("╔══════════════════════════════════════════════╗")
@@ -83,30 +81,8 @@ if AI_ATIVO:
     print("  ✓ IA ativa (Anthropic Claude Haiku) — cálculo inteligente de rounds")
 else:
     print("  ○  IA inativa (defina ANTHROPIC_API_KEY para ativar)")
-# Prepara fontes em disco para WeasyPrint (muito mais rápido que base64)
 FONTS_PDF = {}
-if HAS_PDF_GEN:
-    try:
-        import tempfile, base64 as _b64
-        _font_tmp = tempfile.mkdtemp(prefix='sumulas_pdf_')
-        _fmap = {'black':'Lato-Black.ttf','bold':'Lato-Bold.ttf',
-                 'reg':'Lato-Regular.ttf','light':'Lato-Light.ttf'}
-        for _k, _fname in _fmap.items():
-            _raw = _fonts_raw.get(_k, '')
-            if _raw:
-                _p = os.path.join(_font_tmp, _fname)
-                with open(_p, 'wb') as _f:
-                    _f.write(_b64.b64decode(_raw))
-                FONTS_PDF[_k] = f'file://{_p}'
-            else:
-                FONTS_PDF[_k] = ''
-        print(f"  ✓ WeasyPrint — PDF ativo (fontes em {_font_tmp})")
-    except Exception as _e:
-        print(f"  ⚠  WeasyPrint: erro ao preparar fontes ({_e}) — usando HTML")
-        HAS_PDF_GEN = False
-else:
-    print("  ○  WeasyPrint não instalado — ZIP conterá HTML")
-    print("     Para ativar PDF: pip3 install weasyprint")
+print("  ✓ Saída: HTML (abrir no browser + Ctrl+P para PDF)")
 print()
 
 
