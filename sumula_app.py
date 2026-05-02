@@ -47,10 +47,6 @@ except ImportError:
 AI_KEY   = os.environ.get('ANTHROPIC_API_KEY', '')
 AI_ATIVO = HAS_ANTHROPIC and bool(AI_KEY)
 
-# ── PDF automático (WeasyPrint) — desativado (incompatibilidade de CSS com flexbox)
-HAS_PDF_GEN = False
-WP_HTML     = None
-
 # ── Carregar fontes na inicialização ────────────────────────────────────────────
 print("╔══════════════════════════════════════════════╗")
 print("║  Súmulas Digital Score  —  v1.1.0            ║")
@@ -81,7 +77,6 @@ if AI_ATIVO:
     print("  ✓ IA ativa (Anthropic Claude Haiku) — cálculo inteligente de rounds")
 else:
     print("  ○  IA inativa (defina ANTHROPIC_API_KEY para ativar)")
-FONTS_PDF = {}
 print("  ✓ Saída: HTML (abrir no browser + Ctrl+P para PDF)")
 print()
 
@@ -611,6 +606,7 @@ HTML_INTERFACE = r"""<!DOCTYPE html>
   --border:#1E1E1E;--border2:#252525;--border3:#2E2E2E;
   --text:#D8D8D8;--text2:#888;--text3:#555;--text4:#333;
   --accent:#FFF;--green:#5A9;--red:#A55;--blue:#68A;
+  --orange:#E55D00;--orange-dim:rgba(229,93,0,.12);--orange-edge:rgba(229,93,0,.32);
   --radius:3px;
 }
 body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -623,8 +619,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .hdr-divider{width:1px;height:16px;background:var(--border3)}
 .hdr-title{font-size:11px;font-weight:400;color:var(--text3);letter-spacing:.08em}
 .hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px}
-.hdr-version{font-size:9px;font-weight:700;color:var(--accent);letter-spacing:.1em;
-  background:rgba(229,93,0,.12);border:1px solid rgba(229,93,0,.25);
+.hdr-version{font-size:9px;font-weight:700;color:var(--orange);letter-spacing:.1em;
+  background:var(--orange-dim);border:1px solid var(--orange-edge);
   padding:2px 7px;border-radius:10px;text-transform:uppercase}
 .hdr-brand{font-size:10px;color:var(--text4);letter-spacing:.05em}
 
@@ -646,7 +642,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .sec-action{background:none;border:1px solid var(--border3);color:var(--text3);cursor:pointer;
   font-size:9px;font-weight:700;letter-spacing:.1em;padding:3px 7px;border-radius:var(--radius);
   transition:border-color .15s,color .15s}
-.sec-action:hover{border-color:#444;color:var(--text2)}
+.sec-action:hover{border-color:var(--orange-edge);color:var(--orange)}
 .sec-body{padding:0 14px 12px}
 
 /* ── Event display ── */
@@ -666,10 +662,11 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   padding:7px 9px;border-radius:var(--radius);font-size:12px;font-family:inherit;
   transition:border-color .15s,background .15s;outline:none;width:100%}
 .field input:focus,.field select:focus,.field textarea:focus{
-  border-color:#3A3A3A;background:var(--surface3)}
+  border-color:var(--orange-edge);background:var(--surface3)}
 .field select{cursor:pointer}
 .field textarea{resize:vertical;min-height:72px;line-height:1.5}
 .field input::placeholder,.field textarea::placeholder{color:var(--text4)}
+.field-help{font-size:9px;color:var(--text4);line-height:1.5;margin-top:3px;letter-spacing:.03em}
 .field-row{display:flex;gap:8px}
 .field-row .field{flex:1}
 .field-row .field.w80{flex:0 0 80px}
@@ -680,7 +677,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   display:flex;align-items:center;justify-content:center;gap:8px;
   transition:border-color .2s,background .2s;
 }
-.logo-upload-wrap:hover{border-color:var(--accent);background:rgba(229,93,0,.06)}
+.logo-upload-wrap:hover{border-color:var(--orange-edge);background:rgba(229,93,0,.06)}
 .logo-upload-wrap span{font-size:10px;color:var(--text3);pointer-events:none}
 
 /* ── Workout list ── */
@@ -688,7 +685,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .wkt-card{display:flex;align-items:center;padding:9px 14px;gap:10px;cursor:pointer;
   border-bottom:1px solid var(--border);transition:background .1s}
 .wkt-card:hover{background:var(--surface2)}
-.wkt-card.active{background:var(--surface2);border-left:3px solid var(--text2)}
+.wkt-card.active{background:var(--surface2);border-left:3px solid var(--orange)}
 .wkt-num{font-size:17px;font-weight:900;color:var(--border3);width:22px;
   flex-shrink:0;text-align:center;line-height:1}
 .wkt-card.active .wkt-num{color:var(--text2)}
@@ -717,15 +714,22 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .import-hint{font-size:9.5px;color:var(--text4);margin-top:7px;line-height:1.5;text-align:center}
 
 /* ── Generate button ── */
-.btn-generate{width:100%;padding:11px;background:#FFF;color:#000;font-size:10px;
-  font-weight:700;letter-spacing:.18em;text-transform:uppercase;border:none;cursor:pointer;
-  border-radius:var(--radius);transition:background .15s;display:flex;align-items:center;
-  justify-content:center;gap:8px}
-.btn-generate:hover{background:#E8E8E8}
+.btn-generate{width:100%;padding:10px 14px;background:#FFF;color:#000;
+  font-family:inherit;border:none;cursor:pointer;border-radius:var(--radius);
+  transition:background .15s,color .15s;display:flex;align-items:center;gap:11px;text-align:left}
+.btn-generate:hover:not(:disabled){background:#E8E8E8}
 .btn-generate:disabled{background:var(--surface3);color:var(--text4);cursor:default}
+.btn-generate:disabled .bg-sub{color:var(--text4)}
+.bg-icon{font-size:13px;flex-shrink:0;line-height:1}
+.bg-text{flex:1;display:flex;flex-direction:column;gap:2px;line-height:1.1;min-width:0}
+.bg-main{font-size:10.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bg-sub{font-size:8.5px;font-weight:600;letter-spacing:.08em;color:#666;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .spinner{display:none;width:11px;height:11px;border:2px solid #333;
-  border-top-color:#000;border-radius:50%;animation:spin .7s linear infinite}
-.generating .spinner{display:block}
+  border-top-color:#000;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+.btn-generate.generating .spinner{display:block}
+.btn-generate.generating .bg-icon{display:none}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── Editor panel ── */
@@ -736,6 +740,12 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   gap:10px;flex-shrink:0}
 .ed-hdr-title{font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
   color:var(--text2);flex:1}
+.ed-opt{display:flex;align-items:center;gap:5px;font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--text3);cursor:pointer;user-select:none}
+.ed-opt input{cursor:pointer;accent-color:var(--orange);margin:0}
+.ed-opt:hover{color:var(--text2)}
+.editor:not(.show-labels) .mth-label,
+.editor:not(.show-labels) .mi-label{display:none}
 .ed-close{background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;
   line-height:1;padding:2px 4px;border-radius:var(--radius);transition:color .12s}
 .ed-close:hover{color:var(--text)}
@@ -752,7 +762,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .mov-table-hdr{display:flex;background:var(--surface3);padding:4px 8px;gap:6px}
 .mov-table-hdr span{font-size:8px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--text4)}
 .mth-nome{flex:1}
-.mth-reps{width:52px;text-align:center}
+.mth-reps{width:70px;text-align:center}
 .mth-label{width:72px}
 .mth-ctrl{width:52px;text-align:center}
 .mov-row{display:flex;align-items:center;gap:6px;padding:5px 8px;
@@ -763,10 +773,22 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .mov-row input{background:var(--surface3);border:1px solid var(--border3);color:var(--text);
   padding:4px 6px;border-radius:var(--radius);font-size:11.5px;font-family:inherit;outline:none;
   transition:border-color .12s;width:100%}
-.mov-row input:focus{border-color:#3A3A3A}
+.mov-row input:focus{border-color:var(--orange-edge)}
 .mov-row .mi-nome{flex:1}
-.mov-row .mi-reps{width:52px;text-align:center}
 .mov-row .mi-label{width:72px;font-size:10.5px}
+.mi-reps-stepper{display:flex;align-items:center;width:70px;flex-shrink:0;
+  border:1px solid var(--border3);border-radius:var(--radius);background:var(--surface3);
+  overflow:hidden;height:24px}
+.mi-reps-stepper:focus-within{border-color:var(--orange-edge)}
+.rs-btn{width:18px;height:24px;background:transparent;border:none;color:var(--text3);
+  cursor:pointer;font-size:14px;line-height:1;padding:0;flex-shrink:0;
+  transition:color .12s,background .12s;font-family:inherit;display:flex;
+  align-items:center;justify-content:center}
+.rs-btn:hover{color:var(--orange);background:rgba(229,93,0,.08)}
+.rs-btn:active{background:rgba(229,93,0,.16)}
+.mi-reps-stepper .mi-reps{border:none!important;background:transparent!important;
+  text-align:center;padding:0;font-size:11.5px;color:var(--text);outline:none;
+  font-family:inherit;width:100%;flex:1;min-width:0}
 .mov-row .mi-sep{flex:1;color:var(--text3);font-style:italic;font-size:11px}
 .mov-row .mi-chegada{flex:1;font-size:10px;font-weight:700;letter-spacing:.12em;
   text-transform:uppercase;color:#3A7;padding:2px 0}
@@ -778,13 +800,18 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   border-radius:var(--radius);transition:background .12s,color .12s}
 .btn-mov:hover{background:#1E2A1E;border-color:#2A402A;color:#8C8}
 
-/* ── Express sections ── */
-.express-section{border:1px solid var(--border3);border-radius:var(--radius);
-  margin-bottom:14px;overflow:hidden}
-.express-hdr{background:var(--surface3);padding:8px 12px;display:flex;align-items:center;gap:10px}
-.express-hdr-title{font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
-  color:var(--text2);flex:1}
-.express-body{padding:12px}
+/* ── Express tabs ── */
+.express-tabs{display:flex;gap:0;margin-bottom:14px;border-bottom:1px solid var(--border)}
+.ex-tab{flex:1;padding:10px 12px;background:none;border:none;color:var(--text3);
+  font-family:inherit;font-size:9.5px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;cursor:pointer;border-bottom:2px solid transparent;
+  margin-bottom:-1px;transition:color .15s,border-color .15s}
+.ex-tab:hover{color:var(--text2)}
+.ex-tab.active{color:var(--text);border-bottom-color:var(--orange)}
+.ex-panel{padding-bottom:8px}
+.ex-tipo{padding:7px 9px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);font-size:11px;color:var(--text3);
+  letter-spacing:.08em;text-transform:uppercase;text-align:center;font-weight:700}
 
 /* ── Divider ── */
 .divider{border:none;border-top:1px solid var(--border);margin:14px 0}
@@ -836,7 +863,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   border:1px solid var(--border3);color:var(--text);border-radius:var(--radius);cursor:pointer;
   font-family:inherit;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
   transition:border-color .12s,background .12s}
-.cs-btn:hover{border-color:#3A3A3A;background:#202020}
+.cs-btn:hover{border-color:var(--orange-edge);background:#202020}
 .cs-name{flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cs-meta{font-size:9px;font-weight:700;color:var(--text3);letter-spacing:.08em}
 .cs-arrow{color:var(--text3);font-size:10px}
@@ -879,7 +906,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .cta-card{background:var(--surface);border:1px solid var(--border3);border-radius:6px;
   padding:22px 18px;text-align:center;cursor:pointer;color:var(--text2);
   transition:border-color .15s,background .15s,transform .12s;font-family:inherit}
-.cta-card:hover{border-color:#3A3A3A;background:var(--surface2);color:var(--text);transform:translateY(-1px)}
+.cta-card:hover{border-color:var(--orange-edge);background:var(--surface2);color:var(--text);transform:translateY(-1px)}
 .cta-icon{font-size:28px;line-height:1;margin-bottom:10px;display:block}
 .cta-title{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:5px}
 .cta-sub{font-size:9.5px;color:var(--text4);letter-spacing:.06em;line-height:1.5}
@@ -916,12 +943,9 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   <span class="hdr-title">Digital Score</span>
   <div class="hdr-right">
     <span class="hdr-version">v1.1.0</span>
-    <span id="aiBadge" style="display:none;font-size:9px;font-weight:700;color:#5A9;letter-spacing:.1em;
+    <span id="aiBadge" title="IA estimando rounds AMRAP via Claude Haiku" style="display:none;font-size:9px;font-weight:700;color:#5A9;letter-spacing:.1em;
       background:rgba(90,153,90,.12);border:1px solid rgba(90,153,90,.3);
-      padding:2px 7px;border-radius:10px;text-transform:uppercase">IA</span>
-    <span id="pdfBadge" style="display:none;font-size:9px;font-weight:700;color:#68A;letter-spacing:.1em;
-      background:rgba(102,136,170,.12);border:1px solid rgba(102,136,170,.3);
-      padding:2px 7px;border-radius:10px;text-transform:uppercase">PDF</span>
+      padding:2px 7px;border-radius:10px;text-transform:uppercase;cursor:help">IA</span>
     <span class="hdr-brand">© Digital Score</span>
   </div>
 </header>
@@ -1030,8 +1054,12 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     <!-- Generate -->
     <div class="sidebar-footer">
       <button class="btn-generate" id="btnGerar" onclick="gerarZIP()" disabled>
+        <span class="bg-icon">⬇</span>
         <div class="spinner"></div>
-        <span id="btnGerarLabel">⬇&nbsp;&nbsp;Gerar Súmulas (ZIP)</span>
+        <div class="bg-text">
+          <span class="bg-main" id="btnGerarLabel">Gerar súmulas</span>
+          <span class="bg-sub" id="btnGerarSub">Adicione um workout pra começar</span>
+        </div>
       </button>
       <button class="btn-clear-all" id="btnClearAll" onclick="limparTudo()" style="display:none">Limpar tudo</button>
     </div>
@@ -1041,6 +1069,10 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   <div class="editor" id="editor">
     <div class="ed-hdr">
       <span class="ed-hdr-title" id="edTitle">Novo Workout</span>
+      <label class="ed-opt" title="Mostrar a coluna Label nas tabelas de movimento">
+        <input type="checkbox" id="chkLabel" onchange="toggleLabelCol()">
+        <span>Label</span>
+      </label>
       <button class="ed-close" onclick="fecharEditor()" title="Fechar">×</button>
     </div>
     <div class="ed-body">
@@ -1088,71 +1120,88 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         </div>
       </div>
 
-      <!-- Express (2 fórmulas) -->
+      <!-- Express (tabs F1 / F2) -->
       <div id="secExpress" style="display:none">
-        <!-- Fórmula 1 -->
-        <div class="express-section">
-          <div class="express-hdr">
-            <span class="express-hdr-title">Fórmula 1</span>
-          </div>
-          <div class="express-body">
+        <div class="express-tabs">
+          <button type="button" class="ex-tab active" data-tab="f1" onclick="switchExpressTab('f1')">Fórmula 1 — AMRAP</button>
+          <button type="button" class="ex-tab" data-tab="f2" onclick="switchExpressTab('f2')">Fórmula 2 — For Time</button>
+        </div>
+
+        <!-- Painel F1 -->
+        <div class="ex-panel" id="exPanelF1">
+          <div class="field-row">
+            <div class="field w80">
+              <label>Início</label>
+              <input id="edF1Start" type="text" placeholder="00:00" maxlength="5">
+            </div>
+            <div class="field w80">
+              <label>Fim</label>
+              <input id="edF1End" type="text" placeholder="05:00" maxlength="5">
+            </div>
             <div class="field">
-              <label>Janela de Tempo</label>
-              <input id="edF1Janela" type="text" placeholder="Ex: 00:00 → 05:00  ·  AMRAP 5 MIN">
+              <label>Tipo</label>
+              <div class="ex-tipo">AMRAP</div>
             </div>
-            <div class="mov-table" id="movTableF1">
-              <div class="mov-table-hdr">
-                <span class="mth-nome">Movimento</span>
-                <span class="mth-reps">Reps</span>
-                <span class="mth-label">Label</span>
-                <span class="mth-ctrl">Ações</span>
-              </div>
-              <div id="movTableF1Body">
-                <div class="empty-table">Adicione movimentos abaixo</div>
-              </div>
+          </div>
+          <div class="mov-table" id="movTableF1" style="margin-top:14px">
+            <div class="mov-table-hdr">
+              <span class="mth-nome">Movimento</span>
+              <span class="mth-reps">Reps</span>
+              <span class="mth-label">Label</span>
+              <span class="mth-ctrl">Ações</span>
             </div>
-            <div class="mov-actions">
-              <button class="btn-mov" onclick="addMov('f1')">+ Movimento</button>
-              <button class="btn-mov" onclick="addSep('f1')">⁝ Separador</button>
+            <div id="movTableF1Body">
+              <div class="empty-table">Adicione movimentos abaixo</div>
             </div>
+          </div>
+          <div class="mov-actions">
+            <button class="btn-mov" onclick="addMov('f1')">+ Movimento</button>
+            <button class="btn-mov" onclick="addSep('f1')">⁝ Separador</button>
           </div>
         </div>
-        <!-- Fórmula 2 -->
-        <div class="express-section">
-          <div class="express-hdr">
-            <span class="express-hdr-title">Fórmula 2</span>
-          </div>
-          <div class="express-body">
+
+        <!-- Painel F2 -->
+        <div class="ex-panel" id="exPanelF2" style="display:none">
+          <div class="field-row">
+            <div class="field w80">
+              <label>Início</label>
+              <input id="edF2Start" type="text" placeholder="06:00" maxlength="5">
+            </div>
+            <div class="field w80">
+              <label>Fim</label>
+              <input id="edF2End" type="text" placeholder="12:00" maxlength="5">
+            </div>
             <div class="field">
-              <label>Janela de Tempo</label>
-              <input id="edF2Janela" type="text" placeholder="Ex: 06:00 → 12:00  ·  FOR TIME">
+              <label>Tipo</label>
+              <div class="ex-tipo">For Time</div>
             </div>
-            <div class="mov-table" id="movTableF2">
-              <div class="mov-table-hdr">
-                <span class="mth-nome">Movimento</span>
-                <span class="mth-reps">Reps</span>
-                <span class="mth-label">Label</span>
-                <span class="mth-ctrl">Ações</span>
-              </div>
-              <div id="movTableF2Body">
-                <div class="empty-table">Adicione movimentos abaixo</div>
-              </div>
+          </div>
+          <div class="mov-table" id="movTableF2" style="margin-top:14px">
+            <div class="mov-table-hdr">
+              <span class="mth-nome">Movimento</span>
+              <span class="mth-reps">Reps</span>
+              <span class="mth-label">Label</span>
+              <span class="mth-ctrl">Ações</span>
             </div>
-            <div class="mov-actions">
-              <button class="btn-mov" onclick="addMov('f2')">+ Movimento</button>
-              <button class="btn-mov" onclick="addSep('f2')">⁝ Separador</button>
-              <button class="btn-mov" onclick="addChegada('f2')">✓ Chegada</button>
+            <div id="movTableF2Body">
+              <div class="empty-table">Adicione movimentos abaixo</div>
             </div>
+          </div>
+          <div class="mov-actions">
+            <button class="btn-mov" onclick="addMov('f2')">+ Movimento</button>
+            <button class="btn-mov" onclick="addSep('f2')">⁝ Separador</button>
+            <button class="btn-mov" onclick="addChegada('f2')">✓ Chegada</button>
           </div>
         </div>
       </div>
 
       <hr class="divider">
 
-      <!-- Descrição -->
+      <!-- Texto livre (opcional) -->
       <div class="field">
-        <label>Descrição (texto da súmula — uma linha por item)</label>
-        <textarea id="edDescricao" placeholder="For time:&#10;20 Chest-to-Bar Pull-Ups&#10;20 Devil's Presses (22,5kg)&#10;Time cap: 10 minutos"></textarea>
+        <label>Texto livre (opcional)</label>
+        <textarea id="edDescricao" placeholder="Ex: &quot;For time:&quot; ou &quot;Time cap: 10 minutos&quot;"></textarea>
+        <span class="field-help">Aparece <strong>acima</strong> da tabela de movimentos. Deixe em branco se a tabela já é suficiente.</span>
       </div>
 
     </div>
@@ -1222,11 +1271,10 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 // ═══════════════════════════════════════════════════════════════════
 (function initApp() {
   fetch('/api/status').then(r=>r.json()).then(s => {
-    if (s.ai_ativo)  document.getElementById('aiBadge').style.display  = '';
-    if (s.pdf_ativo) document.getElementById('pdfBadge').style.display = '';
-    window.PDF_ATIVO = !!s.pdf_ativo;
-  }).catch(()=>{ window.PDF_ATIVO = false; });
+    if (s.ai_ativo) document.getElementById('aiBadge').style.display = '';
+  }).catch(()=>{});
   loadState();
+  applyLabelColPref();
   renderEventoDisplay();
   renderWorkoutList();
   renderAtletasList();
@@ -1251,8 +1299,9 @@ let config = {
 let editingIdx  = -1;   // -1 = new workout
 let previewIdx  = -1;
 let importedData = null;  // resultado completo do último import (pra trocar categoria sem reimportar)
-const STATE_KEY    = 'ds_sumulas_v1_state';
-const IMPORT_KEY   = 'ds_sumulas_v1_import';
+const STATE_KEY     = 'ds_sumulas_v1_state';
+const IMPORT_KEY    = 'ds_sumulas_v1_import';
+const LABEL_COL_KEY = 'ds_sumulas_v1_show_label';
 
 // ═══════════════════════════════════════════════════════════════════
 //  EVENTO
@@ -1400,22 +1449,22 @@ function selectWorkout(idx) {
 function atualizarBotaoGerar() {
   const btn = document.getElementById('btnGerar');
   const lbl = document.getElementById('btnGerarLabel');
+  const sub = document.getElementById('btnGerarSub');
   const nWkt = config.workouts.length;
   const nAtl = config.atletas.length;
-  const fmt  = window.PDF_ATIVO ? 'PDF' : 'HTML';
   btn.disabled = nWkt === 0;
   if (nWkt === 0) {
-    lbl.innerHTML = `&#x2B07;&nbsp;&nbsp;Gerar Súmulas ${fmt} (ZIP)`;
-  } else {
-    const cat = config.evento.categoria || config.evento.nome || '';
-    const catLabel = cat ? esc(cat) + ' — ' : '';
-    if (nAtl > 0) {
-      const total = nWkt * nAtl;
-      lbl.innerHTML = `&#x2B07;&nbsp;&nbsp;Gerar ${catLabel}${total} súmulas ${fmt} (${nAtl} × ${nWkt} WKTs)`;
-    } else {
-      lbl.innerHTML = `&#x2B07;&nbsp;&nbsp;Gerar ${catLabel}${nWkt} súmula${nWkt !== 1 ? 's' : ''} ${fmt}`;
-    }
+    lbl.textContent = 'Gerar súmulas';
+    sub.textContent = 'Adicione um workout pra começar';
+    return;
   }
+  const total = nAtl ? nWkt * nAtl : nWkt;
+  lbl.textContent = `Gerar ${total} súmula${total !== 1 ? 's' : ''}`;
+  const evt  = config.evento.categoria || config.evento.nome;
+  const meta = nAtl
+    ? `${nAtl} atleta${nAtl !== 1 ? 's' : ''} × ${nWkt} workout${nWkt !== 1 ? 's' : ''}`
+    : `${nWkt} workout${nWkt !== 1 ? 's' : ''}`;
+  sub.textContent = evt ? `${evt} · ${meta}` : meta;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1423,17 +1472,17 @@ function atualizarBotaoGerar() {
 // ═══════════════════════════════════════════════════════════════════
 function novoWorkout() {
   editingIdx = -1;
-  const n = config.workouts.length + 1;
   document.getElementById('edTitle').textContent = 'Novo Workout';
   document.getElementById('edNome').value = '';
   document.getElementById('edTipo').value = 'for_time';
   document.getElementById('edTimeCap').value = '';
   document.getElementById('edDescricao').value = '';
-  document.getElementById('edF1Janela').value = '';
-  document.getElementById('edF2Janela').value = '';
+  setExpressJanela('f1', '', '');
+  setExpressJanela('f2', '', '');
   setMovTableFromArray('main', []);
   setMovTableFromArray('f1', []);
   setMovTableFromArray('f2', []);
+  switchExpressTab('f1');
   onTipoChange();
   abrirEditor();
 }
@@ -1447,10 +1496,13 @@ function editarWorkout(idx) {
   document.getElementById('edTimeCap').value = w.time_cap || '';
   document.getElementById('edDescricao').value = (w.descricao || []).join('\n');
   if (w.tipo === 'express') {
-    document.getElementById('edF1Janela').value = (w.formula1 || {}).janela || '';
-    document.getElementById('edF2Janela').value = (w.formula2 || {}).janela || '';
+    const j1 = parseJanela((w.formula1 || {}).janela);
+    const j2 = parseJanela((w.formula2 || {}).janela);
+    setExpressJanela('f1', j1.start, j1.end);
+    setExpressJanela('f2', j2.start, j2.end);
     setMovTableFromArray('f1', (w.formula1 || {}).movimentos || []);
     setMovTableFromArray('f2', (w.formula2 || {}).movimentos || []);
+    switchExpressTab('f1');
   } else {
     setMovTableFromArray('main', w.movimentos || []);
   }
@@ -1472,6 +1524,48 @@ function onTipoChange() {
   document.getElementById('secMovimentos').style.display = t !== 'express' ? '' : 'none';
   document.getElementById('secExpress').style.display    = t === 'express' ? '' : 'none';
   document.getElementById('btnChegadaMain').style.display = t === 'amrap' ? 'none' : '';
+  if (t === 'express') switchExpressTab('f1');
+}
+
+function switchExpressTab(tab) {
+  ['f1','f2'].forEach(t => {
+    const btn = document.querySelector(`.ex-tab[data-tab="${t}"]`);
+    const pnl = document.getElementById('exPanel' + t.toUpperCase());
+    if (btn) btn.classList.toggle('active', t === tab);
+    if (pnl) pnl.style.display = (t === tab) ? '' : 'none';
+  });
+}
+
+// ── Janela estruturada (start/end mm:ss) ↔ string canônica ──
+function setExpressJanela(section, start, end) {
+  const sId = section === 'f1' ? 'edF1Start' : 'edF2Start';
+  const eId = section === 'f1' ? 'edF1End'   : 'edF2End';
+  document.getElementById(sId).value = start || '';
+  document.getElementById(eId).value = end   || '';
+}
+
+function parseJanela(janela) {
+  const m = String(janela || '').match(/(\d{1,2}:\d{2})\s*[→\-]\s*(\d{1,2}:\d{2})/);
+  return m ? { start: m[1], end: m[2] } : { start: '', end: '' };
+}
+
+function mmssToSec(mmss) {
+  const m = String(mmss || '').match(/^(\d+):(\d{1,2})$/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function buildJanelaAmrap(start, end) {
+  if (!start && !end) return '';
+  const ss = mmssToSec(start), es = mmssToSec(end);
+  if (ss == null || es == null || es <= ss) return `${start} → ${end}  ·  AMRAP`;
+  const dur = Math.round((es - ss) / 60);
+  return `${start} → ${end}  ·  AMRAP ${dur} MIN`;
+}
+
+function buildJanelaForTime(start, end) {
+  if (!start && !end) return '';
+  return `${start} → ${end}  ·  FOR TIME`;
 }
 
 function salvarWorkout() {
@@ -1497,13 +1591,17 @@ function salvarWorkout() {
   wkt.descricao = desc;
 
   if (tipo === 'express') {
+    const f1Start = document.getElementById('edF1Start').value.trim();
+    const f1End   = document.getElementById('edF1End').value.trim();
+    const f2Start = document.getElementById('edF2Start').value.trim();
+    const f2End   = document.getElementById('edF2End').value.trim();
     wkt.formula1 = {
-      janela: document.getElementById('edF1Janela').value.trim(),
+      janela: buildJanelaAmrap(f1Start, f1End),
       descricao: [],
       movimentos: getMovTableArray('f1')
     };
     wkt.formula2 = {
-      janela: document.getElementById('edF2Janela').value.trim(),
+      janela: buildJanelaForTime(f2Start, f2End),
       descricao: [],
       movimentos: getMovTableArray('f2')
     };
@@ -1607,7 +1705,11 @@ function appendMovRow(section, mov) {
     row.dataset.type = 'normal';
     row.innerHTML = `
       <input class="mi-nome" value="${esc(mov.nome || '')}" placeholder="Nome do movimento">
-      <input class="mi-reps" type="number" min="1" value="${mov.reps || ''}" placeholder="—" style="width:52px;text-align:center">
+      <div class="mi-reps-stepper">
+        <button class="rs-btn" tabindex="-1" onclick="repsStep(this,-1)">−</button>
+        <input class="mi-reps" type="text" inputmode="numeric" value="${mov.reps || ''}" placeholder="—">
+        <button class="rs-btn" tabindex="-1" onclick="repsStep(this,+1)">+</button>
+      </div>
       <input class="mi-label" value="${esc(mov.label || '')}" placeholder="Label" style="width:72px;font-size:10.5px">
       <div class="mi-ctrl">${ctrlBtns(section)}</div>`;
   }
@@ -1618,6 +1720,15 @@ function appendMovRow(section, mov) {
 function ctrlBtns(section) {
   return `<button class="icon-btn" onclick="movUp(this)" title="Subir">↑</button>
     <button class="icon-btn danger" onclick="removeRow(this)" title="Remover">×</button>`;
+}
+
+function repsStep(btn, delta) {
+  const inp = btn.parentElement.querySelector('.mi-reps');
+  let v = parseInt(inp.value, 10);
+  if (isNaN(v)) v = 0;
+  v = Math.max(1, Math.min(999, v + delta));
+  inp.value = v;
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function addMov(section) {
@@ -1688,9 +1799,11 @@ function gerarZIP() {
   if (!config.workouts.length) return;
   const btn = document.getElementById('btnGerar');
   const lbl = document.getElementById('btnGerarLabel');
+  const sub = document.getElementById('btnGerarSub');
   btn.disabled = true;
   btn.classList.add('generating');
   lbl.textContent = 'Gerando…';
+  sub.textContent = 'Aguarde, montando o ZIP';
 
   fetch('/api/generate', {
     method: 'POST',
@@ -2043,6 +2156,22 @@ function clearState() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  PREFERÊNCIAS DO EDITOR (coluna Label)
+// ═══════════════════════════════════════════════════════════════════
+function applyLabelColPref() {
+  const show = localStorage.getItem(LABEL_COL_KEY) === '1';
+  const chk  = document.getElementById('chkLabel');
+  if (chk) chk.checked = show;
+  document.getElementById('editor').classList.toggle('show-labels', show);
+}
+
+function toggleLabelCol() {
+  const show = document.getElementById('chkLabel').checked;
+  document.getElementById('editor').classList.toggle('show-labels', show);
+  try { localStorage.setItem(LABEL_COL_KEY, show ? '1' : '0'); } catch (e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  HELPERS
 // ═══════════════════════════════════════════════════════════════════
 function esc(s) {
@@ -2073,7 +2202,6 @@ class SumulaHandler(BaseHTTPRequestHandler):
             payload = json.dumps({
                 "ai_ativo":    AI_ATIVO,
                 "ai_provider": "Anthropic Claude Haiku" if AI_ATIVO else None,
-                "pdf_ativo":   HAS_PDF_GEN,
                 "versao":      "1.1.0"
             })
             self._send(200, 'application/json; charset=utf-8', payload.encode())
@@ -2124,11 +2252,6 @@ class SumulaHandler(BaseHTTPRequestHandler):
         if atletas:
             atletas = sorted(atletas, key=_atleta_sort_key)
 
-        # Escolhe fontes: file:// para PDF (rápido), data: para HTML
-        use_pdf  = HAS_PDF_GEN and bool(FONTS_PDF)
-        fonts    = FONTS_PDF if use_pdf else FONTS
-        ext      = '.pdf'  if use_pdf else '.html'
-
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
             if atletas:
@@ -2144,16 +2267,8 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 for wkt in workouts:
                     num  = wkt.get('numero', 1)
                     nome = wkt.get('nome', 'wkt')
-                    html = render_workout(ev, wkt, fonts, logo, logo_evt)
-                    if use_pdf:
-                        try:
-                            data = WP_HTML(string=html).write_pdf()
-                        except Exception as e:
-                            print(f"  ⚠  PDF falhou ({e})")
-                            data = render_workout(ev, wkt, FONTS, logo, logo_evt).encode('utf-8')
-                    else:
-                        data = html.encode('utf-8')
-                    zf.writestr(f"{num:02d}_{sanitize(nome)}{ext}", data)
+                    html = render_workout(ev, wkt, FONTS, logo, logo_evt)
+                    zf.writestr(f"{num:02d}_{sanitize(nome)}.html", html.encode('utf-8'))
 
         cat = sanitize(ev.get('categoria', '') or ev.get('nome', 'sumulas'))
         self._send(200, 'application/zip', buf.getvalue(),
