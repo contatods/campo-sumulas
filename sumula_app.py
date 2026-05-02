@@ -47,11 +47,18 @@ except ImportError:
 AI_KEY   = os.environ.get('ANTHROPIC_API_KEY', '')
 AI_ATIVO = HAS_ANTHROPIC and bool(AI_KEY)
 
+# ── PDF automático (WeasyPrint) — opcional ──────────────────────────────────────
+try:
+    from weasyprint import HTML as WP_HTML; HAS_PDF_GEN = True
+except (ImportError, Exception):
+    HAS_PDF_GEN = False
+
 # ── Carregar fontes na inicialização ────────────────────────────────────────────
 print("╔══════════════════════════════════════════════╗")
 print("║  Súmulas Digital Score  —  v1.1.0            ║")
 print("╚══════════════════════════════════════════════╝\n")
-print("⏳ Carregando fontes...")
+print("⏳ Carregando fontes e módulos...")
+
 FONTS = load_fonts()
 
 # ── Logo padrão Digital Score (carregada do arquivo ds_logo.png) ────────────
@@ -62,6 +69,15 @@ if DS_LOGO_PADRAO:
     print("  ✓ Logo Digital Score carregada")
 else:
     print("  ⚠  ds_logo.png não encontrada — header sem logo padrão")
+if AI_ATIVO:
+    print("  ✓ IA ativa (Anthropic Claude Haiku) — cálculo inteligente de rounds")
+else:
+    print("  ○  IA inativa (defina ANTHROPIC_API_KEY para ativar)")
+if HAS_PDF_GEN:
+    print("  ✓ WeasyPrint — geração automática de PDF ativa")
+else:
+    print("  ○  WeasyPrint não instalado — ZIP conterá HTML")
+    print("     Para ativar PDF: pip install weasyprint")
 print()
 
 
@@ -825,6 +841,9 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     <span id="aiBadge" style="display:none;font-size:9px;font-weight:700;color:#5A9;letter-spacing:.1em;
       background:rgba(90,153,90,.12);border:1px solid rgba(90,153,90,.3);
       padding:2px 7px;border-radius:10px;text-transform:uppercase">IA</span>
+    <span id="pdfBadge" style="display:none;font-size:9px;font-weight:700;color:#68A;letter-spacing:.1em;
+      background:rgba(102,136,170,.12);border:1px solid rgba(102,136,170,.3);
+      padding:2px 7px;border-radius:10px;text-transform:uppercase">PDF</span>
     <span class="hdr-brand">© Digital Score</span>
   </div>
 </header>
@@ -1084,10 +1103,12 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 //  INIT
 // ═══════════════════════════════════════════════════════════════════
 (function initApp() {
-  // Mostra badge de IA se ativa no servidor
   fetch('/api/status').then(r=>r.json()).then(s => {
-    if (s.ai_ativo) document.getElementById('aiBadge').style.display = '';
-  }).catch(()=>{});
+    if (s.ai_ativo)  document.getElementById('aiBadge').style.display  = '';
+    if (s.pdf_ativo) document.getElementById('pdfBadge').style.display = '';
+    window.PDF_ATIVO = !!s.pdf_ativo;
+    atualizarBotaoGerar();
+  }).catch(()=>{ window.PDF_ATIVO = false; });
 })();
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1239,17 +1260,18 @@ function atualizarBotaoGerar() {
   const lbl = document.getElementById('btnGerarLabel');
   const nWkt = config.workouts.length;
   const nAtl = config.atletas.length;
+  const fmt  = window.PDF_ATIVO ? 'PDF' : 'HTML';
   btn.disabled = nWkt === 0;
   if (nWkt === 0) {
-    lbl.innerHTML = '&#x2B07;&nbsp;&nbsp;Gerar Súmulas (ZIP)';
+    lbl.innerHTML = `&#x2B07;&nbsp;&nbsp;Gerar Súmulas ${fmt} (ZIP)`;
   } else {
     const cat = config.evento.categoria || config.evento.nome || '';
     const catLabel = cat ? esc(cat) + ' — ' : '';
     if (nAtl > 0) {
       const total = nWkt * nAtl;
-      lbl.innerHTML = `&#x2B07;&nbsp;&nbsp;Gerar ${catLabel}${total} súmulas (${nAtl} atletas × ${nWkt} WKTs)`;
+      lbl.innerHTML = `&#x2B07;&nbsp;&nbsp;Gerar ${catLabel}${total} súmulas ${fmt} (${nAtl} × ${nWkt} WKTs)`;
     } else {
-      lbl.innerHTML = `&#x2B07;&nbsp;&nbsp;Gerar ${catLabel}${nWkt} súmula${nWkt !== 1 ? 's' : ''} (sem atletas)`;
+      lbl.innerHTML = `&#x2B07;&nbsp;&nbsp;Gerar ${catLabel}${nWkt} súmula${nWkt !== 1 ? 's' : ''} ${fmt}`;
     }
   }
 }
@@ -1677,6 +1699,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
             payload = json.dumps({
                 "ai_ativo":    AI_ATIVO,
                 "ai_provider": "Anthropic Claude Haiku" if AI_ATIVO else None,
+                "pdf_ativo":   HAS_PDF_GEN,
                 "versao":      "1.1.0"
             })
             self._send(200, 'application/json; charset=utf-8', payload.encode())
@@ -1714,6 +1737,19 @@ class SumulaHandler(BaseHTTPRequestHandler):
         html = render_workout(ev, wkt, FONTS, logo, logo_evt)
         self._send(200, 'text/html; charset=utf-8', html.encode('utf-8'))
 
+    @staticmethod
+    def _html_para_arquivo(html_str):
+        """Converte HTML para PDF (se WeasyPrint disponível) ou retorna HTML.
+        Retorna (bytes, extensão).
+        """
+        if HAS_PDF_GEN:
+            try:
+                pdf = WP_HTML(string=html_str).write_pdf()
+                return pdf, '.pdf'
+            except Exception as e:
+                print(f"  ⚠  PDF falhou ({e}) — usando HTML como fallback")
+        return html_str.encode('utf-8'), '.html'
+
     def _handle_generate(self, body):
         cfg      = body['config']
         ev       = cfg.get('evento', {})
@@ -1728,25 +1764,26 @@ class SumulaHandler(BaseHTTPRequestHandler):
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
             if atletas:
                 # Uma súmula por atleta × por workout
-                # Organização: WKT01_TWENTIES / 001_Joao_Silva.html
+                # Organização: WKT01_TWENTIES / 001_Joao_Silva.html (ou .pdf)
                 for wkt in workouts:
-                    num_w = wkt.get('numero', 1)
+                    num_w  = wkt.get('numero', 1)
                     nome_w = wkt.get('nome', 'wkt')
-                    pasta = f"WKT{num_w:02d}_{sanitize(nome_w)}"
+                    pasta  = f"WKT{num_w:02d}_{sanitize(nome_w)}"
                     for atleta in atletas:
-                        nome_a = atleta.get('nome', 'atleta')
-                        num_a  = atleta.get('numero', '')
+                        nome_a  = atleta.get('nome', 'atleta')
+                        num_a   = atleta.get('numero', '')
                         prefixo = f"{sanitize(num_a)}_" if num_a else ""
-                        html = render_workout(ev, wkt, FONTS, logo, logo_evt, atleta)
-                        zf.writestr(f"{pasta}/{prefixo}{sanitize(nome_a)}.html",
-                                    html.encode('utf-8'))
+                        html    = render_workout(ev, wkt, FONTS, logo, logo_evt, atleta)
+                        conteudo, ext = self._html_para_arquivo(html)
+                        zf.writestr(f"{pasta}/{prefixo}{sanitize(nome_a)}{ext}", conteudo)
             else:
                 # Sem atletas: um modelo em branco por workout
                 for wkt in workouts:
                     num  = wkt.get('numero', 1)
                     nome = wkt.get('nome', 'wkt')
                     html = render_workout(ev, wkt, FONTS, logo, logo_evt)
-                    zf.writestr(f"{num:02d}_{sanitize(nome)}.html", html.encode('utf-8'))
+                    conteudo, ext = self._html_para_arquivo(html)
+                    zf.writestr(f"{num:02d}_{sanitize(nome)}{ext}", conteudo)
 
         cat = sanitize(ev.get('categoria', '') or ev.get('nome', 'sumulas'))
         self._send(200, 'application/zip', buf.getvalue(),
