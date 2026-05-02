@@ -980,6 +980,7 @@ function onEventoChange() {
   config.evento.data      = document.getElementById('evData').value.trim();
   renderEventoDisplay();
   atualizarBotaoGerar();
+  refreshPreview();
 }
 
 function onLogoEvento(input) {
@@ -991,6 +992,7 @@ function onLogoEvento(input) {
     const ph  = document.getElementById('logoEventoPlaceholder');
     img.src = e.target.result; img.style.display = '';
     ph.style.display = 'none';
+    refreshPreview();
   };
   reader.readAsDataURL(input.files[0]);
 }
@@ -1004,8 +1006,15 @@ function onLogoEmpresa(input) {
     const ph  = document.getElementById('logoEmpresaPlaceholder');
     img.src = e.target.result; img.style.display = '';
     ph.style.display = 'none';
+    refreshPreview();
   };
   reader.readAsDataURL(input.files[0]);
+}
+
+function refreshPreview() {
+  if (previewIdx >= 0 && previewIdx < config.workouts.length) {
+    previewWorkout(previewIdx);
+  }
 }
 
 function renderEventoDisplay() {

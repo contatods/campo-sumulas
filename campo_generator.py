@@ -115,8 +115,8 @@ body{
 }
 .page-footer{margin-top:auto;}
 .ds-credit{
-  text-align:right;font-size:5.5pt;color:#999;
-  letter-spacing:.06em;margin-bottom:1mm;
+  text-align:center;font-size:5pt;color:#bbb;
+  letter-spacing:.1em;margin-top:3mm;
   font-family:var(--font-body);text-transform:uppercase;
 }
 
@@ -817,7 +817,6 @@ TMPL_STR = r"""<!DOCTYPE html>
       {{ ev.nome|upper }}{% if wkt.arena %}<span class="hdr-sep"> / </span>{{ wkt.arena|upper }}{% endif %}
     </div>
     {% if ev.categoria %}<div class="hdr-cat">{{ ev.categoria|upper }}</div>{% endif %}
-    <div class="hdr-cat-credit">Gerada pelo sistema Digital Score</div>
   </div>
   <div class="hdr-evento-col">
     {% if logo_evento_src %}<img class="hdr-evento-logo" src="{{ logo_evento_src }}">{% endif %}
@@ -926,6 +925,7 @@ TMPL_STR = r"""<!DOCTYPE html>
       <div class="obs-line"></div>
     </div>
   </div>
+  <div class="ds-credit">Gerada pelo sistema Digital Score</div>
 </div>
 
 </body>
