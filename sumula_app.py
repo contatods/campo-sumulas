@@ -38,9 +38,18 @@ try:
 except ImportError:
     HAS_PDF = False
 
+# ── IA (Anthropic) — opcional ───────────────────────────────────────────────────
+try:
+    import anthropic; HAS_ANTHROPIC = True
+except ImportError:
+    HAS_ANTHROPIC = False
+
+AI_KEY   = os.environ.get('ANTHROPIC_API_KEY', '')
+AI_ATIVO = HAS_ANTHROPIC and bool(AI_KEY)
+
 # ── Carregar fontes na inicialização ────────────────────────────────────────────
 print("╔══════════════════════════════════════════════╗")
-print("║  Súmulas Digital Score  —  v1.0.0            ║")
+print("║  Súmulas Digital Score  —  v1.1.0            ║")
 print("╚══════════════════════════════════════════════╝\n")
 print("⏳ Carregando fontes...")
 FONTS = load_fonts()
@@ -304,6 +313,112 @@ def _parse_atletas(wb):
     return resultado
 
 
+def assign_workout_numbers(workouts):
+    """Recalcula números de workouts considerando slots.
+    Express Formula ocupa 2 slots (N e N+1). Outros ocupam 1 slot.
+    Modifica a lista in-place e retorna ela.
+    """
+    counter = 1
+    for wkt in workouts:
+        wkt['numero'] = counter
+        if wkt.get('tipo') == 'express':
+            wkt['numero_f2'] = counter + 1
+            counter += 2
+        else:
+            wkt.pop('numero_f2', None)
+            counter += 1
+    return workouts
+
+
+# ── Rounds AMRAP: estimativa algorítmica e por IA ──────────────────────────────
+
+def _extrair_minutos(texto):
+    """Extrai duração em minutos de strings como:
+       '10 min', 'AMRAP 5 MIN', '00:00 → 05:00', 'Time Cap: 8 min'
+    """
+    if not texto: return None
+    t = str(texto)
+    m = re.search(r'amrap\s+(\d+)\s*min', t, re.I)
+    if m: return int(m.group(1))
+    # "XX:XX → YY:YY" — extrai duração entre os dois horários
+    m = re.search(r'(\d{1,2}):(\d{2})\s*[→\-]+\s*(\d{1,2}):(\d{2})', t)
+    if m:
+        s = int(m.group(1)) * 60 + int(m.group(2))
+        e = int(m.group(3)) * 60 + int(m.group(4))
+        return max(1, (e - s) // 60)
+    m = re.search(r'(\d+)\s*min', t, re.I)
+    if m: return int(m.group(1))
+    return None
+
+
+def _estimar_rounds_algoritmico(movimentos, duracao_str):
+    """Estimativa de rounds baseada em reps totais e tempo disponível.
+    Usa pace conservador de ~6-10 reps/min dependendo do volume.
+    Retorna número de linhas a mostrar no scorecard (rounds esperados + buffer).
+    """
+    mins = _extrair_minutos(duracao_str or '')
+    if not mins: return 4
+    movs = [m for m in (movimentos or [])
+            if not m.get('separador') and not m.get('chegada')]
+    reps_round = sum(int(m['reps']) for m in movs if m.get('reps') and str(m['reps']).isdigit())
+    if not reps_round: return 4
+    # Pace: menos reps/min em workouts de alto volume (fadiga acumulada)
+    pace = 6 if reps_round > 50 else 8 if reps_round > 25 else 10
+    rounds_esperados = (mins * pace) / reps_round
+    # Retorna rounds esperados + 2 para atletas mais rápidos
+    return max(3, round(rounds_esperados) + 2)
+
+
+def _estimar_rounds_ia(movimentos, duracao_str):
+    """Usa Claude Haiku para estimar rounds esperados num AMRAP.
+    Faz fallback algorítmico se IA não estiver disponível ou falhar.
+    """
+    if not AI_ATIVO:
+        return _estimar_rounds_algoritmico(movimentos, duracao_str)
+    mins = _extrair_minutos(duracao_str or '') or 5
+    movs = [m for m in (movimentos or [])
+            if not m.get('separador') and not m.get('chegada')]
+    desc = ', '.join(f"{m.get('reps','')}x {m.get('nome','')}" for m in movs if m.get('nome'))
+    if not desc:
+        return _estimar_rounds_algoritmico(movimentos, duracao_str)
+    try:
+        client = anthropic.Anthropic(api_key=AI_KEY)
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=20,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"CrossFit AMRAP {mins} min: {desc}. "
+                    "Quantos rounds completos um atleta intermediário faria? "
+                    "Responda apenas com o número inteiro, sem mais texto."
+                )
+            }]
+        )
+        n = int(re.search(r'\d+', resp.content[0].text).group())
+        return max(2, n + 2)   # n esperados + 2 linhas de buffer no scorecard
+    except Exception as e:
+        print(f"  ⚠  IA rounds: {e}")
+        return _estimar_rounds_algoritmico(movimentos, duracao_str)
+
+
+def enriquecer_workouts(workouts):
+    """Calcula campos derivados para todos os workouts antes de renderizar.
+    - AMRAP: adiciona 'n_rounds' (estimado por IA ou algoritmo)
+    - Express F1: adiciona 'n_rounds' na formula1
+    """
+    for wkt in workouts:
+        if wkt.get('tipo') == 'amrap':
+            duracao = wkt.get('time_cap', '') or ''
+            if 'n_rounds' not in wkt:
+                wkt['n_rounds'] = _estimar_rounds_ia(wkt.get('movimentos', []), duracao)
+        elif wkt.get('tipo') == 'express':
+            f1 = wkt.get('formula1', {})
+            if f1 and 'n_rounds' not in f1:
+                f1['n_rounds'] = _estimar_rounds_ia(f1.get('movimentos', []), f1.get('janela', ''))
+    return workouts
+
+
 def _parse_excel_grade(wb, sname):
     """Parseia formato grade: col=categoria, linha=workout."""
     ws = wb[sname]
@@ -456,7 +571,7 @@ HTML_INTERFACE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Súmulas — Digital Score</title>
+<title>Súmulas Digital Score — v1.1.0</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -706,7 +821,10 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   <div class="hdr-divider"></div>
   <span class="hdr-title">Digital Score</span>
   <div class="hdr-right">
-    <span class="hdr-version">v1.0.0</span>
+    <span class="hdr-version">v1.1.0</span>
+    <span id="aiBadge" style="display:none;font-size:9px;font-weight:700;color:#5A9;letter-spacing:.1em;
+      background:rgba(90,153,90,.12);border:1px solid rgba(90,153,90,.3);
+      padding:2px 7px;border-radius:10px;text-transform:uppercase">IA</span>
     <span class="hdr-brand">© Digital Score</span>
   </div>
 </header>
@@ -963,6 +1081,16 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 
 <script>
 // ═══════════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════════
+(function initApp() {
+  // Mostra badge de IA se ativa no servidor
+  fetch('/api/status').then(r=>r.json()).then(s => {
+    if (s.ai_ativo) document.getElementById('aiBadge').style.display = '';
+  }).catch(()=>{});
+})();
+
+// ═══════════════════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════════════════
 let config = {
@@ -1056,15 +1184,35 @@ function renderEventoDisplay() {
 // ═══════════════════════════════════════════════════════════════════
 const TIPO_LABEL = { for_time: 'For Time', amrap: 'AMRAP', express: 'Express' };
 
+function computeWorkoutNumbers() {
+  // Express ocupa 2 slots (N e N+1), demais 1 slot cada
+  let counter = 1;
+  config.workouts.forEach(w => {
+    w.numero = counter;
+    if (w.tipo === 'express') {
+      w.numero_f2 = counter + 1;
+      counter += 2;
+    } else {
+      delete w.numero_f2;
+      counter += 1;
+    }
+  });
+}
+
 function renderWorkoutList() {
+  computeWorkoutNumbers();
   const el = document.getElementById('workoutList');
   if (!config.workouts.length) {
     el.innerHTML = '<div class="wkt-empty">Nenhum workout ainda.<br>Clique em "+ Novo" para começar.</div>';
     return;
   }
-  el.innerHTML = config.workouts.map((w, i) => `
+  el.innerHTML = config.workouts.map((w, i) => {
+    const numHtml = (w.tipo === 'express' && w.numero_f2 !== undefined)
+      ? `<span style="font-size:10px;line-height:1.15">${w.numero}<span style="font-size:8px;opacity:.55">·${w.numero_f2}</span></span>`
+      : w.numero;
+    return `
     <div class="wkt-card${previewIdx === i ? ' active' : ''}" id="wcard${i}" onclick="selectWorkout(${i})">
-      <div class="wkt-num">${w.numero}</div>
+      <div class="wkt-num">${numHtml}</div>
       <div class="wkt-info">
         <div class="wkt-name">${esc(w.nome)}</div>
         <div class="wkt-tags">
@@ -1076,7 +1224,8 @@ function renderWorkoutList() {
         <button class="icon-btn" onclick="event.stopPropagation();editarWorkout(${i})" title="Editar">✎</button>
         <button class="icon-btn danger" onclick="event.stopPropagation();deletarWorkout(${i})" title="Excluir">×</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function selectWorkout(idx) {
@@ -1172,7 +1321,7 @@ function salvarWorkout() {
   if (editingIdx >= 0) {
     wkt = config.workouts[editingIdx];
   } else {
-    wkt = { numero: config.workouts.length + 1, modalidade: 'individual' };
+    wkt = { numero: 0, modalidade: 'individual' };
     config.workouts.push(wkt);
     editingIdx = config.workouts.length - 1;
   }
@@ -1212,8 +1361,7 @@ function salvarWorkout() {
 function deletarWorkout(idx) {
   if (!confirm(`Excluir workout "${config.workouts[idx].nome}"?`)) return;
   config.workouts.splice(idx, 1);
-  // Renumber
-  config.workouts.forEach((w, i) => w.numero = i + 1);
+  computeWorkoutNumbers(); // Renumber with Express slot logic
   if (previewIdx >= config.workouts.length) previewIdx = config.workouts.length - 1;
   renderWorkoutList();
   atualizarBotaoGerar();
@@ -1525,6 +1673,13 @@ class SumulaHandler(BaseHTTPRequestHandler):
         if self.path in ('/', '/index.html'):
             html = HTML_INTERFACE.replace('DS_LOGO_PADRAO', f'"{DS_LOGO_PADRAO}"')
             self._send(200, 'text/html; charset=utf-8', html.encode('utf-8'))
+        elif self.path == '/api/status':
+            payload = json.dumps({
+                "ai_ativo":    AI_ATIVO,
+                "ai_provider": "Anthropic Claude Haiku" if AI_ATIVO else None,
+                "versao":      "1.1.0"
+            })
+            self._send(200, 'application/json; charset=utf-8', payload.encode())
         else:
             self._send(404, 'text/plain', b'Not found')
 
@@ -1550,7 +1705,10 @@ class SumulaHandler(BaseHTTPRequestHandler):
         cfg      = body['config']
         idx      = int(body['workout_index'])
         ev       = cfg.get('evento', {})
-        wkt      = cfg['workouts'][idx]
+        workouts = cfg['workouts']
+        assign_workout_numbers(workouts)   # recalcula com slots Express
+        enriquecer_workouts(workouts)      # calcula n_rounds por IA/algoritmo
+        wkt      = workouts[idx]
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
         logo_evt = ev.get('logo_evento', '')   # data-URL vinda do front
         html = render_workout(ev, wkt, FONTS, logo, logo_evt)
@@ -1562,13 +1720,16 @@ class SumulaHandler(BaseHTTPRequestHandler):
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
         logo_evt = ev.get('logo_evento', '')
         atletas  = cfg.get('atletas', [])   # lista de atletas da categoria atual
+        workouts = cfg['workouts']
+        assign_workout_numbers(workouts)   # recalcula com slots Express
+        enriquecer_workouts(workouts)      # calcula n_rounds por IA/algoritmo
 
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
             if atletas:
                 # Uma súmula por atleta × por workout
                 # Organização: WKT01_TWENTIES / 001_Joao_Silva.html
-                for wkt in cfg['workouts']:
+                for wkt in workouts:
                     num_w = wkt.get('numero', 1)
                     nome_w = wkt.get('nome', 'wkt')
                     pasta = f"WKT{num_w:02d}_{sanitize(nome_w)}"
@@ -1581,7 +1742,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
                                     html.encode('utf-8'))
             else:
                 # Sem atletas: um modelo em branco por workout
-                for wkt in cfg['workouts']:
+                for wkt in workouts:
                     num  = wkt.get('numero', 1)
                     nome = wkt.get('nome', 'wkt')
                     html = render_workout(ev, wkt, FONTS, logo, logo_evt)

@@ -254,7 +254,7 @@ body{
    Time cap right rail = arbiter reference during workout.
    ══════════════════════════════════════════════════════ */
 .wkt-zone{
-  height:11mm;background:var(--panel);
+  min-height:11mm;height:auto;background:var(--panel);
   display:flex;align-items:stretch;
   margin-bottom:1.5mm;
   border-top:1px solid rgba(255,255,255,.05);
@@ -265,6 +265,24 @@ body{
   display:flex;align-items:center;justify-content:center;
   font-size:16pt;font-weight:900;color:var(--ink);line-height:1;
 }
+.wkt-badge-dual{
+  width:14mm;flex-shrink:0;
+  background:var(--w);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:0;line-height:1;
+}
+.wkt-badge-dual .bd-num{
+  font-size:11pt;font-weight:900;color:var(--ink);line-height:1.1;
+}
+.wkt-badge-dual .bd-sep{
+  font-size:7pt;font-weight:700;color:var(--ghost);letter-spacing:.05em;
+}
+.sbn-badge{
+  width:6mm;height:6mm;background:var(--w);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:8pt;font-weight:900;color:var(--ink);flex-shrink:0;
+  margin-right:2mm;
+}
 .wkt-body{
   flex:1;display:flex;flex-direction:column;
   justify-content:center;padding:0 3.5mm;min-width:0;
@@ -272,7 +290,7 @@ body{
 .wkt-name{
   font-size:18pt;font-weight:900;color:var(--w);
   letter-spacing:-.02em;line-height:.95;text-transform:uppercase;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  white-space:normal;overflow-wrap:break-word;
 }
 .wkt-type{
   display:block;font-size:4.5pt;font-weight:700;
@@ -513,7 +531,7 @@ body{
    ══════════════════════════════════════════════════════ */
 .amrap-wrap{border:2px solid var(--ink);overflow:hidden;margin-bottom:0}
 .amrap-hdr{display:flex;align-items:center;background:var(--panel);height:6mm}
-.amrap-subhdr{display:flex;align-items:center;background:var(--paper);height:4.5mm;border-bottom:1px solid var(--rule)}
+.amrap-subhdr{display:flex;align-items:stretch;background:var(--paper);min-height:4.5mm;height:auto;border-bottom:1px solid var(--rule)}
 .amrap-row{
   display:flex;align-items:stretch;min-height:7mm;
   border-top:1px solid var(--rule);background:var(--w);
@@ -553,7 +571,7 @@ body{
 .ah-n{flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10pt;font-weight:900;color:rgba(255,255,255,.12)}
 .ah-title{flex:1;font-size:7pt;font-weight:700;color:rgba(255,255,255,.7);padding-left:3mm;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;border-left:1px solid rgba(255,255,255,.07)}
 .ah-ref{font-size:7pt;font-weight:300;color:rgba(255,255,255,.60);display:flex;align-items:center;padding-right:3mm}
-.ash{display:flex;align-items:center;justify-content:center;font-size:5.5pt;font-weight:700;color:var(--mid);letter-spacing:.07em;text-transform:uppercase}
+.ash{display:flex;align-items:center;justify-content:center;font-size:4.5pt;font-weight:700;color:var(--mid);letter-spacing:.05em;text-transform:uppercase;text-align:center;white-space:normal;line-height:1.25;padding:0.8mm 1mm}
 .ash-cum{background:var(--dk)!important;border-left:none;color:rgba(255,255,255,.75)!important}
 
 /* ══════════════════════════════════════════════════════
@@ -665,8 +683,7 @@ AMRAP_TABLE_MACRO = r"""
     <div class="ash" style="width:{{rnd_w}}">Round</div>
     {% for m in data_movs %}
       {% set nc = m.nome.split('(')[0].strip() %}
-      {% set nc = nc[:12]+'…' if nc|length > 13 else nc %}
-      <div class="ash" style="flex:1;border-left:1px solid var(--rule)">{{ nc }} ({{ m.reps }})</div>
+      <div class="ash" style="flex:1;border-left:1px solid var(--rule)">{{ nc }}<br>({{ m.reps }})</div>
     {% endfor %}
     <div class="ash" style="width:{{reps_w}};border-left:1px solid var(--rule)">Reps/Rd</div>
     <div class="ash ash-cum" style="width:{{cum_w}}">Acumulado</div>
@@ -872,7 +889,15 @@ TMPL_STR = r"""<!DOCTYPE html>
 {# ── WORKOUT ZONE ── #}
 {% set tipo_labels = {'for_time':'For Time','amrap':'AMRAP','express':'Express — AMRAP + For Time','for_load':'For Load'} %}
 <div class="wkt-zone">
+  {% if tipo == 'express' and wkt.numero_f2 is defined %}
+  <div class="wkt-badge-dual">
+    <span class="bd-num">{{ wkt.numero }}</span>
+    <span class="bd-sep">·</span>
+    <span class="bd-num">{{ wkt.numero_f2 }}</span>
+  </div>
+  {% else %}
   <div class="wkt-badge">{{ wkt.numero }}</div>
+  {% endif %}
   <div class="wkt-body">
     <div class="wkt-name">{{ wkt.nome }}</div>
     <span class="wkt-type">{{ tipo_labels[tipo] | default(tipo) }}</span>
@@ -888,12 +913,24 @@ TMPL_STR = r"""<!DOCTYPE html>
 {# ── WORKOUT CONTENT ── #}
 {% if tipo == 'express' %}
   {% set f1 = wkt.formula1 %}
-  <div class="section-banner"><span class="sbn-t">Fórmula 1 — AMRAP</span><span class="sbn-s">{{ f1.janela }}</span></div>
+  <div class="section-banner">
+    <div style="display:flex;align-items:center">
+      <div class="sbn-badge">{{ wkt.numero }}</div>
+      <span class="sbn-t">Fórmula 1 — AMRAP</span>
+    </div>
+    <span class="sbn-s">{{ f1.janela }}</span>
+  </div>
   {% if f1.descricao %}<div class="desc">{% for l in f1.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
-  {{ amrap_table(f1.movimentos, wkt.numero, 3) }}
+  {{ amrap_table(f1.movimentos, wkt.numero, f1.n_rounds|default(3)) }}
   <div class="rest-bar">Descanso de 1 Minuto &nbsp;·&nbsp; Reset Barbell / Equipment</div>
   {% set f2 = wkt.formula2 %}
-  <div class="section-banner"><span class="sbn-t">Fórmula 2 — For Time</span><span class="sbn-s">{{ f2.janela }}</span></div>
+  <div class="section-banner">
+    <div style="display:flex;align-items:center">
+      <div class="sbn-badge">{{ wkt.numero_f2 if wkt.numero_f2 is defined else wkt.numero }}</div>
+      <span class="sbn-t">Fórmula 2 — For Time</span>
+    </div>
+    <span class="sbn-s">{{ f2.janela }}</span>
+  </div>
   {% if f2.descricao %}<div class="desc">{% for l in f2.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
   {{ mov_table(f2.movimentos, wkt.numero) }}
 
