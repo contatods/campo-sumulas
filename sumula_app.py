@@ -5,8 +5,8 @@ Servidor web local. Sem dependências além de Jinja2 + fontes Lato.
 Uso: python3 sumula_app.py   →  abre http://localhost:8765
 """
 
-import json, os, io, zipfile, threading, webbrowser, sys, base64, re
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import json, os, io, zipfile, threading, webbrowser, sys, base64, re, signal, traceback
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from campo_generator import render_workout, render_workout_combined, load_fonts, img_b64, sanitize
@@ -17,7 +17,15 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.2.0'
+VERSION = '1.2.1'
+
+# Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
+MAX_BODY_BYTES = 50 * 1024 * 1024
+
+
+class BadRequest(ValueError):
+    """Payload inválido — handler devolve 400 com a mensagem."""
+    pass
 
 def _resolve_logo(value):
     """Retorna uma data-URL de logo.
@@ -413,7 +421,8 @@ def _estimar_rounds_ia(movimentos, duracao_str):
     if not desc:
         return _estimar_rounds_algoritmico(movimentos, duracao_str)
     try:
-        client = anthropic.Anthropic(api_key=AI_KEY)
+        # timeout=15s evita pendurar o handler quando a API está lenta.
+        client = anthropic.Anthropic(api_key=AI_KEY, timeout=15.0)
         resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=20,
@@ -426,7 +435,10 @@ def _estimar_rounds_ia(movimentos, duracao_str):
                 )
             }]
         )
-        n = int(re.search(r'\d+', resp.content[0].text).group())
+        match = re.search(r'\d+', resp.content[0].text) if resp.content else None
+        if not match:
+            return _estimar_rounds_algoritmico(movimentos, duracao_str)
+        n = int(match.group())
         return max(2, n + 2)   # n esperados + 2 linhas de buffer no scorecard
     except Exception as e:
         print(f"  ⚠  IA rounds: {e}")
@@ -2216,8 +2228,22 @@ class SumulaHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
-            length = int(self.headers.get('Content-Length', 0))
-            body   = json.loads(self.rfile.read(length))
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+            except ValueError:
+                raise BadRequest("Content-Length inválido")
+            if length <= 0:
+                raise BadRequest("body vazio")
+            if length > MAX_BODY_BYTES:
+                self._send(413, 'application/json',
+                           json.dumps({"error": f"body acima de {MAX_BODY_BYTES // (1024*1024)} MB"}).encode('utf-8'))
+                return
+            try:
+                body = json.loads(self.rfile.read(length))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                raise BadRequest("body não é JSON válido")
+            if not isinstance(body, dict):
+                raise BadRequest("body precisa ser objeto JSON")
             routes = {
                 '/api/preview':        self._handle_preview,
                 '/api/generate':       self._handle_generate,
@@ -2227,16 +2253,29 @@ class SumulaHandler(BaseHTTPRequestHandler):
             handler = routes.get(self.path)
             if handler: handler(body)
             else: self._send(404, 'text/plain', b'Rota nao encontrada')
-        except Exception as e:
-            import traceback; traceback.print_exc()
-            self._send(500, 'application/json',
+        except BadRequest as e:
+            self._send(400, 'application/json',
                        json.dumps({"error": str(e)}).encode('utf-8'))
+        except Exception:
+            # Loga stack completo no servidor; cliente recebe mensagem genérica.
+            traceback.print_exc()
+            self._send(500, 'application/json',
+                       json.dumps({"error": "erro interno — confira os logs"}).encode('utf-8'))
 
     def _handle_preview(self, body):
-        cfg      = body['config']
-        idx      = int(body['workout_index'])
-        ev       = cfg.get('evento', {})
-        workouts = cfg['workouts']
+        cfg = body.get('config')
+        if not isinstance(cfg, dict):
+            raise BadRequest("config (objeto) é obrigatório")
+        workouts = cfg.get('workouts')
+        if not isinstance(workouts, list) or not workouts:
+            raise BadRequest("config.workouts deve ser lista não-vazia")
+        try:
+            idx = int(body.get('workout_index', 0))
+        except (TypeError, ValueError):
+            raise BadRequest("workout_index inválido")
+        if idx < 0 or idx >= len(workouts):
+            raise BadRequest(f"workout_index fora do range (0..{len(workouts) - 1})")
+        ev       = cfg.get('evento', {}) or {}
         assign_workout_numbers(workouts)   # recalcula com slots Express
         enriquecer_workouts(workouts)      # calcula n_rounds por IA/algoritmo
         wkt      = workouts[idx]
@@ -2246,12 +2285,16 @@ class SumulaHandler(BaseHTTPRequestHandler):
         self._send(200, 'text/html; charset=utf-8', html.encode('utf-8'))
 
     def _handle_generate(self, body):
-        cfg      = body['config']
-        ev       = cfg.get('evento', {})
+        cfg = body.get('config')
+        if not isinstance(cfg, dict):
+            raise BadRequest("config (objeto) é obrigatório")
+        workouts = cfg.get('workouts')
+        if not isinstance(workouts, list) or not workouts:
+            raise BadRequest("config.workouts deve ser lista não-vazia")
+        ev       = cfg.get('evento', {}) or {}
+        atletas  = cfg.get('atletas', []) or []
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
         logo_evt = ev.get('logo_evento', '')
-        atletas  = cfg.get('atletas', [])
-        workouts = cfg['workouts']
         assign_workout_numbers(workouts)
         enriquecer_workouts(workouts)
 
@@ -2314,24 +2357,37 @@ class SumulaHandler(BaseHTTPRequestHandler):
 # ── Startup ──────────────────────────────────────────────────────────────────────
 def main():
     try:
-        server = HTTPServer((HOST, PORT), SumulaHandler)
+        # ThreadingHTTPServer: cada request roda numa thread, não bloqueia outras.
+        # Importante porque a chamada à IA e a geração de ZIP grande são lentas.
+        server = ThreadingHTTPServer((HOST, PORT), SumulaHandler)
+        server.daemon_threads = True
     except OSError:
         print(f"⚠  Porta {PORT} em uso.")
         sys.exit(1)
 
     if IS_CLOUD:
         print(f"✓ Servidor em: http://0.0.0.0:{PORT}")
-        print("  Sumulas Digital Score v1.0.0 online \u2014 pronto para receber conexoes\n")
+        print(f"  S\u00famulas Digital Score v{VERSION} online \u2014 pronto para receber conex\u00f5es\n")
     else:
         url = f'http://localhost:{PORT}'
         print(f"✓ Servidor em: {url}")
         print("  Pressione Ctrl+C para encerrar\n")
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
 
+    # Render envia SIGTERM ao reiniciar/redeployar; sem handler o processo morre
+    # duro e qualquer geração em andamento perde os arquivos. Ctrl+C continua via KeyboardInterrupt.
+    def _on_sigterm(_signo, _frame):
+        print("\n✓ Recebido SIGTERM, encerrando…")
+        # shutdown() precisa rodar fora da thread principal (que está em serve_forever).
+        threading.Thread(target=server.shutdown, daemon=True).start()
+    signal.signal(signal.SIGTERM, _on_sigterm)
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n✓ Encerrado.")
+        print("\n✓ Encerrado (Ctrl+C).")
+    finally:
+        server.server_close()
 
 
 if __name__ == '__main__':
