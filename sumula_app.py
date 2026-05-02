@@ -16,6 +16,9 @@ PORT = int(os.environ.get('PORT', 8765))
 HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
+# Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
+VERSION = '1.2.0'
+
 def _resolve_logo(value):
     """Retorna uma data-URL de logo.
     Se 'value' já é data-URL (upload do front), usa direto.
@@ -48,8 +51,9 @@ AI_KEY   = os.environ.get('ANTHROPIC_API_KEY', '')
 AI_ATIVO = HAS_ANTHROPIC and bool(AI_KEY)
 
 # ── Carregar fontes na inicialização ────────────────────────────────────────────
+_banner_inner = f"  Súmulas Digital Score  —  v{VERSION}"
 print("╔══════════════════════════════════════════════╗")
-print("║  Súmulas Digital Score  —  v1.1.0            ║")
+print(f"║{_banner_inner:<46}║")
 print("╚══════════════════════════════════════════════╝\n")
 print("⏳ Carregando fontes e módulos...")
 _fonts_raw = load_fonts()   # base64 puro
@@ -598,7 +602,7 @@ HTML_INTERFACE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Súmulas Digital Score — v1.1.0</title>
+<title>Súmulas Digital Score — v{{VERSION}}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -942,7 +946,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   <div class="hdr-divider"></div>
   <span class="hdr-title">Digital Score</span>
   <div class="hdr-right">
-    <span class="hdr-version">v1.1.0</span>
+    <span class="hdr-version">v{{VERSION}}</span>
     <span id="aiBadge" title="IA estimando rounds AMRAP via Claude Haiku" style="display:none;font-size:9px;font-weight:700;color:#5A9;letter-spacing:.1em;
       background:rgba(90,153,90,.12);border:1px solid rgba(90,153,90,.3);
       padding:2px 7px;border-radius:10px;text-transform:uppercase;cursor:help">IA</span>
@@ -2196,13 +2200,15 @@ class SumulaHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path in ('/', '/index.html'):
-            html = HTML_INTERFACE.replace('DS_LOGO_PADRAO', f'"{DS_LOGO_PADRAO}"')
+            html = (HTML_INTERFACE
+                    .replace('DS_LOGO_PADRAO', f'"{DS_LOGO_PADRAO}"')
+                    .replace('{{VERSION}}', VERSION))
             self._send(200, 'text/html; charset=utf-8', html.encode('utf-8'))
         elif self.path == '/api/status':
             payload = json.dumps({
                 "ai_ativo":    AI_ATIVO,
                 "ai_provider": "Anthropic Claude Haiku" if AI_ATIVO else None,
-                "versao":      "1.1.0"
+                "versao":      VERSION
             })
             self._send(200, 'application/json; charset=utf-8', payload.encode())
         else:
