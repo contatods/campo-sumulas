@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+
+# Mac
+.DS_Store
+
+# Outputs temporários
+*.zip
+exemplo/

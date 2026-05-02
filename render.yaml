@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: campo-sumulas
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python sumula_app.py
+    plan: free
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: HOST
+        value: 0.0.0.0
