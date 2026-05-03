@@ -12,128 +12,61 @@
 <header class="hdr">
   <span class="hdr-logo">Súmulas</span>
   <div class="hdr-divider"></div>
-  <span class="hdr-title">Digital Score</span>
+  <span class="hdr-title" id="hdrEvento">Digital Score</span>
+  <div class="dia-tabs" id="diaTabs"></div>
+  <button class="hdr-add-dia" id="hdrAddDia" onclick="adicionarDia()" title="Adicionar dia">+</button>
   <div class="hdr-right">
+    <button class="hdr-cfg" onclick="abrirConfig()" title="Configurações"><span>⚙</span> Configurar</button>
     <span class="hdr-version">v{{VERSION}}</span>
     <span id="aiBadge" title="IA estimando rounds AMRAP via Claude Haiku" style="display:none;font-size:9px;font-weight:700;color:#5A9;letter-spacing:.1em;
       background:rgba(90,153,90,.12);border:1px solid rgba(90,153,90,.3);
       padding:2px 7px;border-radius:10px;text-transform:uppercase;cursor:help">IA</span>
-    <span class="hdr-brand">© Digital Score</span>
   </div>
 </header>
 
 <!-- ══ Main layout ══════════════════════════════════════════════════════════ -->
 <div class="layout">
 
-  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+  <!-- ── Sidebar (categoria selecionada do dia ativo) ─────────────────────── -->
   <aside class="sidebar">
     <div class="sidebar-scroll">
-
-      <!-- Categoria switcher (aparece quando há import com várias categorias) -->
-      <div class="cat-switcher" id="catSwitcher">
-        <div class="cs-label">Categoria</div>
-        <button class="cs-btn" onclick="reabrirSeletorCategoria()">
-          <span class="cs-name" id="csName">—</span>
-          <span class="cs-meta" id="csMeta"></span>
-          <span class="cs-arrow">▼</span>
+      <div id="categoriasHeader" class="sb-section-hdr">
+        <span id="categoriasHdrTitle">Categoria</span>
+        <button class="icon-btn" onclick="adicionarCategoria()" title="Adicionar categoria" id="btnAddCat" style="display:none">+</button>
+      </div>
+      <!-- Seletor de categoria (1 dropdown clicável que abre lista) -->
+      <div id="catSelWrap" style="display:none">
+        <button class="cat-sel-btn" id="catSelBtn" onclick="toggleCatList()">
+          <span class="cat-sel-name" id="catSelName">—</span>
+          <span class="cat-sel-meta" id="catSelMeta"></span>
+          <span class="cat-sel-arrow">▾</span>
         </button>
+        <div class="cat-sel-list" id="catSelList" style="display:none"></div>
       </div>
-
-      <!-- Evento -->
-      <div class="sec">
-        <div class="sec-hdr">
-          <span class="sec-title">Evento</span>
-          <button class="sec-action" id="btnToggleEvento" onclick="toggleEventoForm()">Editar</button>
-        </div>
-        <div class="sec-body">
-          <div id="eventoDisplay" class="ev-display" onclick="toggleEventoForm()">
-            <div class="ev-empty">Clique para configurar o evento</div>
-          </div>
-          <div id="eventoForm" style="display:none;padding-top:10px">
-            <div class="field">
-              <label>Nome do Evento</label>
-              <input id="evNome" type="text" placeholder="Ex: SUN 2026" oninput="onEventoChange()">
-            </div>
-            <div class="field-row">
-              <div class="field">
-                <label>Categoria</label>
-                <input id="evCat" type="text" placeholder="Ex: RX MASCULINO" oninput="onEventoChange()">
-              </div>
-              <div class="field w80">
-                <label>Data</label>
-                <input id="evData" type="text" placeholder="2026" oninput="onEventoChange()">
-              </div>
-            </div>
-            <div class="field-row" style="margin-top:6px">
-              <div class="field">
-                <label>Logo do Evento <span style="font-size:9px;opacity:.6">(JPG/PNG — aparece no header)</span></label>
-                <div class="logo-upload-wrap" id="logoEventoWrap" onclick="document.getElementById('inputLogoEvento').click()">
-                  <img id="logoEventoPreview" style="display:none;height:28px;object-fit:contain">
-                  <span id="logoEventoPlaceholder">Clique para selecionar</span>
-                </div>
-                <input id="inputLogoEvento" type="file" accept="image/*" style="display:none" onchange="onLogoEvento(this)">
-              </div>
-              <div class="field">
-                <label>Logo Digital Score <span style="font-size:9px;opacity:.6">(aparece no header)</span></label>
-                <div class="logo-upload-wrap" id="logoEmpresaWrap" onclick="document.getElementById('inputLogoEmpresa').click()">
-                  <img id="logoEmpresaPreview" style="display:none;height:28px;object-fit:contain">
-                  <span id="logoEmpresaPlaceholder">Clique para selecionar</span>
-                </div>
-                <input id="inputLogoEmpresa" type="file" accept="image/*" style="display:none" onchange="onLogoEmpresa(this)">
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Workouts -->
-      <div class="sec">
-        <div class="sec-hdr">
-          <span class="sec-title">Workouts</span>
-          <button class="sec-action" onclick="novoWorkout()">+ Novo</button>
-        </div>
-        <div id="workoutList">
-          <div class="wkt-empty">Nenhum workout ainda.<br>Clique em "+ Novo" para começar.</div>
-        </div>
-        <div class="status-bar" id="wktStatus"></div>
-      </div>
-
-      <!-- Atletas -->
-      <div class="sec" id="secAtletas" style="display:none">
-        <div class="sec-hdr">
-          <span class="sec-title">Atletas</span>
-          <span class="sec-count" id="atlCount">0</span>
-          <button class="sec-action" onclick="limparAtletas()" title="Remover todos os atletas">Limpar</button>
-        </div>
-        <div class="sec-body" id="atletasList" style="padding:0 10px 8px"></div>
-      </div>
-
-      <!-- Importar -->
-      <div class="sec">
-        <div class="sec-hdr">
-          <span class="sec-title">Importar</span>
-        </div>
-        <div class="sec-body">
-          <div class="import-btns">
-            <button class="btn-import" onclick="triggerImport('excel')">📊 Importar Excel (.xlsx)</button>
-          </div>
-          <div class="import-hint">Importe todas as categorias e workouts<br>a partir do seu arquivo Excel</div>
-        </div>
-      </div>
-
+      <div id="categoriasList"></div>
     </div>
 
-    <!-- Generate -->
+    <!-- Generate (categoria selecionada é a opção primária) -->
     <div class="sidebar-footer">
-      <button class="btn-generate" id="btnGerar" onclick="gerarZIP()" disabled>
-        <span class="bg-icon">⬇</span>
-        <div class="spinner"></div>
-        <div class="bg-text">
-          <span class="bg-main" id="btnGerarLabel">Gerar súmulas</span>
-          <span class="bg-sub" id="btnGerarSub">Adicione um workout pra começar</span>
-        </div>
+      <button class="btn-gerar-escopo primary" id="btnGerarCat" onclick="gerarZIPEscopo('cat')" disabled>
+        <span class="bge-main">⬇ Gerar categoria selecionada</span>
+        <span class="bge-sub" id="bgeSubCat">—</span>
       </button>
-      <button class="btn-clear-all" id="btnClearAll" onclick="limparTudo()" style="display:none">Limpar tudo</button>
+      <button class="ger-toggle-more" type="button" onclick="toggleMaisOpcoes()" id="btnMaisOpcoes">outras opções ▾</button>
+      <div id="gerarMaisOpcoes" style="display:none">
+        <label class="ger-chk">
+          <input type="checkbox" id="chkIncluirCompetidores" checked onchange="onGerarOptChange()">
+          <span>Incluir competidores</span>
+        </label>
+        <button class="btn-gerar-escopo" id="btnGerarDia" onclick="gerarZIPEscopo('dia')" disabled>
+          <span class="bge-main">Dia atual</span>
+          <span class="bge-sub" id="bgeSubDia">—</span>
+        </button>
+        <button class="btn-gerar-escopo" id="btnGerarEvento" onclick="gerarZIPEscopo('evento')" disabled>
+          <span class="bge-main">Evento todo</span>
+          <span class="bge-sub" id="bgeSubEvento">—</span>
+        </button>
+      </div>
     </div>
   </aside>
 
@@ -166,6 +99,17 @@
         <div class="field w100">
           <label>Time Cap</label>
           <input id="edTimeCap" type="text" placeholder="Ex: 10 min">
+        </div>
+      </div>
+
+      <div class="field-row" id="edPathRow">
+        <div class="field">
+          <label>Dia</label>
+          <select id="edDia" onchange="onEditorDiaChange()"></select>
+        </div>
+        <div class="field">
+          <label>Categoria</label>
+          <select id="edCat"></select>
         </div>
       </div>
 
@@ -315,12 +259,90 @@
       </div>
     </div>
     <iframe id="previewFrame" class="preview-frame"></iframe>
+
+    <!-- Banner discreto pós-import (some quando dispensado) -->
+    <div class="post-import-banner" id="postImportBanner" style="display:none">
+      <span class="pib-icon">✓</span>
+      <span class="pib-msg" id="pibMsg">Importado.</span>
+      <button class="pib-cta" onclick="abrirConfig('dias')">Configurar datas</button>
+      <button class="pib-close" onclick="dispensarBanner()" title="Fechar">×</button>
+    </div>
   </div>
 
 </div><!-- /layout -->
 
 <!-- Hidden file inputs -->
 <input type="file" id="fileExcel" accept=".xlsx,.xls" style="display:none" onchange="handleImport(this,'excel')">
+
+<!-- Modal: configurações do evento (nome, logos, dias, importar) -->
+<div id="configModal" class="cfg-modal" style="display:none">
+  <div class="cfg-overlay" onclick="fecharConfig()"></div>
+  <div class="cfg-panel">
+    <div class="cfg-header">
+      <span class="cfg-title">Configurações</span>
+      <button class="ed-close" onclick="fecharConfig()" title="Fechar">×</button>
+    </div>
+    <div class="cfg-tabs">
+      <button class="cfg-tab active" data-tab="evento" onclick="cfgTab('evento')">Evento</button>
+      <button class="cfg-tab" data-tab="dias" onclick="cfgTab('dias')">Dias</button>
+      <button class="cfg-tab" data-tab="importar" onclick="cfgTab('importar')">Importar</button>
+    </div>
+
+    <!-- Aba Evento -->
+    <div class="cfg-pane" id="cfgPaneEvento">
+      <div class="field">
+        <label>Nome do Evento</label>
+        <input id="evNome" type="text" placeholder="Ex: SUN Challenge 2026" oninput="onEventoChange()">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Categoria padrão (fallback)</label>
+          <input id="evCat" type="text" placeholder="Ex: RX MASCULINO" oninput="onEventoChange()">
+        </div>
+        <div class="field w100">
+          <label>Data padrão</label>
+          <input id="evData" type="text" placeholder="2026" oninput="onEventoChange()">
+        </div>
+      </div>
+      <div class="field-row" style="margin-top:8px">
+        <div class="field">
+          <label>Logo do Evento</label>
+          <div class="logo-upload-wrap" onclick="document.getElementById('inputLogoEvento').click()">
+            <img id="logoEventoPreview" style="display:none;height:28px;object-fit:contain">
+            <span id="logoEventoPlaceholder">Clique para selecionar</span>
+          </div>
+          <input id="inputLogoEvento" type="file" accept="image/*" style="display:none" onchange="onLogoEvento(this)">
+        </div>
+        <div class="field">
+          <label>Logo Digital Score</label>
+          <div class="logo-upload-wrap" onclick="document.getElementById('inputLogoEmpresa').click()">
+            <img id="logoEmpresaPreview" style="display:none;height:28px;object-fit:contain">
+            <span id="logoEmpresaPlaceholder">Clique para selecionar</span>
+          </div>
+          <input id="inputLogoEmpresa" type="file" accept="image/*" style="display:none" onchange="onLogoEmpresa(this)">
+        </div>
+      </div>
+    </div>
+
+    <!-- Aba Dias -->
+    <div class="cfg-pane" id="cfgPaneDias" style="display:none">
+      <p class="cfg-hint">Cada dia tem rótulo e data. A data aparece no header da súmula impressa.</p>
+      <div id="diasEditorList"></div>
+      <button class="btn-mov" style="margin-top:8px" onclick="adicionarDia()">+ Adicionar dia</button>
+    </div>
+
+    <!-- Aba Importar -->
+    <div class="cfg-pane" id="cfgPaneImportar" style="display:none">
+      <p class="cfg-hint">Importe um Excel pra preencher dias, categorias, workouts e atletas de uma vez.</p>
+      <button class="btn-import" style="width:100%" onclick="triggerImport('excel')">📊 Importar Excel (.xlsx)</button>
+      <p class="cfg-hint" style="margin-top:14px">Apaga tudo e começa do zero:</p>
+      <button class="btn-clear-all" style="background:#3A1A1A;color:#C66;border:1px solid #4A2A2A;border-radius:var(--radius);padding:8px;width:100%" onclick="limparTudoModal()">Limpar tudo</button>
+    </div>
+  </div>
+</div>
+
+<!-- Display oculto do nome do evento (mantido pra retrocompat) -->
+<div id="eventoDisplay" style="display:none"></div>
 
 <!-- Modal: seletor de categoria -->
 <div id="catModal" style="display:none">

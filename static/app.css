@@ -330,3 +330,281 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .cat-btn:hover{background:var(--surface3);border-color:#3A3A3A;color:var(--text)}
 .modal-cancel{background:none;border:none;color:var(--text4);cursor:pointer;
   font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:4px}
+
+/* ── Day tabs (header, multi-dia) ─────────────────────────────────── */
+.dia-tabs{display:none;align-items:stretch;gap:1px;flex:1;justify-content:center;
+  margin-left:8px;margin-right:8px;height:30px}
+.dia-tabs.show{display:flex}
+.dia-tab{padding:0 14px;background:var(--surface2);border:1px solid var(--border3);
+  border-radius:var(--radius);color:var(--text3);font-family:inherit;font-size:10px;
+  font-weight:700;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
+  transition:color .12s,background .12s,border-color .12s;white-space:nowrap}
+.dia-tab:hover{color:var(--text);background:var(--surface3);border-color:var(--orange-edge)}
+.dia-tab.active{color:#000;background:#FFF;border-color:#FFF}
+
+/* ── Categorias (sidebar) ─────────────────────────────────────────── */
+.cat-empty{padding:14px;font-size:11px;color:var(--text4);text-align:center;
+  font-style:italic;line-height:1.6}
+.cat-empty-inner{padding:8px;font-size:10px;color:var(--text4);text-align:center;font-style:italic}
+.cat-card{border-bottom:1px solid var(--border)}
+.cat-hdr{display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;
+  transition:background .1s}
+.cat-hdr:hover{background:var(--surface2)}
+.cat-card.open .cat-hdr{background:var(--surface2)}
+.cat-toggle{font-size:9px;color:var(--text3);width:10px;display:inline-block;
+  transition:transform .15s;flex-shrink:0}
+.cat-card:not(.open) .cat-toggle{transform:rotate(-90deg)}
+.cat-nome{flex:1;font-size:11.5px;font-weight:700;color:var(--text);
+  letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cat-meta{font-size:8.5px;font-weight:600;color:var(--text3);
+  letter-spacing:.06em;text-transform:uppercase;flex-shrink:0}
+.cat-body{padding:6px 14px 12px 24px;background:var(--surface);
+  border-top:1px dashed var(--border2)}
+.cat-section-hdr{font-size:8px;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--text4);margin:6px 0 4px}
+.cat-actions{margin-top:6px}
+
+/* ── Workout row (dentro de categoria expandida) ──────────────────── */
+.wkt-row{display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;
+  border-radius:var(--radius);transition:background .1s;margin-bottom:2px}
+.wkt-row:hover{background:var(--surface2)}
+.wkt-row.active{background:var(--surface3);border-left:3px solid var(--orange);
+  padding-left:5px}
+.wkt-row-num{font-size:14px;font-weight:900;color:var(--border3);width:18px;
+  text-align:center;flex-shrink:0;line-height:1}
+.wkt-row.active .wkt-row-num{color:var(--text2)}
+.wkt-row-info{flex:1;min-width:0}
+.wkt-row-nome{font-size:11px;font-weight:700;color:var(--text2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+.wkt-row.active .wkt-row-nome{color:var(--text)}
+.wkt-row-tags{display:flex;gap:4px;margin-top:2px;align-items:center;flex-wrap:wrap}
+.wkt-row-actions{display:flex;gap:2px;flex-shrink:0}
+
+/* ── Bateria row (read-only display) ──────────────────────────────── */
+.bat-row{display:flex;align-items:flex-start;gap:8px;padding:5px 8px;
+  border-radius:var(--radius);margin-bottom:2px}
+.bat-row-num{font-size:11px;font-weight:700;color:var(--text2);min-width:34px;
+  background:var(--surface3);padding:2px 4px;border-radius:2px;text-align:center;
+  flex-shrink:0;letter-spacing:.04em}
+.bat-row-info{flex:1;min-width:0}
+.bat-row-codigo{font-size:10px;font-weight:700;color:var(--text2);letter-spacing:.04em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.bat-row-meta{font-size:9px;color:var(--text4);letter-spacing:.05em;line-height:1.4;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── Gerar options (rodapé) ───────────────────────────────────────── */
+.gerar-opts{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.ger-sel{background:var(--surface2);border:1px solid var(--border3);color:var(--text);
+  padding:5px 8px;border-radius:var(--radius);font-size:10.5px;font-family:inherit;
+  outline:none;cursor:pointer;width:100%;transition:border-color .12s}
+.ger-sel:hover,.ger-sel:focus{border-color:var(--orange-edge)}
+.ger-chk{display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--text2);cursor:pointer;user-select:none}
+.ger-chk input{cursor:pointer;accent-color:var(--orange);margin:0}
+
+/* ── Editor de dias (label + data) na seção Evento ────────────────── */
+.diasEditor-lbl{font-size:9px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--text3);display:block;margin-bottom:6px}
+.dia-edit-row{display:flex;gap:6px;margin-bottom:5px}
+.dia-edit-row input{flex:1;background:var(--surface2);border:1px solid var(--border3);
+  color:var(--text);padding:5px 7px;border-radius:var(--radius);font-size:10.5px;
+  font-family:inherit;outline:none;transition:border-color .12s}
+.dia-edit-row input:focus{border-color:var(--orange-edge)}
+.dia-edit-row .dia-edit-label{flex:1.4}
+.dia-edit-row .dia-edit-data{flex:1}
+
+/* ── Adicionar categoria (rodapé da lista) ────────────────────────── */
+.cat-add-row{padding:8px 14px}
+.cat-add-row .btn-mov{width:100%}
+
+/* ── X de remover na linha de dia / categoria ─────────────────────── */
+.dia-edit-row .icon-btn{flex-shrink:0}
+.cat-hdr .icon-btn{flex-shrink:0;margin-left:4px}
+
+/* ── Tab de dia: data ao lado do label ────────────────────────────── */
+.dia-tab-date{font-size:9px;font-weight:600;color:var(--text3);
+  margin-left:6px;letter-spacing:.04em}
+.dia-tab.active .dia-tab-date{color:#444}
+
+/* ── Botões de gerar (3 escopos) ──────────────────────────────────── */
+.btn-gerar-escopo{width:100%;display:flex;flex-direction:column;align-items:flex-start;
+  gap:2px;padding:9px 12px;background:var(--surface2);border:1px solid var(--border3);
+  color:var(--text);border-radius:var(--radius);cursor:pointer;
+  transition:background .12s,border-color .12s,color .12s;font-family:inherit;
+  text-align:left;line-height:1.1}
+.btn-gerar-escopo:hover:not(:disabled){background:var(--surface3);border-color:var(--orange-edge)}
+.btn-gerar-escopo:disabled{opacity:.45;cursor:not-allowed}
+.btn-gerar-escopo + .btn-gerar-escopo{margin-top:5px}
+.btn-gerar-escopo.primary{background:#FFF;color:#000;border-color:#FFF}
+.btn-gerar-escopo.primary:hover:not(:disabled){background:#E8E8E8}
+.btn-gerar-escopo.primary:disabled{background:var(--surface3);color:var(--text4);border-color:var(--border3)}
+.btn-gerar-escopo.primary:disabled .bge-sub{color:var(--text4)}
+.btn-gerar-escopo.generating{position:relative}
+.bge-main{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.bge-sub{font-size:8.5px;font-weight:600;color:#666;letter-spacing:.06em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.btn-gerar-escopo.primary .bge-sub{color:#444}
+
+/* Spacer entre toggle e botões */
+.sidebar-footer .ger-chk{margin-bottom:8px}
+
+/* ── Modo edição: visual do botão toggle quando ativo ──────────────── */
+.sec-action.edit-mode-active{background:var(--orange-dim);border-color:var(--orange-edge);
+  color:var(--orange)}
+
+/* ── Wizard pós-import (cobre o preview) ──────────────────────────── */
+.wizard{position:absolute;inset:38px 0 0 0;background:var(--bg);
+  display:flex;align-items:flex-start;justify-content:center;
+  padding:32px 24px;overflow-y:auto;z-index:50}
+.preview{position:relative}
+.wizard-card{background:var(--surface);border:1px solid var(--border3);
+  border-radius:8px;padding:28px;width:100%;max-width:620px;
+  display:flex;flex-direction:column;gap:20px}
+.wizard-progress{display:flex;align-items:center;gap:8px;justify-content:center;
+  margin-bottom:6px}
+.wiz-step-dot{width:26px;height:26px;border-radius:50%;
+  background:var(--surface3);border:2px solid var(--border3);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:var(--text3)}
+.wiz-step-dot.active{background:var(--orange);border-color:var(--orange);color:#000}
+.wiz-step-dot.done{background:var(--orange-dim);border-color:var(--orange-edge);color:var(--orange)}
+.wiz-step-line{flex:0 0 32px;height:2px;background:var(--border3)}
+.wiz-step-line.done{background:var(--orange-edge)}
+.wizard-content{padding:8px 0}
+.wiz-titulo{font-size:14px;font-weight:700;letter-spacing:.06em;
+  color:var(--text);margin-bottom:4px}
+.wiz-sub{font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:18px}
+.wiz-list{display:flex;flex-direction:column;gap:8px}
+.wiz-dia-row{display:flex;gap:10px;align-items:center;
+  background:var(--surface2);padding:10px 12px;border-radius:var(--radius);
+  border:1px solid var(--border3)}
+.wiz-dia-row label{font-size:9px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--text3);min-width:60px}
+.wiz-dia-row input{flex:1;background:var(--surface3);border:1px solid var(--border3);
+  color:var(--text);padding:7px 9px;border-radius:var(--radius);font-size:12px;
+  font-family:inherit;outline:none}
+.wiz-dia-row input:focus{border-color:var(--orange-edge)}
+.wiz-dia-data{flex:0 0 150px!important}
+.wiz-cat-card{background:var(--surface2);padding:10px 14px;border-radius:var(--radius);
+  border:1px solid var(--border3);display:flex;flex-direction:column;gap:5px}
+.wiz-cat-dia{font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--text3);margin-bottom:2px}
+.wiz-cat-nome{font-size:13px;font-weight:700;color:var(--text)}
+.wiz-cat-meta{font-size:10px;color:var(--text3);letter-spacing:.04em}
+.wiz-final{display:flex;flex-direction:column;align-items:center;gap:14px;padding:12px 0}
+.wiz-final-resumo{font-size:13px;color:var(--text);text-align:center;line-height:1.6}
+.wiz-final-resumo strong{color:var(--orange)}
+.wiz-cta{padding:14px 28px;background:#FFF;color:#000;font-size:12px;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;border:none;cursor:pointer;
+  border-radius:var(--radius);transition:background .15s}
+.wiz-cta:hover{background:#E8E8E8}
+.wizard-nav{display:flex;justify-content:space-between;align-items:center;
+  padding-top:14px;border-top:1px solid var(--border)}
+.wizard-nav-right{display:flex;gap:8px}
+
+/* ── Header redesenho: + dia inline + ⚙ Configurar ────────────────── */
+.hdr-add-dia{display:none;background:var(--surface3);border:1px solid var(--border3);
+  color:var(--text2);width:30px;height:30px;border-radius:var(--radius);cursor:pointer;
+  font-size:16px;line-height:1;font-family:inherit;
+  transition:color .12s,background .12s,border-color .12s;flex-shrink:0}
+.hdr-add-dia.show{display:flex;align-items:center;justify-content:center}
+.hdr-add-dia:hover{color:var(--orange);border-color:var(--orange-edge);background:rgba(229,93,0,.08)}
+.hdr-cfg{background:none;border:1px solid var(--border3);color:var(--text2);
+  font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;padding:4px 10px;border-radius:var(--radius);
+  cursor:pointer;display:flex;align-items:center;gap:5px;
+  transition:color .12s,border-color .12s}
+.hdr-cfg:hover{color:var(--orange);border-color:var(--orange-edge)}
+.hdr-cfg span{font-size:12px}
+
+/* ── Sidebar redesenhada: header simples + lista ──────────────────── */
+.sb-section-hdr{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 14px 8px;font-size:9px;font-weight:700;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)}
+.sb-section-hdr .icon-btn{font-size:14px;padding:0 8px;color:var(--text3)}
+.sb-section-hdr .icon-btn:hover{color:var(--orange);background:rgba(229,93,0,.08)}
+
+/* Hover-only edit affordances (substitui editMode toggle) */
+.cat-card .icon-btn.danger,
+.wkt-row-actions{opacity:0;transition:opacity .12s}
+.cat-card:hover > .cat-hdr .icon-btn.danger,
+.wkt-row:hover .wkt-row-actions{opacity:1}
+.dia-edit-row .icon-btn.danger{opacity:.4;transition:opacity .12s,color .12s}
+.dia-edit-row:hover .icon-btn.danger{opacity:1}
+
+/* ── Banner discreto pós-import ───────────────────────────────────── */
+.post-import-banner{display:flex;align-items:center;gap:10px;padding:8px 14px;
+  background:var(--orange-dim);border-bottom:1px solid var(--orange-edge);
+  position:absolute;top:38px;left:0;right:0;z-index:40}
+.pib-icon{color:var(--orange);font-weight:700;font-size:13px}
+.pib-msg{font-size:11px;color:var(--text);flex:1}
+.pib-cta{background:var(--orange);color:#000;border:none;padding:5px 12px;
+  border-radius:var(--radius);font-family:inherit;font-size:10px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
+  transition:background .12s}
+.pib-cta:hover{background:#FF7020}
+.pib-close{background:none;border:none;color:var(--text3);cursor:pointer;
+  font-size:14px;padding:4px 6px}
+.pib-close:hover{color:var(--text)}
+
+/* ── Modal de configuração unificado ──────────────────────────────── */
+.cfg-modal{position:fixed;inset:0;z-index:200;display:flex;align-items:center;
+  justify-content:center}
+.cfg-overlay{position:absolute;inset:0;background:rgba(0,0,0,.65);cursor:pointer}
+.cfg-panel{position:relative;background:var(--surface);border:1px solid var(--border3);
+  border-radius:8px;width:560px;max-width:90vw;max-height:85vh;display:flex;
+  flex-direction:column;overflow:hidden}
+.cfg-header{display:flex;align-items:center;padding:14px 18px;
+  border-bottom:1px solid var(--border)}
+.cfg-title{flex:1;font-size:11px;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--text2)}
+.cfg-tabs{display:flex;border-bottom:1px solid var(--border);padding:0 8px}
+.cfg-tab{flex:1;padding:10px 14px;background:none;border:none;color:var(--text3);
+  font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;cursor:pointer;border-bottom:2px solid transparent;
+  margin-bottom:-1px;transition:color .15s,border-color .15s}
+.cfg-tab:hover{color:var(--text2)}
+.cfg-tab.active{color:var(--text);border-bottom-color:var(--orange)}
+.cfg-pane{padding:18px;overflow-y:auto;flex:1}
+.cfg-hint{font-size:10.5px;color:var(--text3);line-height:1.5;margin-bottom:10px}
+
+/* ── Toggle "outras opções" no rodapé ─────────────────────────────── */
+.ger-toggle-more{background:none;border:none;color:var(--text3);
+  font-family:inherit;font-size:9.5px;font-weight:600;letter-spacing:.06em;
+  cursor:pointer;width:100%;text-align:center;padding:8px;margin-top:4px;
+  transition:color .12s}
+.ger-toggle-more:hover{color:var(--text2)}
+
+/* ── Seletor de categoria (1 só visível por vez) ──────────────────── */
+.cat-sel-btn{width:100%;display:flex;align-items:center;gap:8px;
+  padding:10px 14px;background:var(--surface2);border:none;border-bottom:1px solid var(--border);
+  color:var(--text);font-family:inherit;cursor:pointer;text-align:left;
+  transition:background .12s}
+.cat-sel-btn:hover{background:var(--surface3)}
+.cat-sel-name{flex:1;font-size:12px;font-weight:700;color:var(--text);
+  letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cat-sel-meta{font-size:9px;font-weight:600;color:var(--text3);
+  letter-spacing:.06em;text-transform:uppercase;flex-shrink:0}
+.cat-sel-arrow{color:var(--text3);font-size:10px;flex-shrink:0;transition:transform .15s}
+.cat-sel-btn.open .cat-sel-arrow{transform:rotate(180deg)}
+
+.cat-sel-list{background:var(--surface);border-bottom:1px solid var(--border);
+  max-height:280px;overflow-y:auto}
+.cat-sel-item{display:flex;align-items:center;gap:8px;padding:8px 14px;
+  cursor:pointer;transition:background .1s;border-bottom:1px solid var(--border)}
+.cat-sel-item:hover{background:var(--surface2)}
+.cat-sel-item.selected{background:var(--surface2);
+  border-left:3px solid var(--orange);padding-left:11px}
+.cat-sel-item-nome{flex:1;font-size:11px;font-weight:700;color:var(--text2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cat-sel-item.selected .cat-sel-item-nome{color:var(--text)}
+.cat-sel-item-meta{font-size:8.5px;color:var(--text3);letter-spacing:.06em;flex-shrink:0}
+.cat-sel-item-rm{background:none;border:none;color:var(--text4);cursor:pointer;
+  font-size:13px;line-height:1;padding:0 4px;border-radius:var(--radius);
+  opacity:0;transition:opacity .12s,color .12s}
+.cat-sel-item:hover .cat-sel-item-rm{opacity:1}
+.cat-sel-item-rm:hover{color:var(--red)}
+
+/* Dentro de #categoriasList, agora não tem mais cards expandíveis — só o
+   detalhe da categoria selecionada (workouts + baterias) */
+.cat-detail{padding:10px 14px}

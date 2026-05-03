@@ -62,8 +62,18 @@ def img_b64(path):
 
 
 def sanitize(n):
-    """Sanitiza nome de arquivo."""
-    return re.sub(r"[^a-zA-Z0-9_\-]", "_", n)
+    """Sanitiza nome para arquivo/pasta — preserva acentos e Unicode.
+
+    Substitui apenas caracteres reservados em filesystem (`/ \\ : * ? " < > |`
+    e quebras de linha). Espaços viram underscore. Múltiplos underscores
+    são compactados.
+    """
+    if not n:
+        return ""
+    s = re.sub(r'[\/\\:*?"<>|\r\n\t]+', "_", str(n))
+    s = re.sub(r"\s+", "_", s.strip())
+    s = re.sub(r"_+", "_", s)
+    return s.strip("_") or "_"
 
 
 

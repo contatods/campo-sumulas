@@ -17,7 +17,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.2.7'
+VERSION = '1.3.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -30,6 +30,14 @@ WORKOUT_TIPOS = frozenset({'for_time', 'amrap', 'express'})
 class BadRequest(ValueError):
     """Payload inválido — handler devolve 400 com a mensagem."""
     pass
+
+
+def _to_int_or_max(v) -> int:
+    """Converte string/int em int pra ordenação. Não-numérico vai pro fim."""
+    try:
+        return int(str(v).strip())
+    except (ValueError, AttributeError, TypeError):
+        return 10**9
 
 
 def _validate_workout_tipos(workouts):
@@ -170,67 +178,168 @@ class SumulaHandler(BaseHTTPRequestHandler):
                        json.dumps({"error": "erro interno — confira os logs"}).encode('utf-8'))
 
     def _handle_preview(self, body):
+        """Renderiza a súmula de UM workout específico para o iframe de preview.
+
+        Espera body com `dia_idx`, `cat_idx`, `wkt_idx` indicando coordenadas no
+        modelo multi-dia. Renderiza em branco (sem alocação) — preview é só pra
+        ver o layout do workout.
+        """
         cfg = body.get('config')
         if not isinstance(cfg, dict):
             raise BadRequest("config (objeto) é obrigatório")
-        workouts = cfg.get('workouts')
-        if not isinstance(workouts, list) or not workouts:
-            raise BadRequest("config.workouts deve ser lista não-vazia")
-        _validate_workout_tipos(workouts)
+        dias = cfg.get('dias')
+        if not isinstance(dias, list) or not dias:
+            raise BadRequest("config.dias deve ser lista não-vazia")
         try:
-            idx = int(body.get('workout_index', 0))
+            dia_idx = int(body.get('dia_idx', 0))
+            cat_idx = int(body.get('cat_idx', 0))
+            wkt_idx = int(body.get('wkt_idx', 0))
         except (TypeError, ValueError):
-            raise BadRequest("workout_index inválido")
-        if idx < 0 or idx >= len(workouts):
-            raise BadRequest(f"workout_index fora do range (0..{len(workouts) - 1})")
+            raise BadRequest("índices inválidos (dia_idx/cat_idx/wkt_idx)")
+        if not (0 <= dia_idx < len(dias)):
+            raise BadRequest(f"dia_idx fora do range (0..{len(dias) - 1})")
+        cats = dias[dia_idx].get('categorias', [])
+        if not (0 <= cat_idx < len(cats)):
+            raise BadRequest(f"cat_idx fora do range (0..{len(cats) - 1})")
+        workouts = cats[cat_idx].get('workouts', [])
+        if not (0 <= wkt_idx < len(workouts)):
+            raise BadRequest(f"wkt_idx fora do range (0..{len(workouts) - 1})")
+        _validate_workout_tipos(workouts)
+
         ev       = cfg.get('evento', {}) or {}
-        assign_workout_numbers(workouts)   # recalcula com slots Express
-        enriquecer_workouts(workouts)      # calcula n_rounds por IA/algoritmo
-        wkt      = workouts[idx]
+        assign_workout_numbers(workouts)   # recalcula slots Express
+        enriquecer_workouts(workouts)      # calcula n_rounds (IA/algoritmo)
+        wkt      = workouts[wkt_idx]
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
-        logo_evt = ev.get('logo_evento', '')   # data-URL vinda do front
-        html = render_workout(ev, wkt, FONTS, logo, logo_evt)
+        logo_evt = ev.get('logo_evento', '')
+        # Sobrescreve categoria e data com os valores do dia/categoria selecionados
+        # (a categoria global de evento é fallback)
+        ev_local = {
+            **ev,
+            'categoria': cats[cat_idx].get('nome', '') or ev.get('categoria', ''),
+            'data':      dias[dia_idx].get('data', '') or ev.get('data', ''),
+        }
+        html = render_workout(ev_local, wkt, FONTS, logo, logo_evt)
         self._send(200, 'text/html; charset=utf-8', html.encode('utf-8'))
 
     def _handle_generate(self, body):
+        """Gera ZIP no shape multi-dia.
+
+        Estrutura: Dia/Categoria/Workout_NN.html — cada arquivo combina todas
+        as alocações de TODAS as baterias dessa categoria que rodam aquele
+        workout (em ordem bateria → raia).
+
+        Toggle `incluir_competidores` (default True): se False, gera súmula em
+        branco (sem nome/número/box).
+
+        Filtros opcionais: `dia_idx` (gera só esse dia). Sem filtro, gera tudo.
+        """
         cfg = body.get('config')
         if not isinstance(cfg, dict):
             raise BadRequest("config (objeto) é obrigatório")
-        workouts = cfg.get('workouts')
-        if not isinstance(workouts, list) or not workouts:
-            raise BadRequest("config.workouts deve ser lista não-vazia")
-        _validate_workout_tipos(workouts)
+        dias = cfg.get('dias')
+        if not isinstance(dias, list) or not dias:
+            raise BadRequest("config.dias deve ser lista não-vazia")
+
         ev       = cfg.get('evento', {}) or {}
-        atletas  = cfg.get('atletas', []) or []
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
         logo_evt = ev.get('logo_evento', '')
-        assign_workout_numbers(workouts)
-        enriquecer_workouts(workouts)
+        incluir_competidores = bool(body.get('incluir_competidores', True))
 
-        if atletas:
-            atletas = sorted(atletas, key=_atleta_sort_key)
+        # Filtra dias se vier dia_idx
+        dia_idx = body.get('dia_idx')
+        if dia_idx is not None:
+            try:
+                dia_idx = int(dia_idx)
+            except (TypeError, ValueError):
+                raise BadRequest("dia_idx inválido")
+            if not (0 <= dia_idx < len(dias)):
+                raise BadRequest(f"dia_idx fora do range (0..{len(dias) - 1})")
+            dias = [dias[dia_idx]]
+
+        # Filtro adicional: cat_idx (precisa dia_idx). Gera só uma categoria.
+        cat_idx = body.get('cat_idx')
+        if cat_idx is not None:
+            if dia_idx is None:
+                raise BadRequest("cat_idx requer dia_idx")
+            try:
+                cat_idx = int(cat_idx)
+            except (TypeError, ValueError):
+                raise BadRequest("cat_idx inválido")
+            cats_do_dia = dias[0].get('categorias', []) or []
+            if not (0 <= cat_idx < len(cats_do_dia)):
+                raise BadRequest(f"cat_idx fora do range (0..{len(cats_do_dia) - 1})")
+            # Substitui as categorias do (único) dia restante por só a escolhida
+            dias = [{**dias[0], 'categorias': [cats_do_dia[cat_idx]]}]
 
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-            if atletas:
-                # Um HTML combinado por workout (todos atletas como páginas A4 sequenciais).
-                # Ctrl+P no browser gera o PDF da categoria inteira de uma vez.
-                for wkt in workouts:
-                    num  = wkt.get('numero', 1)
-                    nome = wkt.get('nome', 'wkt')
-                    html = render_workout_combined(ev, wkt, FONTS, logo, logo_evt, atletas)
-                    zf.writestr(f"{num:02d}_{sanitize(nome)}.html",
-                                html.encode('utf-8'))
-            else:
-                for wkt in workouts:
-                    num  = wkt.get('numero', 1)
-                    nome = wkt.get('nome', 'wkt')
-                    html = render_workout(ev, wkt, FONTS, logo, logo_evt)
-                    zf.writestr(f"{num:02d}_{sanitize(nome)}.html", html.encode('utf-8'))
+            for dia in dias:
+                dia_label = dia.get('label', 'Dia')
+                dia_data  = dia.get('data', '')
+                dia_pasta = sanitize(dia_label)
+                for cat in dia.get('categorias', []) or []:
+                    cat_nome = cat.get('nome', 'Categoria')
+                    cat_pasta = sanitize(cat_nome)
+                    workouts = cat.get('workouts', []) or []
+                    if not workouts:
+                        continue
+                    _validate_workout_tipos(workouts)
+                    assign_workout_numbers(workouts)
+                    enriquecer_workouts(workouts)
+                    baterias = cat.get('baterias', []) or []
 
-        cat = sanitize(ev.get('categoria', '') or ev.get('nome', 'sumulas'))
+                    # Sobrescreve categoria e data: a súmula sempre carrega a
+                    # categoria do workout e a data do dia em que ele roda.
+                    ev_local = {
+                        **ev,
+                        'categoria': cat_nome,
+                        'data':      dia_data or ev.get('data', ''),
+                    }
+
+                    for wkt_pos, wkt in enumerate(workouts, start=1):
+                        # Junta todas as alocações de baterias que rodam este workout
+                        # (workouts_que_rodam contém a posição 1-based do workout)
+                        competidores: list[dict] = []
+                        for b in baterias:
+                            workouts_que_rodam = b.get('workouts_que_rodam') or []
+                            if workouts_que_rodam and wkt_pos not in workouts_que_rodam:
+                                continue
+                            for aloc in b.get('alocacoes', []) or []:
+                                competidores.append({
+                                    'bateria_num': b.get('numero', ''),
+                                    **aloc,
+                                })
+                        # Ordena por bateria → raia (numérica)
+                        competidores.sort(key=lambda c: (
+                            _to_int_or_max(c.get('bateria_num')),
+                            _to_int_or_max(c.get('raia')),
+                        ))
+
+                        # Converte alocações em "atletas" (compatível com render_workout_combined)
+                        atletas = [
+                            {
+                                'nome':    c.get('nome', ''),
+                                'box':     c.get('box', ''),
+                                'raia':    c.get('raia', ''),
+                                'bateria': c.get('bateria_num', ''),
+                                'numero':  c.get('numero', ''),
+                            }
+                            for c in competidores
+                        ]
+
+                        nome_arq = f"{wkt_pos:02d}_{sanitize(wkt.get('nome', 'wkt'))}.html"
+                        caminho  = f"{dia_pasta}/{cat_pasta}/{nome_arq}"
+
+                        if incluir_competidores and atletas:
+                            html = render_workout_combined(ev_local, wkt, FONTS, logo, logo_evt, atletas)
+                        else:
+                            html = render_workout(ev_local, wkt, FONTS, logo, logo_evt)
+                        zf.writestr(caminho, html.encode('utf-8'))
+
+        nome_zip = sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas'
         self._send(200, 'application/zip', buf.getvalue(),
-                   {'Content-Disposition': f'attachment; filename="{cat}.zip"'})
+                   {'Content-Disposition': f'attachment; filename="{nome_zip}.zip"'})
 
     def _handle_import_excel(self, body):
         try:

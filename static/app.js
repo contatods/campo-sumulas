@@ -1,52 +1,134 @@
 // ═══════════════════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════════════════
+// Shape novo (multi-dia):
+//   config = {
+//     evento: { nome, categoria, data, logo_empresa, logo_evento },
+//     dias: [{ label, categorias: [{ nome, workouts, baterias }] }],
+//     roster: [{ numero, nome, box }, ...]
+//   }
+// Modelo legado (categoria_grid, template) é convertido pelo backend pra esse
+// mesmo shape no momento do import — frontend só conhece esse formato.
 let config = {
   evento: { nome: "", categoria: "", data: "", logo_empresa: DS_LOGO_PADRAO, logo_evento: "" },
-  workouts: [],
-  atletas: []   // atletas da categoria atual (pode estar vazio)
+  dias: [],
+  roster: [],
 };
-let editingIdx  = -1;   // -1 = new workout
-let previewIdx  = -1;
-let importedData = null;  // resultado completo do último import (pra trocar categoria sem reimportar)
-const STATE_KEY      = 'ds_sumulas_v1_state';
-const IMPORT_KEY     = 'ds_sumulas_v1_import';
-const LABEL_COL_KEY  = 'ds_sumulas_v1_show_label';
-// Versão do schema do snapshot salvo em localStorage. Bump quando mudar shape de
-// `config` (campos novos obrigatórios, renames, etc.) — state com versão antiga
-// é descartado em vez de carregado errado.
-const SCHEMA_VERSION = 1;
+let diaAtual    = 0;       // índice na config.dias
+let catSel      = 0;       // categoria selecionada (índice em dias[diaAtual].categorias)
+let catListOpen = false;   // dropdown de seleção de categoria aberto?
+let editingPath = null;    // {dia, cat, wkt} quando editando (criar = wkt = -1)
+let previewPath = null;    // {dia, cat, wkt} do workout em preview
+
+const STATE_KEY      = 'ds_sumulas_v2_state';
+const IMPORT_KEY     = 'ds_sumulas_v2_import';
+const LABEL_COL_KEY  = 'ds_sumulas_v2_show_label';
+// Bump quando mudar shape de `config`. State antigo (v1) é descartado.
+const SCHEMA_VERSION = 2;
+
+const TIPO_LABEL = { for_time: 'For Time', amrap: 'AMRAP', express: 'Express' };
+
+// Helpers de navegação
+function diaCorrente() {
+  return (config.dias && config.dias[diaAtual]) || null;
+}
+function categoriasDoDia() {
+  const d = diaCorrente();
+  return (d && d.categorias) || [];
+}
+function temDados() {
+  return (config.dias || []).some(d => (d.categorias || []).length > 0);
+}
 
 // ═══════════════════════════════════════════════════════════════════
-//  EVENTO
+//  CONFIG MODAL (Evento + Dias + Importar — tudo num lugar só)
 // ═══════════════════════════════════════════════════════════════════
-function toggleEventoForm() {
-  const form = document.getElementById('eventoForm');
-  const disp = document.getElementById('eventoDisplay');
-  const btn  = document.getElementById('btnToggleEvento');
-  const open = form.style.display === 'none';
-  form.style.display = open ? '' : 'none';
-  btn.textContent    = open ? 'Fechar' : 'Editar';
-  if (open) {
-    document.getElementById('evNome').value = config.evento.nome || '';
-    document.getElementById('evCat').value  = config.evento.categoria || '';
-    document.getElementById('evData').value = config.evento.data || '';
-    // Mostra preview da logo empresa se já estiver carregada (padrão DS)
-    const empImg = document.getElementById('logoEmpresaPreview');
-    const empPh  = document.getElementById('logoEmpresaPlaceholder');
-    if (config.evento.logo_empresa) {
-      empImg.src = config.evento.logo_empresa;
-      empImg.style.display = '';
-      empPh.style.display  = 'none';
-    }
-    const evtImg = document.getElementById('logoEventoPreview');
-    const evtPh  = document.getElementById('logoEventoPlaceholder');
-    if (config.evento.logo_evento) {
-      evtImg.src = config.evento.logo_evento;
-      evtImg.style.display = '';
-      evtPh.style.display  = 'none';
-    }
+function abrirConfig(tab) {
+  document.getElementById('configModal').style.display = '';
+  // Popula form do evento
+  document.getElementById('evNome').value = config.evento.nome || '';
+  document.getElementById('evCat').value  = config.evento.categoria || '';
+  document.getElementById('evData').value = config.evento.data || '';
+  // Logos
+  const empImg = document.getElementById('logoEmpresaPreview');
+  const empPh  = document.getElementById('logoEmpresaPlaceholder');
+  if (config.evento.logo_empresa) {
+    empImg.src = config.evento.logo_empresa;
+    empImg.style.display = '';
+    empPh.style.display  = 'none';
   }
+  const evtImg = document.getElementById('logoEventoPreview');
+  const evtPh  = document.getElementById('logoEventoPlaceholder');
+  if (config.evento.logo_evento) {
+    evtImg.src = config.evento.logo_evento;
+    evtImg.style.display = '';
+    evtPh.style.display  = 'none';
+  }
+  renderDiasEditor();
+  cfgTab(tab || 'evento');
+}
+
+function fecharConfig() {
+  document.getElementById('configModal').style.display = 'none';
+}
+
+function cfgTab(tab) {
+  document.querySelectorAll('.cfg-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  ['evento','dias','importar'].forEach(t => {
+    const pane = document.getElementById('cfgPane' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (pane) pane.style.display = (t === tab) ? '' : 'none';
+  });
+}
+
+// Limpar tudo a partir do modal (chama a função existente e fecha o modal)
+function limparTudoModal() {
+  if (!confirm('Apagar evento, dias, categorias e workouts? Esta ação não pode ser desfeita.')) return;
+  fecharConfig();
+  // Reuso da limparTudo sem o seu confirm próprio (já confirmamos aqui)
+  config = {
+    evento: { nome: "", categoria: "", data: "", logo_empresa: DS_LOGO_PADRAO, logo_evento: "" },
+    dias: [],
+    roster: [],
+  };
+  diaAtual = 0;
+  catSel = 0; catListOpen = false;
+  previewPath = null;
+  editingPath = null;
+  clearState();
+  ['evNome','evCat','evData'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  ['logoEventoPreview','logoEmpresaPreview'].forEach(id => {
+    const el=document.getElementById(id); if(el){el.src=''; el.style.display='none';}
+  });
+  ['logoEventoPlaceholder','logoEmpresaPlaceholder'].forEach(id => {
+    const el=document.getElementById(id); if(el) el.style.display='';
+  });
+  document.getElementById('previewFrame').style.display = 'none';
+  document.getElementById('pbName').textContent = '—';
+  renderEventoDisplay();
+  renderDiaTabs();
+  renderCategoriasList();
+  atualizarBotaoGerar();
+  updateEmptyState();
+  toast('Tudo limpo', 'ok');
+}
+
+// Banner pós-import
+function dispensarBanner() {
+  document.getElementById('postImportBanner').style.display = 'none';
+}
+function mostrarBannerPosImport(msg) {
+  const banner = document.getElementById('postImportBanner');
+  document.getElementById('pibMsg').textContent = msg;
+  banner.style.display = '';
+}
+
+// Toggle de "outras opções" no rodapé
+function toggleMaisOpcoes() {
+  const wrap = document.getElementById('gerarMaisOpcoes');
+  const btn  = document.getElementById('btnMaisOpcoes');
+  const open = wrap.style.display === 'none';
+  wrap.style.display = open ? '' : 'none';
+  if (btn) btn.textContent = open ? 'menos opções ▴' : 'outras opções ▾';
 }
 
 function onEventoChange() {
@@ -90,103 +172,486 @@ function onLogoEmpresa(input) {
 }
 
 function refreshPreview() {
-  if (previewIdx >= 0 && previewIdx < config.workouts.length) {
-    previewWorkout(previewIdx);
+  if (previewPath) previewWorkoutByPath(previewPath);
+}
+
+function renderDiasEditor() {
+  const list = document.getElementById('diasEditorList');
+  if (!list) return;
+  const dias = config.dias || [];
+  if (!dias.length) {
+    list.innerHTML = '<p class="cfg-hint" style="font-style:italic">Nenhum dia configurado. Clique em <b>+ Adicionar dia</b> abaixo ou importe um Excel.</p>';
+    return;
   }
+  list.innerHTML = dias.map((d, i) => `
+    <div class="dia-edit-row">
+      <input class="dia-edit-label" type="text" placeholder="Rótulo (ex: Sexta)" value="${esc(d.label || '')}" oninput="onDiaLabelChange(${i}, this.value)">
+      <input class="dia-edit-data" type="date" value="${esc(d.data_iso || '')}" oninput="onDiaDataChange(${i}, this.value)" title="Data do dia">
+      <button class="icon-btn danger" onclick="removerDia(${i})" title="Remover dia">×</button>
+    </div>`).join('');
+}
+
+function adicionarDia() {
+  config.dias = config.dias || [];
+  const n = config.dias.length + 1;
+  config.dias.push({ label: `Dia ${n}`, data: '', data_iso: '', categorias: [] });
+  renderDiasEditor();
+  renderDiaTabs();
+  renderCategoriasList();
+  atualizarBotaoGerar();
+  updateClearAllVisibility();
+  saveState();
+}
+
+function removerDia(idx) {
+  if (!config.dias || idx < 0 || idx >= config.dias.length) return;
+  const d = config.dias[idx];
+  const totalCats = (d.categorias || []).length;
+  const msg = totalCats
+    ? `Remover dia "${d.label}" com ${totalCats} categoria(s)?`
+    : `Remover dia "${d.label}"?`;
+  if (!confirm(msg)) return;
+  config.dias.splice(idx, 1);
+  // Ajusta diaAtual se ficou fora do range
+  if (diaAtual >= config.dias.length) diaAtual = Math.max(0, config.dias.length - 1);
+  catSel = 0; catListOpen = false;
+  previewPath = null;
+  renderDiasEditor();
+  renderDiaTabs();
+  renderCategoriasList();
+  atualizarBotaoGerar();
+  updateClearAllVisibility();
+  document.getElementById('previewFrame').style.display = 'none';
+  document.getElementById('pbName').textContent = '—';
+  updateEmptyState();
+  saveState();
+}
+
+function onDiaLabelChange(i, val) {
+  if (config.dias && config.dias[i]) {
+    config.dias[i].label = val.trim();
+    renderDiaTabs();
+    saveState();
+    refreshPreview();
+  }
+}
+
+function onDiaDataChange(i, val) {
+  if (config.dias && config.dias[i]) {
+    // Input type=date entrega ISO (YYYY-MM-DD); guardamos as duas formas:
+    //  data_iso → re-popular o picker; data → formato BR mostrado na súmula
+    const iso = (val || '').trim();
+    config.dias[i].data_iso = iso;
+    config.dias[i].data = formatarDataBR(iso);
+    saveState();
+    refreshPreview();
+  }
+}
+
+function formatarDataBR(iso) {
+  if (!iso) return '';
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 }
 
 function renderEventoDisplay() {
-  const d = document.getElementById('eventoDisplay');
-  if (config.evento.nome) {
-    d.innerHTML = `<div class="ev-nome">${esc(config.evento.nome)}</div>
-      <div class="ev-meta">${esc(config.evento.categoria)}${config.evento.data ? ' · ' + esc(config.evento.data) : ''}</div>`;
-  } else {
-    d.innerHTML = '<div class="ev-empty">Clique para configurar o evento</div>';
+  // Atualiza o nome do evento no header (ao lado de "Digital Score")
+  const hdr = document.getElementById('hdrEvento');
+  if (hdr) {
+    hdr.textContent = config.evento.nome
+      ? `Digital Score · ${config.evento.nome}`
+      : 'Digital Score';
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  WORKOUT LIST
+//  DAY TABS (header)
 // ═══════════════════════════════════════════════════════════════════
-const TIPO_LABEL = { for_time: 'For Time', amrap: 'AMRAP', express: 'Express' };
+function renderDiaTabs() {
+  const wrap = document.getElementById('diaTabs');
+  if (!wrap) return;
+  const dias = config.dias || [];
+  // Botão "+" no header — sempre disponível quando o evento foi inicializado
+  const btnAddDia = document.getElementById('hdrAddDia');
+  if (btnAddDia) btnAddDia.classList.toggle('show', dias.length > 0);
 
-function computeWorkoutNumbers() {
-  // Express ocupa 2 slots (N e N+1), demais 1 slot cada
-  let counter = 1;
-  config.workouts.forEach(w => {
-    w.numero = counter;
-    if (w.tipo === 'express') {
-      w.numero_f2 = counter + 1;
-      counter += 2;
-    } else {
-      delete w.numero_f2;
-      counter += 1;
-    }
-  });
-}
-
-function renderWorkoutList() {
-  computeWorkoutNumbers();
-  const el = document.getElementById('workoutList');
-  if (!config.workouts.length) {
-    el.innerHTML = '<div class="wkt-empty">Nenhum workout ainda.<br>Clique em "+ Novo" para começar.</div>';
+  // Tabs só fazem sentido com 2+ dias
+  if (dias.length < 2) {
+    wrap.classList.remove('show');
+    wrap.innerHTML = '';
     return;
   }
-  el.innerHTML = config.workouts.map((w, i) => {
-    const numHtml = (w.tipo === 'express' && w.numero_f2 !== undefined)
-      ? `<span style="font-size:10px;line-height:1.15">${w.numero}<span style="font-size:8px;opacity:.55">·${w.numero_f2}</span></span>`
-      : w.numero;
-    return `
-    <div class="wkt-card${previewIdx === i ? ' active' : ''}" id="wcard${i}" onclick="selectWorkout(${i})">
-      <div class="wkt-num">${numHtml}</div>
-      <div class="wkt-info">
-        <div class="wkt-name">${esc(w.nome)}</div>
-        <div class="wkt-tags">
-          <span class="tag ${w.tipo}">${TIPO_LABEL[w.tipo] || w.tipo}</span>
-          ${w.time_cap ? `<span class="tag">${esc(w.time_cap)}</span>` : ''}
-        </div>
-      </div>
-      <div class="wkt-actions">
-        <button class="icon-btn" onclick="event.stopPropagation();editarWorkout(${i})" title="Editar">✎</button>
-        <button class="icon-btn danger" onclick="event.stopPropagation();deletarWorkout(${i})" title="Excluir">×</button>
-      </div>
-    </div>`;
+  wrap.classList.add('show');
+  wrap.innerHTML = dias.map((d, i) => {
+    const dataShort = d.data ? String(d.data).slice(0, 5) : '';
+    return `<button class="dia-tab${i === diaAtual ? ' active' : ''}" onclick="selectDia(${i})">
+      ${esc(d.label || `Dia ${i + 1}`)}${dataShort ? `<span class="dia-tab-date">${esc(dataShort)}</span>` : ''}
+    </button>`;
   }).join('');
 }
 
-function selectWorkout(idx) {
-  previewIdx = idx;
-  renderWorkoutList();
-  previewWorkout(idx);
+function selectDia(idx) {
+  if (idx === diaAtual) return;
+  diaAtual = idx;
+  catSel = 0; catListOpen = false;
+  previewPath = null;
+  renderDiaTabs();
+  renderCategoriasList();
+  atualizarBotaoGerar();
+  document.getElementById('previewFrame').style.display = 'none';
+  document.getElementById('pbName').textContent = '—';
+  updateEmptyState();
+  saveState();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CATEGORIAS (sidebar do dia atual)
+// ═══════════════════════════════════════════════════════════════════
+function renderCategoriasList() {
+  const wrap   = document.getElementById('catSelWrap');
+  const btnSel = document.getElementById('catSelBtn');
+  const list   = document.getElementById('catSelList');
+  const el     = document.getElementById('categoriasList');
+  if (!el) return;
+  const cats = categoriasDoDia();
+
+  // Atualiza header da sidebar com nome do dia ativo
+  const hdrTitle = document.getElementById('categoriasHdrTitle');
+  if (hdrTitle) {
+    const dia = diaCorrente();
+    hdrTitle.textContent = dia
+      ? `Categoria · ${dia.label || 'Dia'}${dia.data ? ' ' + String(dia.data).slice(0, 5) : ''}`
+      : 'Categoria';
+  }
+  const btnAddCat = document.getElementById('btnAddCat');
+  if (btnAddCat) btnAddCat.style.display = (config.dias && config.dias.length) ? '' : 'none';
+
+  if (!cats.length) {
+    if (wrap) wrap.style.display = 'none';
+    el.innerHTML = '<div class="cat-empty">Sem categorias neste dia.<br>Importe um Excel ou clique no <b>+</b> acima pra adicionar.</div>';
+    return;
+  }
+
+  // Garante que catSel é válido
+  if (catSel < 0 || catSel >= cats.length) catSel = 0;
+  const catAtiva = cats[catSel];
+
+  // Header do seletor (sempre visível): nome + posição (i/N) + arrow
+  if (wrap) wrap.style.display = '';
+  if (btnSel) {
+    btnSel.classList.toggle('open', catListOpen);
+    const nWkts = (catAtiva.workouts || []).length;
+    const nBat  = (catAtiva.baterias || []).length;
+    const nAlocs = (catAtiva.baterias || []).reduce((s, b) => s + (b.alocacoes || []).length, 0);
+    document.getElementById('catSelName').textContent = catAtiva.nome;
+    // Indicador de posição: "1/9" só aparece quando há mais de 1 categoria
+    const posicao = cats.length > 1 ? ` · ${catSel + 1}/${cats.length}` : '';
+    const counts = `${nWkts} wkt${nWkts !== 1 ? 's' : ''}${nBat ? ` · ${nBat} bat · ${nAlocs} comp` : ''}`;
+    document.getElementById('catSelMeta').textContent = counts + posicao;
+  }
+
+  // Dropdown: lista todas as categorias do dia (rola se for muita)
+  if (list) {
+    list.style.display = catListOpen ? '' : 'none';
+    if (catListOpen) {
+      list.innerHTML = cats.map((cat, ci) => {
+        const nW = (cat.workouts || []).length;
+        const nB = (cat.baterias || []).length;
+        const nA = (cat.baterias || []).reduce((s, b) => s + (b.alocacoes || []).length, 0);
+        return `
+        <div class="cat-sel-item${ci === catSel ? ' selected' : ''}" onclick="selecionarCategoria(${ci})">
+          <span class="cat-sel-item-nome">${esc(cat.nome)}</span>
+          <span class="cat-sel-item-meta">${nW}w${nB ? ` · ${nA}c` : ''}</span>
+          <button class="cat-sel-item-rm" onclick="event.stopPropagation();removerCategoria(${ci})" title="Remover">×</button>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Detalhe da categoria selecionada (workouts + baterias)
+  el.innerHTML = `<div class="cat-detail">${renderCategoriaDetalhe(catAtiva, catSel)}</div>`;
+}
+
+function toggleCatList() {
+  catListOpen = !catListOpen;
+  renderCategoriasList();
+}
+
+function selecionarCategoria(ci) {
+  catSel = ci;
+  catListOpen = false;
+  renderCategoriasList();
+}
+
+function adicionarCategoria() {
+  const dia = diaCorrente();
+  if (!dia) {
+    if (!config.dias || !config.dias.length) {
+      adicionarDia();
+      // Tenta de novo após criar o dia
+      return setTimeout(adicionarCategoria, 50);
+    }
+    return;
+  }
+  const nome = prompt('Nome da categoria:', '');
+  if (!nome || !nome.trim()) return;
+  dia.categorias = dia.categorias || [];
+  dia.categorias.push({ nome: nome.trim(), workouts: [], baterias: [] });
+  catSel = dia.categorias.length - 1; catListOpen = false;
+  renderCategoriasList();
+  atualizarBotaoGerar();
+  updateClearAllVisibility();
+  saveState();
+}
+
+function removerCategoria(ci) {
+  const dia = diaCorrente();
+  if (!dia || !dia.categorias || ci < 0 || ci >= dia.categorias.length) return;
+  const cat = dia.categorias[ci];
+  const nWkts = (cat.workouts || []).length;
+  const nBat  = (cat.baterias || []).length;
+  const detalhes = (nWkts || nBat) ? ` (${nWkts} workout${nWkts !== 1 ? 's' : ''}${nBat ? `, ${nBat} bateria${nBat !== 1 ? 's' : ''}` : ''})` : '';
+  if (!confirm(`Remover categoria "${cat.nome}"${detalhes}?`)) return;
+  dia.categorias.splice(ci, 1);
+  catSel = 0; catListOpen = false;
+  if (previewPath && previewPath.dia === diaAtual && previewPath.cat === ci) {
+    previewPath = null;
+    document.getElementById('previewFrame').style.display = 'none';
+    document.getElementById('pbName').textContent = '—';
+    updateEmptyState();
+  }
+  renderCategoriasList();
+  atualizarBotaoGerar();
+  updateClearAllVisibility();
+  saveState();
+}
+
+function renderCategoriaDetalhe(cat, ci) {
+  const workouts = cat.workouts || [];
+  const baterias = cat.baterias || [];
+
+  const workoutsHtml = workouts.length
+    ? workouts.map((w, wi) => {
+        const isActive = previewPath && previewPath.dia === diaAtual && previewPath.cat === ci && previewPath.wkt === wi;
+        const tipoLabel = TIPO_LABEL[w.tipo] || w.tipo;
+        return `
+        <div class="wkt-row${isActive ? ' active' : ''}" onclick="selectWorkout(${ci}, ${wi})">
+          <div class="wkt-row-num">${wi + 1}</div>
+          <div class="wkt-row-info">
+            <div class="wkt-row-nome">${esc(w.nome || '—')}</div>
+            <div class="wkt-row-tags"><span class="tag ${w.tipo}">${esc(tipoLabel)}</span>${w.time_cap ? ` <span class="tag">${esc(w.time_cap)}</span>` : ''}${w.arena ? ` <span class="tag">${esc(w.arena)}</span>` : ''}</div>
+          </div>
+          <div class="wkt-row-actions">
+            <button class="icon-btn" onclick="event.stopPropagation();editarWorkout(${ci}, ${wi})" title="Editar">✎</button>
+            <button class="icon-btn danger" onclick="event.stopPropagation();deletarWorkout(${ci}, ${wi})" title="Excluir">×</button>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="cat-empty-inner">Sem workouts nesta categoria.</div>';
+
+  const bateriasHtml = baterias.length
+    ? baterias.map(b => {
+        const codigo = b.codigo_evento || '—';
+        const aq = b.horario_aquecimento || '';
+        const fila = b.horario_fila || '';
+        const horarios = aq || fila ? `${aq}${aq && fila ? ' / ' : ''}${fila}` : '';
+        const nAlocs = (b.alocacoes || []).length;
+        return `
+        <div class="bat-row">
+          <div class="bat-row-num">#${esc(b.numero)}</div>
+          <div class="bat-row-info">
+            <div class="bat-row-codigo">${esc(codigo)}${horarios ? ' · ' + horarios : ''}</div>
+            <div class="bat-row-meta">${nAlocs} competidor${nAlocs !== 1 ? 'es' : ''}${nAlocs ? ' · raias ' + (b.alocacoes || []).map(a => a.raia).join(', ') : ''}</div>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="cat-empty-inner">Sem baterias.</div>';
+
+  return `
+    <div class="cat-body">
+      <div class="cat-section-hdr">Workouts</div>
+      ${workoutsHtml}
+      <div class="cat-actions"><button class="btn-mov" onclick="novoWorkout(${ci})">+ Novo workout</button></div>
+      ${baterias.length ? '<div class="cat-section-hdr" style="margin-top:10px">Baterias</div>' + bateriasHtml : ''}
+    </div>`;
+}
+
+
+function selectWorkout(ci, wi) {
+  previewPath = { dia: diaAtual, cat: ci, wkt: wi };
+  renderCategoriasList();
+  previewWorkoutByPath(previewPath);
+}
+
+function _contagemPaginas(escopo, competidoresOn) {
+  const dias = config.dias || [];
+  let total = 0;
+  for (let i = 0; i < dias.length; i++) {
+    if (escopo === 'dia' && i !== diaAtual) continue;
+    if (escopo === 'cat' && i !== diaAtual) continue;
+    const cats = dias[i].categorias || [];
+    for (let ci = 0; ci < cats.length; ci++) {
+      if (escopo === 'cat' && ci !== catSel) continue;
+      const cat = cats[ci];
+      const nW = (cat.workouts || []).length;
+      const nA = (cat.baterias || []).reduce((s, b) => s + (b.alocacoes || []).length, 0);
+      total += competidoresOn && nA ? nW * nA : nW;
+    }
+  }
+  return total;
 }
 
 function atualizarBotaoGerar() {
-  const btn = document.getElementById('btnGerar');
-  const lbl = document.getElementById('btnGerarLabel');
-  const sub = document.getElementById('btnGerarSub');
-  const nWkt = config.workouts.length;
-  const nAtl = config.atletas.length;
-  btn.disabled = nWkt === 0;
-  if (nWkt === 0) {
-    lbl.textContent = 'Gerar súmulas';
-    sub.textContent = 'Adicione um workout pra começar';
-    return;
+  const btnEv  = document.getElementById('btnGerarEvento');
+  const btnDi  = document.getElementById('btnGerarDia');
+  const btnCt  = document.getElementById('btnGerarCat');
+  const subEv  = document.getElementById('bgeSubEvento');
+  const subDi  = document.getElementById('bgeSubDia');
+  const subCt  = document.getElementById('bgeSubCat');
+  if (!btnEv || !btnDi || !btnCt) return;
+
+  const dias = config.dias || [];
+  const totalWkts = dias.reduce((sum, d) =>
+    sum + (d.categorias || []).reduce((s, c) => s + (c.workouts || []).length, 0), 0);
+  const incluir = document.getElementById('chkIncluirCompetidores');
+  const compOn = !incluir || incluir.checked;
+
+  // Botão "Evento todo"
+  btnEv.disabled = totalWkts === 0;
+  const nEvt = _contagemPaginas('evento', compOn);
+  subEv.textContent = totalWkts === 0
+    ? 'importe um Excel pra começar'
+    : `${nEvt} página${nEvt !== 1 ? 's' : ''} · ${dias.length} dia${dias.length !== 1 ? 's' : ''}${compOn ? '' : ' · em branco'}`;
+
+  // Botão "Dia atual"
+  const diaCur = dias[diaAtual];
+  btnDi.disabled = !diaCur || (diaCur.categorias || []).length === 0;
+  const nDia = _contagemPaginas('dia', compOn);
+  subDi.textContent = !diaCur ? 'sem dia ativo'
+    : `${nDia} página${nDia !== 1 ? 's' : ''} · ${diaCur.label || 'dia atual'}${compOn ? '' : ' · em branco'}`;
+
+  // Botão "Categoria selecionada" (primário) — usa catSel atual
+  const dia = dias[diaAtual];
+  const cat = dia && (dia.categorias || [])[catSel];
+  btnCt.disabled = !cat || (cat.workouts || []).length === 0;
+  if (!cat) {
+    subCt.textContent = 'sem categoria';
+  } else {
+    const nCat = _contagemPaginas('cat', compOn);
+    subCt.textContent = `${nCat} página${nCat !== 1 ? 's' : ''} · ${cat.nome}${compOn ? '' : ' · em branco'}`;
   }
-  const total = nAtl ? nWkt * nAtl : nWkt;
-  lbl.textContent = `Gerar ${total} súmula${total !== 1 ? 's' : ''}`;
-  const evt  = config.evento.categoria || config.evento.nome;
-  const meta = nAtl
-    ? `${nAtl} atleta${nAtl !== 1 ? 's' : ''} × ${nWkt} workout${nWkt !== 1 ? 's' : ''}`
-    : `${nWkt} workout${nWkt !== 1 ? 's' : ''}`;
-  sub.textContent = evt ? `${evt} · ${meta}` : meta;
 }
+
+function gerarZIPEscopo(escopo) {
+  const totalWkts = (config.dias || []).reduce((sum, d) =>
+    sum + (d.categorias || []).reduce((s, c) => s + (c.workouts || []).length, 0), 0);
+  if (!totalWkts) return;
+
+  const incluir = document.getElementById('chkIncluirCompetidores');
+  const incluirOn = !incluir || incluir.checked;
+  const payload = { config, incluir_competidores: incluirOn };
+  if (escopo === 'dia') {
+    payload.dia_idx = diaAtual;
+  } else if (escopo === 'cat') {
+    const dia = (config.dias || [])[diaAtual];
+    if (!dia || !dia.categorias || !dia.categorias[catSel]) {
+      toast('Sem categoria selecionada', 'err'); return;
+    }
+    payload.dia_idx = diaAtual;
+    payload.cat_idx = catSel;
+  }
+
+  const btnId = escopo === 'evento' ? 'btnGerarEvento'
+              : escopo === 'dia'    ? 'btnGerarDia'
+              : 'btnGerarCat';
+  const btn = document.getElementById(btnId);
+  const subId = escopo === 'evento' ? 'bgeSubEvento'
+              : escopo === 'dia'    ? 'bgeSubDia'
+              : 'bgeSubCat';
+  const subEl = document.getElementById(subId);
+  const subTextOriginal = subEl ? subEl.textContent : '';
+  ['btnGerarEvento','btnGerarDia','btnGerarCat'].forEach(id => {
+    const b = document.getElementById(id); if (b) b.disabled = true;
+  });
+  if (subEl) subEl.textContent = 'gerando…';
+  if (btn) btn.classList.add('generating');
+
+  fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(r => { if (!r.ok) throw new Error('Falha na geração'); return r.blob(); })
+  .then(blob => {
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href = url;
+    const baseName = (config.evento.nome || 'sumulas').replace(/\s+/g, '_');
+    let sufixo = '';
+    if (escopo === 'dia') sufixo = `_${(config.dias[diaAtual] || {}).label || 'dia'}`;
+    else if (escopo === 'cat') {
+      const c = ((config.dias[diaAtual] || {}).categorias || [])[catSel];
+      sufixo = c ? `_${c.nome.replace(/\s+/g, '_')}` : '';
+    }
+    a.download = `${baseName}${sufixo}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('ZIP gerado com sucesso!', 'ok');
+  })
+  .catch(e => toast('Erro: ' + e.message, 'err'))
+  .finally(() => {
+    if (btn) btn.classList.remove('generating');
+    if (subEl) subEl.textContent = subTextOriginal;
+    atualizarBotaoGerar();
+  });
+}
+
+// Compat: gerarZIP() ainda existe pro botão antigo (caso ainda referenciado)
+function gerarZIP() { gerarZIPEscopo('evento'); }
 
 // ═══════════════════════════════════════════════════════════════════
 //  EDITOR
 // ═══════════════════════════════════════════════════════════════════
-function novoWorkout() {
-  editingIdx = -1;
-  document.getElementById('edTitle').textContent = 'Novo Workout';
+function populateEditorPathSelects(diaIdx, catIdx) {
+  const dias = config.dias || [];
+  const selDia = document.getElementById('edDia');
+  const selCat = document.getElementById('edCat');
+  selDia.innerHTML = dias.map((d, i) =>
+    `<option value="${i}">${esc(d.label || `Dia ${i + 1}`)}</option>`
+  ).join('') || '<option value="0">—</option>';
+  selDia.value = String(diaIdx);
+  populateEditorCatSelect(diaIdx, catIdx);
+}
+
+function populateEditorCatSelect(diaIdx, catIdx) {
+  const dia = (config.dias || [])[diaIdx];
+  const cats = (dia && dia.categorias) || [];
+  const selCat = document.getElementById('edCat');
+  selCat.innerHTML = cats.map((c, i) =>
+    `<option value="${i}">${esc(c.nome)}</option>`
+  ).join('') || '<option value="0">—</option>';
+  if (catIdx !== undefined && catIdx !== null && catIdx >= 0 && catIdx < cats.length) {
+    selCat.value = String(catIdx);
+  }
+}
+
+function onEditorDiaChange() {
+  const diaIdx = parseInt(document.getElementById('edDia').value, 10);
+  populateEditorCatSelect(diaIdx, 0);
+}
+
+function novoWorkout(catIdx) {
+  const cats = categoriasDoDia();
+  if (catIdx === undefined || catIdx === null) {
+    if (cats.length === 0) {
+      toast('Crie ou importe uma categoria primeiro', 'err');
+      return;
+    }
+    if (cats.length === 1) catIdx = 0;
+    else { toast('Expanda uma categoria e clique em "+ Novo workout"', 'err'); return; }
+  }
+  editingPath = { dia: diaAtual, cat: catIdx, wkt: -1 };  // -1 = novo
+  document.getElementById('edTitle').textContent = `Novo Workout · ${cats[catIdx].nome}`;
   document.getElementById('edNome').value = '';
   document.getElementById('edTipo').value = 'for_time';
   document.getElementById('edTimeCap').value = '';
@@ -197,14 +662,17 @@ function novoWorkout() {
   setMovTableFromArray('f1', []);
   setMovTableFromArray('f2', []);
   switchExpressTab('f1');
+  populateEditorPathSelects(diaAtual, catIdx);
   onTipoChange();
   abrirEditor();
 }
 
-function editarWorkout(idx) {
-  editingIdx = idx;
-  const w = config.workouts[idx];
-  document.getElementById('edTitle').textContent = `Workout ${w.numero} — ${w.nome}`;
+function editarWorkout(ci, wi) {
+  const cats = categoriasDoDia();
+  const w = cats[ci] && cats[ci].workouts[wi];
+  if (!w) return;
+  editingPath = { dia: diaAtual, cat: ci, wkt: wi };
+  document.getElementById('edTitle').textContent = `Workout ${wi + 1} · ${esc(cats[ci].nome)}`;
   document.getElementById('edNome').value = w.nome || '';
   document.getElementById('edTipo').value = w.tipo || 'for_time';
   document.getElementById('edTimeCap').value = w.time_cap || '';
@@ -220,6 +688,7 @@ function editarWorkout(idx) {
   } else {
     setMovTableFromArray('main', w.movimentos || []);
   }
+  populateEditorPathSelects(diaAtual, ci);
   onTipoChange();
   abrirEditor();
 }
@@ -230,7 +699,7 @@ function abrirEditor() {
 
 function fecharEditor() {
   document.getElementById('editor').classList.remove('open');
-  editingIdx = -1;
+  editingPath = null;
 }
 
 function onTipoChange() {
@@ -250,7 +719,7 @@ function switchExpressTab(tab) {
   });
 }
 
-// ── Janela estruturada (start/end mm:ss) ↔ string canônica ──
+// Janela estruturada (start/end mm:ss) ↔ string canônica
 function setExpressJanela(section, start, end) {
   const sId = section === 'f1' ? 'edF1Start' : 'edF2Start';
   const eId = section === 'f1' ? 'edF1End'   : 'edF2End';
@@ -283,19 +752,39 @@ function buildJanelaForTime(start, end) {
 }
 
 function salvarWorkout() {
+  if (!editingPath) return;
   const nome = document.getElementById('edNome').value.trim().toUpperCase();
   if (!nome) { toast('Digite o nome do workout', 'err'); return; }
   const tipo = document.getElementById('edTipo').value;
   const timeCap = document.getElementById('edTimeCap').value.trim();
   const desc = document.getElementById('edDescricao').value.split('\n').map(s=>s.trim()).filter(Boolean);
 
+  // Path destino lido dos selects (pode ter mudado durante a edição)
+  const novoDia = parseInt(document.getElementById('edDia').value, 10);
+  const novaCat = parseInt(document.getElementById('edCat').value, 10);
+  if (isNaN(novoDia) || isNaN(novaCat)) { toast('Selecione dia e categoria', 'err'); return; }
+  const catDestino = (config.dias[novoDia] && config.dias[novoDia].categorias[novaCat]) || null;
+  if (!catDestino) { toast('Categoria de destino inválida', 'err'); return; }
+  catDestino.workouts = catDestino.workouts || [];
+
   let wkt;
-  if (editingIdx >= 0) {
-    wkt = config.workouts[editingIdx];
+  const moveu = editingPath.wkt >= 0
+    && (editingPath.dia !== novoDia || editingPath.cat !== novaCat);
+
+  if (editingPath.wkt >= 0 && !moveu) {
+    // Edição in-place
+    wkt = config.dias[editingPath.dia].categorias[editingPath.cat].workouts[editingPath.wkt];
+  } else if (moveu) {
+    // Move workout: tira da posição original e empurra na destino
+    const origem = config.dias[editingPath.dia].categorias[editingPath.cat];
+    wkt = origem.workouts.splice(editingPath.wkt, 1)[0];
+    catDestino.workouts.push(wkt);
+    editingPath = { dia: novoDia, cat: novaCat, wkt: catDestino.workouts.length - 1 };
   } else {
+    // Workout novo
     wkt = { numero: 0, modalidade: 'individual' };
-    config.workouts.push(wkt);
-    editingIdx = config.workouts.length - 1;
+    catDestino.workouts.push(wkt);
+    editingPath = { dia: novoDia, cat: novaCat, wkt: catDestino.workouts.length - 1 };
   }
 
   wkt.nome     = nome;
@@ -309,16 +798,8 @@ function salvarWorkout() {
     const f1End   = document.getElementById('edF1End').value.trim();
     const f2Start = document.getElementById('edF2Start').value.trim();
     const f2End   = document.getElementById('edF2End').value.trim();
-    wkt.formula1 = {
-      janela: buildJanelaAmrap(f1Start, f1End),
-      descricao: [],
-      movimentos: getMovTableArray('f1')
-    };
-    wkt.formula2 = {
-      janela: buildJanelaForTime(f2Start, f2End),
-      descricao: [],
-      movimentos: getMovTableArray('f2')
-    };
+    wkt.formula1 = { janela: buildJanelaAmrap(f1Start, f1End), descricao: [], movimentos: getMovTableArray('f1') };
+    wkt.formula2 = { janela: buildJanelaForTime(f2Start, f2End), descricao: [], movimentos: getMovTableArray('f2') };
     delete wkt.movimentos;
   } else {
     wkt.movimentos = getMovTableArray('main');
@@ -326,37 +807,45 @@ function salvarWorkout() {
     delete wkt.formula2;
   }
 
-  previewIdx = editingIdx;
+  previewPath = { dia: editingPath.dia, cat: editingPath.cat, wkt: editingPath.wkt };
   fecharEditor();
-  renderWorkoutList();
+  // Se mudou de dia, atualiza o dia ativo e expande a categoria destino
+  if (diaAtual !== previewPath.dia) {
+    diaAtual = previewPath.dia;
+    catSel = 0; catListOpen = false;
+    renderDiaTabs();
+  }
+  catSel = previewPath.cat; catListOpen = false;
+  renderCategoriasList();
   atualizarBotaoGerar();
   updateClearAllVisibility();
-  previewWorkout(previewIdx);
+  previewWorkoutByPath(previewPath);
   saveState();
-  toast('Workout salvo!', 'ok');
+  toast(moveu ? 'Workout movido!' : 'Workout salvo!', 'ok');
 }
 
-function deletarWorkout(idx) {
-  if (!confirm(`Excluir workout "${config.workouts[idx].nome}"?`)) return;
-  config.workouts.splice(idx, 1);
-  computeWorkoutNumbers(); // Renumber with Express slot logic
-  if (previewIdx >= config.workouts.length) previewIdx = config.workouts.length - 1;
-  renderWorkoutList();
-  atualizarBotaoGerar();
-  updateClearAllVisibility();
-  if (previewIdx >= 0) previewWorkout(previewIdx);
-  else {
+function deletarWorkout(ci, wi) {
+  const cat = categoriasDoDia()[ci];
+  if (!cat) return;
+  const w = cat.workouts[wi];
+  if (!w) return;
+  if (!confirm(`Excluir workout "${w.nome}"?`)) return;
+  cat.workouts.splice(wi, 1);
+  if (previewPath && previewPath.cat === ci && previewPath.wkt === wi) {
+    previewPath = null;
     document.getElementById('previewFrame').style.display = 'none';
     document.getElementById('pbName').textContent = '—';
     updateEmptyState();
   }
+  renderCategoriasList();
+  atualizarBotaoGerar();
+  updateClearAllVisibility();
   saveState();
 }
 
 // ═══════════════════════════════════════════════════════════════════
 //  MOVEMENTS TABLE
 // ═══════════════════════════════════════════════════════════════════
-// section: 'main' | 'f1' | 'f2'
 const bodyId = s => s === 'main' ? 'movTableBody' : `movTable${s.toUpperCase()}Body`;
 
 function setMovTableFromArray(section, movs) {
@@ -397,12 +886,10 @@ function getMovTableArray(section) {
 
 function appendMovRow(section, mov) {
   const body = document.getElementById(bodyId(section));
-  // Remove empty placeholder
   const empty = body.querySelector('.empty-table');
   if (empty) empty.remove();
 
   const row = document.createElement('div');
-
   if (mov.chegada) {
     row.className = 'mov-row chegada-row';
     row.dataset.type = 'chegada';
@@ -427,7 +914,6 @@ function appendMovRow(section, mov) {
       <input class="mi-label" value="${esc(mov.label || '')}" placeholder="Label" style="width:72px;font-size:10.5px">
       <div class="mi-ctrl">${ctrlBtns(section)}</div>`;
   }
-
   body.appendChild(row);
 }
 
@@ -447,7 +933,6 @@ function repsStep(btn, delta) {
 
 function addMov(section) {
   appendMovRow(section, { nome: '', reps: '' });
-  // Focus first input
   const body = document.getElementById(bodyId(section));
   const last = body.lastElementChild;
   if (last) { const inp = last.querySelector('input'); if (inp) inp.focus(); }
@@ -456,7 +941,6 @@ function addMov(section) {
 function addSep(section) { appendMovRow(section, { separador: 'then...' }); }
 
 function addChegada(section) {
-  // Only one chegada allowed
   const body = document.getElementById(bodyId(section));
   if (body.querySelector('.chegada-row')) { toast('Chegada já adicionada', 'err'); return; }
   appendMovRow(section, { chegada: true });
@@ -482,19 +966,28 @@ function movUp(btn) {
 // ═══════════════════════════════════════════════════════════════════
 //  PREVIEW
 // ═══════════════════════════════════════════════════════════════════
-function previewWorkout(idx) {
-  const wkt = config.workouts[idx];
+function previewWorkoutByPath(path) {
+  const dia = config.dias[path.dia];
+  const cat = (dia || {}).categorias && dia.categorias[path.cat];
+  const wkt = cat && cat.workouts && cat.workouts[path.wkt];
   if (!wkt) return;
-  document.getElementById('pbName').textContent = `${wkt.numero} — ${wkt.nome}`;
+  // Breadcrumb: Evento › Dia (data) › Categoria › N. Workout
+  const dataShort = dia && dia.data ? ' ' + String(dia.data).slice(0, 5) : '';
+  const breadcrumb = [
+    config.evento.nome || 'Evento',
+    `${dia.label || `Dia ${path.dia + 1}`}${dataShort}`,
+    cat.nome,
+    `${path.wkt + 1} — ${wkt.nome || '—'}`,
+  ].join(' › ');
+  document.getElementById('pbName').textContent = breadcrumb;
   document.getElementById('previewEmpty').style.display = 'none';
-  // Show loading state
   const frame = document.getElementById('previewFrame');
   frame.style.display = 'block';
 
   fetch('/api/preview', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config, workout_index: idx })
+    body: JSON.stringify({ config, dia_idx: path.dia, cat_idx: path.cat, wkt_idx: path.wkt })
   })
   .then(r => { if (!r.ok) throw new Error('Erro ' + r.status); return r.text(); })
   .then(html => {
@@ -510,7 +1003,25 @@ function previewWorkout(idx) {
 //  GENERATE ZIP
 // ═══════════════════════════════════════════════════════════════════
 function gerarZIP() {
-  if (!config.workouts.length) return;
+  const totalWkts = (config.dias || []).reduce((sum, d) =>
+    sum + (d.categorias || []).reduce((s, c) => s + (c.workouts || []).length, 0), 0);
+  if (!totalWkts) return;
+
+  const escopo = (document.getElementById('selEscopoGerar') || {}).value || 'evento';
+  const incluirCheckbox = document.getElementById('chkIncluirCompetidores');
+  const incluir = !incluirCheckbox || incluirCheckbox.checked;
+  const payload = { config, incluir_competidores: incluir };
+  if (escopo === 'dia') {
+    payload.dia_idx = diaAtual;
+  } else if (escopo === 'cat') {
+    const dia = (config.dias || [])[diaAtual];
+    if (!dia || !dia.categorias || !dia.categorias[catSel]) {
+      toast('Sem categoria selecionada', 'err'); return;
+    }
+    payload.dia_idx = diaAtual;
+    payload.cat_idx = catSel;
+  }
+
   const btn = document.getElementById('btnGerar');
   const lbl = document.getElementById('btnGerarLabel');
   const sub = document.getElementById('btnGerarSub');
@@ -522,21 +1033,19 @@ function gerarZIP() {
   fetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config })
+    body: JSON.stringify(payload)
   })
   .then(r => { if (!r.ok) throw new Error('Falha na geração'); return r.blob(); })
   .then(blob => {
     const url = URL.createObjectURL(blob);
     const a   = document.createElement('a');
     a.href = url;
-    const cat = (config.evento.categoria || config.evento.nome || 'sumulas').replace(/\s+/g, '_');
-    a.download = `${cat}.zip`;
+    const baseName = (config.evento.nome || 'sumulas').replace(/\s+/g, '_');
+    const sufixo = escopo === 'dia' ? `_${(config.dias[diaAtual] || {}).label || 'dia'}` : '';
+    a.download = `${baseName}${sufixo}.zip`;
     a.click();
     URL.revokeObjectURL(url);
-    const n = config.atletas.length
-      ? config.workouts.length * config.atletas.length
-      : config.workouts.length;
-    toast(`${n} súmula(s) gerada(s) com sucesso!`, 'ok');
+    toast(`ZIP gerado com sucesso!`, 'ok');
   })
   .catch(e => toast('Erro: ' + e.message, 'err'))
   .finally(() => {
@@ -570,13 +1079,6 @@ function handleImport(input, type) {
     .then(r => r.json())
     .then(result => {
       if (result.error) throw new Error(result.error);
-
-      // ── Formato grade de categorias (Excel do evento real) ──
-      if (result.tipo === 'categoria_grid') {
-        mostrarSeletorCategoria(result); return;
-      }
-
-      // ── Formato simples ──
       aplicarImport(result);
     })
     .catch(e => toast('Erro ao importar: ' + e.message, 'err'));
@@ -584,172 +1086,34 @@ function handleImport(input, type) {
   reader.readAsDataURL(file);
 }
 
-function mostrarSeletorCategoria(data) {
-  const cats = data.categorias || Object.keys(data.por_categoria || {});
-  if (!cats.length) { toast('Nenhuma categoria encontrada no arquivo', 'err'); return; }
-
-  // Cacheia o resultado pra permitir trocar de categoria depois sem reimportar.
-  importedData = data;
-  saveState();
-
-  const sub = document.getElementById('catModalSub');
-  sub.textContent = `${cats.length} categorias encontradas. Escolha qual gerar as súmulas:`;
-
-  const grid = document.getElementById('catGrid');
-  grid.innerHTML = '';
-  cats.forEach(cat => {
-    const btn = document.createElement('button');
-    btn.className = 'cat-btn';
-    const wkts = (data.por_categoria[cat] || []).length;
-    const atl  = ((data.atletas_por_categoria || {})[cat] || []).length;
-    const meta = atl ? `${wkts} wkt · ${atl} atl` : `${wkts} workout(s)`;
-    btn.innerHTML = `<strong>${esc(cat)}</strong><br><span style="font-size:9px;opacity:.6">${meta}</span>`;
-    btn.onclick = () => {
-      document.getElementById('catModal').style.display = 'none';
-      aplicarCategoria(cat);
-    };
-    grid.appendChild(btn);
-  });
-  document.getElementById('catModal').style.display = '';
-}
-
-function aplicarCategoria(cat) {
-  if (!importedData) return;
-  const workouts   = importedData.por_categoria[cat] || [];
-  const atletasCat = (importedData.atletas_por_categoria || {})[cat] || [];
-  config.evento.nome      = importedData.evento_nome || config.evento.nome || 'Sun2026';
-  config.evento.categoria = cat;
-  document.getElementById('evNome').value = config.evento.nome;
-  document.getElementById('evCat').value  = cat;
+function aplicarImport(result) {
+  if (!result || !result.dias) {
+    toast('Resposta sem dias — formato inesperado', 'err');
+    return;
+  }
+  config.dias = result.dias;
+  config.roster = result.roster || [];
+  if (result.evento_nome && !config.evento.nome) {
+    config.evento.nome = result.evento_nome;
+    document.getElementById('evNome').value = result.evento_nome;
+  }
+  diaAtual    = 0;
+  catSel = 0; catListOpen = false;
+  previewPath = null;
   renderEventoDisplay();
-  config.workouts = workouts;
-  config.atletas  = atletasCat;
-  previewIdx = workouts.length ? 0 : -1;
-  renderWorkoutList();
-  renderAtletasList();
-  renderCategoriaSwitcher();
+  renderDiaTabs();
+  renderCategoriasList();
   atualizarBotaoGerar();
   updateClearAllVisibility();
-  if (workouts.length) previewWorkout(0);
-  else updateEmptyState();
+  document.getElementById('previewFrame').style.display = 'none';
+  document.getElementById('pbName').textContent = '—';
+  updateEmptyState();
   saveState();
-  const msgAtletas = atletasCat.length ? ` · ${atletasCat.length} atleta(s)` : '';
-  toast(`${cat} — ${workouts.length} workout(s)${msgAtletas}`, 'ok');
-}
 
-function reabrirSeletorCategoria() {
-  if (!importedData) return;
-  mostrarSeletorCategoria(importedData);
-}
-
-function aplicarImport(result) {
-  if (result.evento && result.evento.nome) {
-    config.evento = { ...config.evento, ...result.evento };
-    document.getElementById('evNome').value = config.evento.nome || '';
-    document.getElementById('evCat').value  = config.evento.categoria || '';
-    document.getElementById('evData').value = config.evento.data || '';
-    renderEventoDisplay();
-  }
-  if (result.workouts && result.workouts.length) {
-    config.workouts = result.workouts;
-    previewIdx = 0;
-    renderWorkoutList();
-    atualizarBotaoGerar();
-    updateClearAllVisibility();
-    previewWorkout(0);
-    saveState();
-    toast(`${result.workouts.length} workout(s) importado(s)`, 'ok');
-  } else {
-    toast('Nenhum workout encontrado no arquivo', 'err');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  ATLETAS
-// ═══════════════════════════════════════════════════════════════════
-function renderAtletasList() {
-  const sec  = document.getElementById('secAtletas');
-  const list = document.getElementById('atletasList');
-  const cnt  = document.getElementById('atlCount');
-  const n = config.atletas.length;
-  cnt.textContent = n;
-  if (!n) {
-    sec.style.display = 'none';
-    list.innerHTML = '';
-    return;
-  }
-  sec.style.display = '';
-
-  // Agrupa por bateria (mantém ordem original — já vem ordenada do backend)
-  const groups = {};
-  const order  = [];
-  config.atletas.forEach((a, i) => {
-    const bat = (a.bateria || '—').toString().trim() || '—';
-    if (!groups[bat]) { groups[bat] = []; order.push(bat); }
-    groups[bat].push({ a, i });
-  });
-
-  list.innerHTML = order.map(bat => {
-    const items = groups[bat];
-    const rows = items.map(({ a, i }) => `
-      <div class="atl-card">
-        <span class="atl-raia">${esc(a.raia || '—')}</span>
-        <span class="atl-nome" title="${esc((a.box || '') + (a.numero ? ' · #' + a.numero : ''))}">${esc(a.nome || '')}</span>
-        <button class="atl-rm" onclick="removerAtleta(${i})" title="Remover atleta">×</button>
-      </div>`).join('');
-    return `
-      <div class="atl-bat-group">
-        <div class="atl-bat-hdr" onclick="toggleAtlGroup(this)">
-          <span class="atl-bat-toggle">▾</span>
-          <span class="atl-bat-name">Bateria ${esc(bat)}</span>
-          <span class="atl-bat-count">${items.length}</span>
-        </div>
-        <div class="atl-bat-body">${rows}</div>
-      </div>`;
-  }).join('') + `<div class="atl-order-hint">Ordem de impressão: bateria → raia → nome</div>`;
-}
-
-function toggleAtlGroup(hdrEl) {
-  hdrEl.parentElement.classList.toggle('collapsed');
-}
-
-function removerAtleta(idx) {
-  const a = config.atletas[idx];
-  if (!a) return;
-  config.atletas.splice(idx, 1);
-  renderAtletasList();
-  atualizarBotaoGerar();
-  saveState();
-}
-
-function limparAtletas() {
-  if (!config.atletas.length) return;
-  if (!confirm(`Remover todos os ${config.atletas.length} atletas?`)) return;
-  config.atletas = [];
-  renderAtletasList();
-  atualizarBotaoGerar();
-  saveState();
-  toast('Atletas removidos', 'ok');
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  CATEGORIA SWITCHER
-// ═══════════════════════════════════════════════════════════════════
-function renderCategoriaSwitcher() {
-  const el = document.getElementById('catSwitcher');
-  if (!importedData || !(importedData.categorias || []).length) {
-    el.classList.remove('show');
-    return;
-  }
-  const cats = importedData.categorias || Object.keys(importedData.por_categoria || {});
-  if (cats.length < 2) {
-    // Com 1 categoria só, switcher não agrega valor
-    el.classList.remove('show');
-    return;
-  }
-  document.getElementById('csName').textContent = config.evento.categoria || cats[0];
-  document.getElementById('csMeta').textContent = `${cats.length} cat`;
-  el.classList.add('show');
+  const totalCats = result.dias.reduce((s, d) => s + (d.categorias || []).length, 0);
+  const msg = `${result.dias.length} dia(s), ${totalCats} categoria(s) importadas. Configure as datas pra aparecerem nas súmulas.`;
+  mostrarBannerPosImport(msg);
+  toast(`${result.dias.length} dia(s), ${totalCats} categoria(s) importadas`, 'ok');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -760,10 +1124,9 @@ function updateEmptyState() {
   const onboard  = document.getElementById('emptyOnboarding');
   const noSelect = document.getElementById('emptyNoSelection');
   const frame    = document.getElementById('previewFrame');
-  // Se tem workout selecionado e iframe visível, não toca em nada
   if (frame.style.display === 'block') return;
   wrap.style.display = '';
-  if (config.workouts.length === 0) {
+  if (!temDados()) {
     onboard.style.display  = 'flex';
     noSelect.style.display = 'none';
   } else {
@@ -774,23 +1137,22 @@ function updateEmptyState() {
 
 function updateClearAllVisibility() {
   const btn = document.getElementById('btnClearAll');
-  const hasData = config.workouts.length || config.atletas.length
-    || config.evento.nome || importedData;
+  const hasData = temDados() || config.evento.nome;
   btn.style.display = hasData ? '' : 'none';
 }
 
 function limparTudo() {
-  if (!confirm('Apagar evento, workouts, atletas e categorias importadas?\nEsta ação não pode ser desfeita.')) return;
+  if (!confirm('Apagar evento, dias, categorias e workouts importados?\nEsta ação não pode ser desfeita.')) return;
   config = {
     evento: { nome: "", categoria: "", data: "", logo_empresa: DS_LOGO_PADRAO, logo_evento: "" },
-    workouts: [],
-    atletas: []
+    dias: [],
+    roster: [],
   };
-  importedData = null;
-  previewIdx = -1;
-  editingIdx = -1;
+  diaAtual    = 0;
+  catSel = 0; catListOpen = false;
+  previewPath = null;
+  editingPath = null;
   clearState();
-  // Reseta inputs do form de evento
   ['evNome','evCat','evData'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   ['logoEventoPreview','logoEmpresaPreview'].forEach(id => {
     const el=document.getElementById(id); if(el){el.src=''; el.style.display='none';}
@@ -803,9 +1165,8 @@ function limparTudo() {
   document.getElementById('previewFrame').style.display = 'none';
   document.getElementById('pbName').textContent = '—';
   renderEventoDisplay();
-  renderWorkoutList();
-  renderAtletasList();
-  renderCategoriaSwitcher();
+  renderDiaTabs();
+  renderCategoriasList();
   atualizarBotaoGerar();
   updateClearAllVisibility();
   updateEmptyState();
@@ -822,19 +1183,15 @@ function saveState() {
 }
 
 function _persistNow() {
-  const snapshot = { version: SCHEMA_VERSION, config, previewIdx };
+  const snapshot = { version: SCHEMA_VERSION, config, diaAtual };
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify(snapshot));
-    if (importedData) localStorage.setItem(IMPORT_KEY, JSON.stringify(importedData));
-    else              localStorage.removeItem(IMPORT_KEY);
   } catch (e) {
-    // QuotaExceededError → tenta sem logos do evento (geralmente o mais pesado)
     try {
       const lite = JSON.parse(JSON.stringify(snapshot));
       lite.config.evento.logo_evento = '';
       lite.config.evento.logo_empresa = '';
       localStorage.setItem(STATE_KEY, JSON.stringify(lite));
-      if (importedData) localStorage.setItem(IMPORT_KEY, JSON.stringify(importedData));
       console.warn('Persistência sem logos (cota cheia):', e.message);
     } catch (e2) {
       console.error('Falha ao persistir:', e2);
@@ -846,21 +1203,18 @@ function _persistNow() {
 function loadState() {
   try {
     const raw = localStorage.getItem(STATE_KEY);
-    if (raw) {
-      const snap = JSON.parse(raw);
-      // Versão do schema obrigatória — descarta state com formato antigo
-      if (snap && snap.version !== SCHEMA_VERSION) {
-        console.info(`localStorage state com schema antigo (v${snap.version}); descartando.`);
-        clearState();
-      } else if (snap && snap.config) {
-        // Garante que logo padrão DS sobrevive ao restaurar config sem logo
-        if (!snap.config.evento.logo_empresa) snap.config.evento.logo_empresa = DS_LOGO_PADRAO;
-        config = snap.config;
-        previewIdx = (typeof snap.previewIdx === 'number') ? snap.previewIdx : -1;
-      }
+    if (!raw) return;
+    const snap = JSON.parse(raw);
+    if (snap && snap.version !== SCHEMA_VERSION) {
+      console.info(`localStorage state schema antigo (v${snap.version}); descartando.`);
+      clearState();
+      return;
     }
-    const rawImp = localStorage.getItem(IMPORT_KEY);
-    if (rawImp) importedData = JSON.parse(rawImp);
+    if (snap && snap.config) {
+      if (!snap.config.evento.logo_empresa) snap.config.evento.logo_empresa = DS_LOGO_PADRAO;
+      config = { ...config, ...snap.config };
+      if (typeof snap.diaAtual === 'number') diaAtual = snap.diaAtual;
+    }
   } catch (e) {
     console.warn('Falha ao restaurar estado:', e);
   }
@@ -889,6 +1243,11 @@ function toggleLabelCol() {
   try { localStorage.setItem(LABEL_COL_KEY, show ? '1' : '0'); } catch (e) {}
 }
 
+// Atualiza label do botão Gerar quando muda escopo / toggle
+function onGerarOptChange() {
+  atualizarBotaoGerar();
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  HELPERS
 // ═══════════════════════════════════════════════════════════════════
@@ -914,15 +1273,12 @@ function toast(msg, type = 'ok') {
   }).catch(()=>{});
   loadState();
   applyLabelColPref();
+  // Ajusta diaAtual se ficou fora do range (caso state tenha mais dias do que config carregada)
+  if (diaAtual >= (config.dias || []).length) diaAtual = 0;
   renderEventoDisplay();
-  renderWorkoutList();
-  renderAtletasList();
-  renderCategoriaSwitcher();
+  renderDiaTabs();
+  renderCategoriasList();
   updateClearAllVisibility();
   atualizarBotaoGerar();
   updateEmptyState();
-  // Se restaurou um workout selecionado, renderiza preview
-  if (previewIdx >= 0 && previewIdx < config.workouts.length) {
-    previewWorkout(previewIdx);
-  }
 })();

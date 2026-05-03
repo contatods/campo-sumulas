@@ -178,10 +178,21 @@ def _is_categoria_grid(ws) -> bool:
 
 
 def parse_excel(data: bytes) -> dict[str, Any]:
+    """Parser unificado de Excel.
+
+    Sempre retorna shape `evento_multidia`. Os formatos legados (categoria_grid
+    e template) são detectados e convertidos por adapters internos pra que o
+    resto do sistema trabalhe num modelo único.
+    """
     if not HAS_EXCEL:
         raise RuntimeError("openpyxl não disponível — instale com: pip install openpyxl")
     wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
 
+    # Formato multi-dia: aba `Workouts` + abas `<Dia>` e `<Dia> - Montagem`
+    if _is_evento_multidia(wb):
+        return parse_excel_multidia(wb)
+
+    # Formato categoria_grid (modelo legado: 1 aba grade categoria × workout)
     todas_categorias: dict[str, list[Workout]] = {}
     evento_nome = ""
     for sname in wb.sheetnames:
@@ -195,15 +206,70 @@ def parse_excel(data: bytes) -> dict[str, Any]:
     atletas_por_categoria = _parse_atletas(wb)
 
     if todas_categorias:
-        return {
-            "tipo": "categoria_grid",
-            "evento_nome": evento_nome,
-            "categorias": list(todas_categorias.keys()),
-            "por_categoria": todas_categorias,
-            "atletas_por_categoria": atletas_por_categoria,
-        }
+        return _adaptar_categoria_grid_para_multidia(
+            evento_nome, todas_categorias, atletas_por_categoria,
+        )
 
-    return _parse_excel_template(wb)
+    # Fallback final: formato template (1 evento, lista plana de workouts)
+    template_result = _parse_excel_template(wb)
+    return _adaptar_template_para_multidia(template_result)
+
+
+def _adaptar_categoria_grid_para_multidia(
+    evento_nome: str,
+    por_categoria: dict[str, list[Workout]],
+    atletas_por_categoria: dict[str, list[Atleta]],
+) -> dict[str, Any]:
+    """Adapter: shape antigo categoria_grid → shape novo evento_multidia (1 dia 'Único')."""
+    cats: list[dict[str, Any]] = []
+    for cat_nome, workouts in por_categoria.items():
+        atletas = atletas_por_categoria.get(cat_nome, [])
+        baterias: list[dict[str, Any]] = []
+        if atletas:
+            baterias.append({
+                'numero': '1',
+                'codigo_evento': '',
+                'horario_aquecimento': '',
+                'horario_fila': '',
+                'workouts_que_rodam': list(range(1, len(workouts) + 1)),
+                'alocacoes': [
+                    {
+                        'raia':   a.get('raia', '') or str(i + 1),
+                        'numero': a.get('numero', ''),
+                        'nome':   a.get('nome', ''),
+                        'box':    a.get('box', ''),
+                    }
+                    for i, a in enumerate(atletas)
+                ],
+            })
+        cats.append({'nome': cat_nome, 'workouts': workouts, 'baterias': baterias})
+
+    return {
+        'tipo': 'evento_multidia',
+        'evento_nome': evento_nome,
+        'dias': [{'label': 'Único', 'categorias': cats}],
+        'roster': [],
+    }
+
+
+def _adaptar_template_para_multidia(template_result: dict[str, Any]) -> dict[str, Any]:
+    """Adapter: shape antigo template (1 evento, lista plana) → evento_multidia."""
+    evento = template_result.get('evento', {}) or {}
+    workouts = template_result.get('workouts', []) or []
+    cat_nome = evento.get('categoria', '') or 'Geral'
+    return {
+        'tipo': 'evento_multidia',
+        'evento_nome': evento.get('nome', ''),
+        'dias': [{
+            'label': 'Único',
+            'categorias': [{
+                'nome': cat_nome,
+                'workouts': workouts,
+                'baterias': [],
+            }],
+        }],
+        'roster': [],
+    }
 
 
 def _parse_atletas(wb) -> dict[str, list[Atleta]]:
@@ -439,3 +505,429 @@ def assign_workout_numbers(workouts: list[Workout]) -> list[Workout]:
             wkt.pop('numero_f2', None)
             counter += 1
     return workouts
+
+
+# ── Excel multi-dia (formato real do evento) ──────────────────────────────────
+# Formato esperado:
+#   - Aba `Workouts`: grade dia (col A) × categoria (cols B+); cada célula é
+#     o texto livre do workout. Linha de header de categorias se repete.
+#   - Aba `<Dia>` (ex: `Sexta`, `Sábado`, `Domingo`): cronograma de baterias
+#     com colunas Eventos | Categoria | Bateria | Arbitragem | Quantidade |
+#     Aquecimento | <em branco> | Fila.
+#   - Aba `<Dia> - Montagem`: blocos por bateria com header em 3 linhas
+#     (horário, código+categoria, "Raia | Número | Nome | Box") seguido das
+#     linhas de raia. Raias com #N/A são vazias.
+#   - Aba `Atletas` (opcional): roster informativo de individuais.
+#
+# Convenção de arena: linha `Arena: <nome>` em qualquer ponto do texto livre
+# do workout (na aba `Workouts`). É extraída e mostrada no header da súmula.
+
+_DIA_LABELS_VALIDOS = ("segunda", "terça", "terca", "quarta", "quinta",
+                        "sexta", "sábado", "sabado", "domingo")
+
+
+def _is_evento_multidia(wb) -> bool:
+    """Detecta se o arquivo é um evento multi-dia.
+
+    Critérios: existe uma aba chamada `Workouts` E pelo menos uma aba do tipo
+    `<Dia> - Montagem` (qualquer dia da semana).
+    """
+    nomes_lower = [s.lower() for s in wb.sheetnames]
+    if 'workouts' not in nomes_lower:
+        return False
+    return any(' - montagem' in n for n in nomes_lower)
+
+
+def _extrair_arena(texto: str) -> tuple[str, str]:
+    """Extrai a primeira linha `Arena: <nome>` do texto livre do workout.
+
+    Retorna (arena, texto_sem_linha_de_arena). Case-insensitive. Se não houver
+    linha de arena, retorna ("", texto_original).
+    """
+    if not texto:
+        return "", texto or ""
+    linhas = texto.split('\n')
+    arena = ""
+    out: list[str] = []
+    for linha in linhas:
+        if not arena:
+            m = re.match(r'^\s*arena\s*:\s*(.+?)\s*$', linha, re.I)
+            if m:
+                arena = m.group(1).strip()
+                continue   # remove a linha do texto
+        out.append(linha)
+    return arena, '\n'.join(out)
+
+
+def _parse_workouts_grade_multidia(ws) -> dict[str, dict[str, dict[str, Any]]]:
+    """Lê a aba `Workouts` e retorna mapa { dia → { categoria → workout_parsed } }.
+
+    A aba tem linhas de header de categoria que se repetem; a coluna A traz
+    o rótulo do dia (Sexta/Sábado/Domingo) — é "sticky", vale até o próximo
+    rótulo. Cada célula é texto livre que entra em parse_workout_text.
+    """
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return {}
+
+    resultado: dict[str, dict[str, dict[str, Any]]] = {}
+    categorias_atuais: list[str] = []
+    dia_atual: str = ""
+    contador_workout = 0
+
+    for row in rows:
+        if not row or all(c is None for c in row):
+            continue
+        col_a = str(row[0]).strip() if row[0] is not None else ""
+        # Linha de header de categoria: col A vazia, cols B+ com strings de categoria
+        cells_b_em_diante = [c for c in row[1:] if c is not None]
+        eh_header_categorias = (
+            not col_a
+            and len(cells_b_em_diante) >= 2
+            and all(isinstance(c, str) and '\n' not in c for c in cells_b_em_diante[:3])
+        )
+        if eh_header_categorias:
+            categorias_atuais = [str(c).strip() if c else "" for c in row[1:]]
+            continue
+
+        # Linha de dia (rótulo na col A) ou linha de workout (col A vazia, dia sticky)
+        if col_a.lower() in _DIA_LABELS_VALIDOS:
+            dia_atual = col_a
+
+        if not dia_atual or not categorias_atuais:
+            continue
+
+        # Cada célula B+ é o texto de workout daquela categoria
+        contador_workout += 1
+        if dia_atual not in resultado:
+            resultado[dia_atual] = {}
+        for idx, cat in enumerate(categorias_atuais):
+            if not cat:
+                continue
+            cell = row[idx + 1] if idx + 1 < len(row) else None
+            if cell is None or not str(cell).strip():
+                continue
+            arena, texto_limpo = _extrair_arena(str(cell))
+            wkt = parse_workout_text(texto_limpo, contador_workout)
+            if arena:
+                wkt['arena'] = arena
+            if cat not in resultado[dia_atual]:
+                resultado[dia_atual][cat] = []
+            resultado[dia_atual][cat].append(wkt)
+
+    return resultado
+
+
+def _parse_cronograma_dia(ws) -> list[dict[str, Any]]:
+    """Lê uma aba de cronograma (`Sexta`, `Sábado`, `Domingo`).
+
+    Retorna lista de baterias: cada uma com numero, codigo_evento (ex: '#1',
+    '#2 & #3'), categoria, horario_aquecimento, horario_fila.
+    """
+    rows = list(ws.iter_rows(values_only=True))
+    if len(rows) < 3:
+        return []
+
+    # Encontra a linha de header (aquela que contém "Categoria")
+    header_idx = None
+    for i, row in enumerate(rows[:5]):
+        valores = [str(c).strip().lower() if c else "" for c in row]
+        if 'categoria' in valores:
+            header_idx = i
+            break
+    if header_idx is None:
+        return []
+
+    header = [str(c).strip().lower() if c else "" for c in rows[header_idx]]
+
+    def col(*opcoes: str) -> int | None:
+        for i, h in enumerate(header):
+            if h in opcoes:
+                return i
+        return None
+
+    col_eventos     = col('eventos')
+    col_categoria   = col('categoria')
+    col_bateria     = col('bateria')
+    col_aquecimento = col('aquecimento')
+    col_fila        = col('fila')
+
+    if col_categoria is None or col_bateria is None:
+        return []
+
+    baterias: list[dict[str, Any]] = []
+    codigo_atual = ""
+    for row in rows[header_idx + 1:]:
+        if not row or all(c is None for c in row):
+            continue
+        cat_val = row[col_categoria] if col_categoria < len(row) else None
+        if not cat_val:
+            continue
+        bat_val = row[col_bateria] if col_bateria < len(row) else None
+        if bat_val is None:
+            continue
+
+        # codigo_evento é "sticky" — vale até a próxima linha com algo na col Eventos
+        if col_eventos is not None and col_eventos < len(row):
+            ev_val = row[col_eventos]
+            if ev_val:
+                codigo_atual = str(ev_val).strip()
+
+        baterias.append({
+            'numero': str(bat_val).strip(),
+            'codigo_evento': codigo_atual,
+            'categoria': str(cat_val).strip(),
+            'horario_aquecimento': _fmt_horario(row[col_aquecimento]) if col_aquecimento is not None and col_aquecimento < len(row) else "",
+            'horario_fila': _fmt_horario(row[col_fila]) if col_fila is not None and col_fila < len(row) else "",
+        })
+    return baterias
+
+
+def _fmt_horario(v: Any) -> str:
+    """Converte célula de horário em string `HH:MM`. Aceita time, datetime ou string."""
+    if v is None:
+        return ""
+    if hasattr(v, 'strftime'):
+        try:
+            return v.strftime('%H:%M')
+        except Exception:
+            return str(v)
+    s = str(v).strip()
+    # "18:20:00" → "18:20"
+    m = re.match(r'^(\d{1,2}:\d{2})(:\d{2})?$', s)
+    if m:
+        return m.group(1)
+    return s
+
+
+def _parse_montagem_dia(ws) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
+    """Lê uma aba `<Dia> - Montagem`.
+
+    Estrutura repetida por bateria:
+        L1: [horário, nº_bateria, ...]
+        L2: [codigo_evento, categoria, ...]
+        L3: ["Raia", "Número", "Nome", "Box", ...]
+        L4..N: dados de raia
+
+    Retorna dict mapeando (codigo_evento, categoria, numero_bateria) → lista de
+    alocações (raia, numero, nome, box). Raias com nome `#N/A` são puladas.
+    """
+    rows = list(ws.iter_rows(values_only=True))
+    resultado: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+
+    i = 0
+    while i < len(rows):
+        row = rows[i]
+        if not row or all(c is None for c in row):
+            i += 1
+            continue
+
+        # Procura "Raia" + "Número" + "Nome" como header de bateria
+        valores = [str(c).strip().lower() if c else "" for c in row]
+        if 'raia' in valores and 'nome' in valores:
+            # Encontrou um header. Volta 1-2 linhas pra pegar codigo+categoria.
+            codigo = ""
+            categoria = ""
+            if i >= 1:
+                prev = rows[i - 1]
+                if prev:
+                    codigo = str(prev[0]).strip() if prev[0] is not None else ""
+                    if len(prev) > 1 and prev[1] is not None:
+                        categoria = str(prev[1]).strip()
+            # Bateria: 2 linhas atrás, segunda coluna
+            numero_bat = ""
+            if i >= 2:
+                prev2 = rows[i - 2]
+                if prev2 and len(prev2) > 1 and prev2[1] is not None:
+                    numero_bat = str(prev2[1]).strip()
+            # Mapeia colunas via header
+            col_raia   = valores.index('raia')
+            col_numero = valores.index('número') if 'número' in valores else (valores.index('numero') if 'numero' in valores else None)
+            col_nome   = valores.index('nome')
+            col_box    = valores.index('box') if 'box' in valores else None
+
+            alocacoes: list[dict[str, Any]] = []
+            j = i + 1
+            while j < len(rows):
+                r = rows[j]
+                if not r or all(c is None for c in r):
+                    break  # bloco acaba em linha vazia
+                # Se a próxima linha for outro header de bateria, para
+                vals_j = [str(c).strip().lower() if c else "" for c in r]
+                if 'raia' in vals_j and 'nome' in vals_j:
+                    break
+                raia_v = r[col_raia] if col_raia < len(r) else None
+                nome_v = r[col_nome] if col_nome is not None and col_nome < len(r) else None
+                if raia_v is None or nome_v is None:
+                    j += 1
+                    continue
+                nome_str = str(nome_v).strip()
+                # Pula raias vazias (#N/A)
+                if not nome_str or nome_str.upper() == '#N/A':
+                    j += 1
+                    continue
+                aloc = {
+                    'raia':   str(raia_v).strip(),
+                    'numero': str(r[col_numero]).strip() if col_numero is not None and col_numero < len(r) and r[col_numero] is not None else "",
+                    'nome':   nome_str,
+                    'box':    str(r[col_box]).strip() if col_box is not None and col_box < len(r) and r[col_box] is not None else "",
+                }
+                alocacoes.append(aloc)
+                j += 1
+
+            if alocacoes:
+                resultado[(codigo, categoria, numero_bat)] = alocacoes
+            i = j
+        else:
+            i += 1
+
+    return resultado
+
+
+def _normalizar_categoria(s: str) -> str:
+    """Normaliza nome de categoria pra comparação tolerante.
+
+    Remove sufixos `(Heat N)`, `(Single Heat)`, etc., baixa caixa, comprime
+    espaços, e tolera erros comuns de digitação como `begginer` → `beginner`.
+    Retorna apenas o "core" da categoria pra match parcial via substring.
+    """
+    if not s:
+        return ""
+    # Pega só o trecho antes do primeiro `(` (corta sufixos de heat)
+    core = s.split('(')[0]
+    core = re.sub(r'\s+', ' ', core).strip().lower()
+    # Normaliza variantes ortográficas comuns
+    core = core.replace('begginer', 'beginner')
+    return core
+
+
+def _split_codigo_evento(codigo: str) -> list[str]:
+    """Quebra um código tipo '#2 & #3' em ['#2', '#3']. Códigos simples viram [codigo]."""
+    if not codigo:
+        return []
+    return [p.strip() for p in re.split(r'\s*&\s*', codigo) if p.strip()]
+
+
+def _workout_numero_de_codigo(codigo: str) -> int | None:
+    """Extrai o número do workout de '#1' → 1, '#02' → 2, 'Workout 04' → 4."""
+    m = re.search(r'(\d+)', codigo)
+    return int(m.group(1)) if m else None
+
+
+def _roster_individuais(wb) -> list[dict[str, str]]:
+    """Lê a aba `Atletas` (roster informativo): número, nome, box."""
+    if 'Atletas' not in wb.sheetnames:
+        return []
+    ws = wb['Atletas']
+    out: list[dict[str, str]] = []
+    for row in ws.iter_rows(values_only=True):
+        if not row or all(c is None for c in row):
+            continue
+        numero = str(row[0]).strip() if row[0] is not None else ""
+        nome   = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
+        box    = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
+        if not nome:
+            continue
+        out.append({'numero': numero, 'nome': nome, 'box': box})
+    return out
+
+
+def parse_excel_multidia(wb) -> dict[str, Any]:
+    """Parser do formato evento multi-dia (Workouts + cronograma + montagem).
+
+    Retorna estrutura aninhada:
+        { tipo: 'evento_multidia',
+          evento_nome: str,
+          dias: [
+            { label: 'Sexta',
+              categorias: [
+                { nome: 'Trio Rx Misto',
+                  workouts: [Workout, ...],
+                  baterias: [
+                    { numero: '1',
+                      codigo_evento: '#1',
+                      horario_aquecimento: '18:20',
+                      horario_fila: '18:45',
+                      workouts_que_rodam: [1],   # nº dos workouts (índices em workouts da categoria)
+                      alocacoes: [{raia, numero, nome, box}, ...]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          roster: [{numero, nome, box}, ...],
+        }
+    """
+    # 1) Workouts: dia → categoria → [workouts]
+    if 'Workouts' not in wb.sheetnames:
+        return {'tipo': 'erro', 'erro': 'Aba Workouts ausente'}
+    workouts_por_dia_cat = _parse_workouts_grade_multidia(wb['Workouts'])
+    if not workouts_por_dia_cat:
+        return {'tipo': 'erro', 'erro': 'Aba Workouts vazia ou ilegível'}
+
+    # 2) Pra cada dia detectado em Workouts, lê cronograma + montagem
+    nomes_lower = {s.lower(): s for s in wb.sheetnames}
+    dias_resultado: list[dict[str, Any]] = []
+    for dia_label in workouts_por_dia_cat.keys():
+        sname = nomes_lower.get(dia_label.lower())
+        montagem_sname = nomes_lower.get(f"{dia_label.lower()} - montagem")
+        cronograma = _parse_cronograma_dia(wb[sname]) if sname else []
+        montagem   = _parse_montagem_dia(wb[montagem_sname]) if montagem_sname else {}
+
+        # Agrupa por categoria do dia
+        cats_resultado: list[dict[str, Any]] = []
+        for cat_nome, lista_workouts in workouts_por_dia_cat[dia_label].items():
+            # Filtra baterias do cronograma cuja categoria casa (ignora sufixo "(Single Heat)" etc.)
+            cat_norm = _normalizar_categoria(cat_nome)
+            baterias_da_cat = [b for b in cronograma if cat_norm in _normalizar_categoria(b['categoria'])]
+            # Para cada bateria, monta as alocações via montagem
+            for b in baterias_da_cat:
+                # codigo_evento pode estar vazio no cronograma; nesse caso usa a Montagem
+                # como fonte primária do código.
+                codigos_cronograma = set(_split_codigo_evento(b['codigo_evento']))
+                aloc: list[dict[str, Any]] = []
+                codigo_montagem = ""
+                for chave, alocs in montagem.items():
+                    chave_codigo, chave_cat, chave_bat = chave
+                    if chave_bat != b['numero']:
+                        continue
+                    if cat_norm not in _normalizar_categoria(chave_cat):
+                        continue
+                    # Se cronograma trouxe códigos, exige interseção com os da montagem.
+                    # Ambos podem ser compostos (ex: '#2 & #3'), então comparo conjuntos.
+                    if codigos_cronograma:
+                        codigos_chave = set(_split_codigo_evento(chave_codigo))
+                        if not (codigos_cronograma & codigos_chave):
+                            continue
+                    aloc = alocs
+                    codigo_montagem = chave_codigo
+                    break
+                # codigo final: o que veio do cronograma OU o que a montagem revelou
+                codigo_final = b['codigo_evento'] or codigo_montagem
+                codigos_finais = _split_codigo_evento(codigo_final) or ([codigo_final] if codigo_final else [])
+                workouts_que_rodam = [n for n in (_workout_numero_de_codigo(c) for c in codigos_finais) if n is not None]
+                b_full = {
+                    **b,
+                    'codigo_evento': codigo_final,
+                    'workouts_que_rodam': workouts_que_rodam,
+                    'alocacoes': aloc,
+                }
+                cat_existing = next((c for c in cats_resultado if c['nome'] == cat_nome), None)
+                if cat_existing is None:
+                    cat_existing = {'nome': cat_nome, 'workouts': lista_workouts, 'baterias': []}
+                    cats_resultado.append(cat_existing)
+                cat_existing['baterias'].append(b_full)
+
+            # Categorias sem bateria no cronograma ainda entram (workouts mostrados, sem alocação)
+            if not baterias_da_cat:
+                cats_resultado.append({'nome': cat_nome, 'workouts': lista_workouts, 'baterias': []})
+
+        dias_resultado.append({'label': dia_label, 'categorias': cats_resultado})
+
+    return {
+        'tipo': 'evento_multidia',
+        'evento_nome': '',  # pode ser preenchido pela UI a partir do nome do arquivo ou config
+        'dias': dias_resultado,
+        'roster': _roster_individuais(wb),
+    }

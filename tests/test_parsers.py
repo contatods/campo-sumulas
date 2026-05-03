@@ -23,12 +23,16 @@ def test_parse_workout_text_for_time_extrai_movimentos_e_time_cap():
 def test_parse_excel_modelo_retorna_estrutura_valida(modelo_xlsx_bytes):
     result = parse_excel(modelo_xlsx_bytes)
     assert isinstance(result, dict)
-    # Modelo é formato simples (não-grade): tem evento + workouts no topo
-    assert "workouts" in result
-    assert isinstance(result["workouts"], list)
-    assert len(result["workouts"]) >= 1
-    # Cada workout deve ter no mínimo nome e tipo
-    for w in result["workouts"]:
-        assert "nome" in w
-        assert "tipo" in w
-        assert w["tipo"] in {"for_time", "amrap", "express"}
+    # Parser unificado sempre retorna shape evento_multidia (formato antigo é adaptado)
+    assert result["tipo"] == "evento_multidia"
+    assert "dias" in result
+    assert isinstance(result["dias"], list)
+    assert len(result["dias"]) >= 1
+    # Pelo menos 1 categoria com pelo menos 1 workout
+    primeiro_dia = result["dias"][0]
+    assert "categorias" in primeiro_dia
+    assert len(primeiro_dia["categorias"]) >= 1
+    primeiro_workout = primeiro_dia["categorias"][0]["workouts"][0]
+    assert "nome" in primeiro_workout
+    assert "tipo" in primeiro_workout
+    assert primeiro_workout["tipo"] in {"for_time", "amrap", "express"}
