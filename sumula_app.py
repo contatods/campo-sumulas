@@ -17,7 +17,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.3.0'
+VERSION = '1.4.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -62,7 +62,9 @@ def _resolve_logo(value):
 
 # ── Imports dos módulos extraídos ──────────────────────────────────────────────
 from parsers import parse_excel, parse_pdf, assign_workout_numbers, _atleta_sort_key
-from ai_rounds import enriquecer_workouts, AI_ATIVO
+from ai_rounds import (enriquecer_workouts, AI_ATIVO,
+                       sugerir_time_cap, auto_descricao,
+                       validar_evento, resumo_evento)
 
 # ── Carregar fontes na inicialização ────────────────────────────────────────────
 _banner_inner = f"  Súmulas Digital Score  —  v{VERSION}"
@@ -160,10 +162,14 @@ class SumulaHandler(BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 raise BadRequest("body precisa ser objeto JSON")
             routes = {
-                '/api/preview':        self._handle_preview,
-                '/api/generate':       self._handle_generate,
-                '/api/import/excel':   self._handle_import_excel,
-                '/api/import/pdf':     self._handle_import_pdf,
+                '/api/preview':            self._handle_preview,
+                '/api/generate':           self._handle_generate,
+                '/api/import/excel':       self._handle_import_excel,
+                '/api/import/pdf':         self._handle_import_pdf,
+                '/api/ai/sugerir-time-cap': self._handle_sugerir_time_cap,
+                '/api/ai/auto-descricao':  self._handle_auto_descricao,
+                '/api/ai/validar-evento':  self._handle_validar_evento,
+                '/api/ai/resumo-evento':   self._handle_resumo_evento,
             }
             handler = routes.get(self.path)
             if handler: handler(body)
@@ -350,6 +356,43 @@ class SumulaHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send(200, 'application/json',
                        json.dumps({"error": str(e)}).encode('utf-8'))
+
+    def _handle_sugerir_time_cap(self, body):
+        """Sugere um time cap baseado nos movimentos. Body: {movimentos, tipo}."""
+        movimentos = body.get('movimentos', [])
+        if not isinstance(movimentos, list):
+            raise BadRequest("movimentos deve ser lista")
+        tipo = body.get('tipo', 'for_time')
+        sugestao = sugerir_time_cap(movimentos, tipo)
+        self._send(200, 'application/json; charset=utf-8',
+                   json.dumps({'time_cap': sugestao}).encode('utf-8'))
+
+    def _handle_auto_descricao(self, body):
+        """Gera linhas de descrição (notas) a partir do workout. Body: {workout}."""
+        workout = body.get('workout', {})
+        if not isinstance(workout, dict):
+            raise BadRequest("workout deve ser objeto")
+        linhas = auto_descricao(workout)
+        self._send(200, 'application/json; charset=utf-8',
+                   json.dumps({'descricao': linhas}, ensure_ascii=False).encode('utf-8'))
+
+    def _handle_validar_evento(self, body):
+        """Detecta erros pré-evento. Body: {config}."""
+        cfg = body.get('config')
+        if not isinstance(cfg, dict):
+            raise BadRequest("config (objeto) é obrigatório")
+        avisos = validar_evento(cfg)
+        self._send(200, 'application/json; charset=utf-8',
+                   json.dumps({'avisos': avisos}, ensure_ascii=False).encode('utf-8'))
+
+    def _handle_resumo_evento(self, body):
+        """Resumo curto do evento. Body: {config}."""
+        cfg = body.get('config')
+        if not isinstance(cfg, dict):
+            raise BadRequest("config (objeto) é obrigatório")
+        resumo = resumo_evento(cfg)
+        self._send(200, 'application/json; charset=utf-8',
+                   json.dumps({'resumo': resumo}, ensure_ascii=False).encode('utf-8'))
 
     def _handle_import_pdf(self, body):
         try:

@@ -751,7 +751,7 @@ SCORE_BOX_MACRO = r"""
 <div class="score-box">
   <div class="sb-lbl-col">
     <span class="sb-lbl-tag">For Time</span>
-    <span class="sb-lbl-name">Score</span>
+    <span class="sb-lbl-name">Pontuação</span>
   </div>
   <div class="sb-field sb-field-tempo">
     <span class="sb-field-lbl">Tempo</span>
@@ -775,7 +775,7 @@ SCORE_BOX_MACRO = r"""
 <div class="score-box">
   <div class="sb-lbl-col">
     <span class="sb-lbl-tag">AMRAP</span>
-    <span class="sb-lbl-name">Score</span>
+    <span class="sb-lbl-name">Pontuação</span>
   </div>
   <div class="sb-field sb-field-tempo">
     <span class="sb-field-lbl">Rounds</span>
@@ -799,7 +799,7 @@ SCORE_BOX_MACRO = r"""
 <div class="score-box-dual">
   <div class="sb-lbl-col">
     <span class="sb-lbl-tag">Express</span>
-    <span class="sb-lbl-name">Score</span>
+    <span class="sb-lbl-name">Pontuação</span>
   </div>
   <div class="sb-field sb-field-tempo">
     <span class="sb-field-lbl">F1 · Reps</span>
@@ -893,7 +893,7 @@ PAGE_TMPL_STR = r"""<div class="page">
       {% if atleta and atleta.numero %}<div class="fline fline-filled">{{ atleta.numero }}</div>{% else %}<div class="fline"></div>{% endif %}
     </div>
     <div class="pk-cell" style="flex:1">
-      <div class="fl">Box / Afiliação</div>
+      <div class="fl">Box</div>
       {% if atleta and atleta.box %}<div class="fline fline-filled">{{ atleta.box }}</div>{% else %}<div class="fline"></div>{% endif %}
     </div>
   </div>

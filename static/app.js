@@ -122,13 +122,106 @@ function mostrarBannerPosImport(msg) {
   banner.style.display = '';
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  IA / Helpers — sugestão de time cap, geração de descrição, validação
+// ═══════════════════════════════════════════════════════════════════
+function sugerirTimeCap() {
+  const tipo = document.getElementById('edTipo').value;
+  // Movimentos do contexto atual (main pra for_time/amrap; f1+f2 pra express)
+  let movs = [];
+  if (tipo === 'express') {
+    movs = getMovTableArray('f1').concat(getMovTableArray('f2'));
+  } else {
+    movs = getMovTableArray('main');
+  }
+  fetch('/api/ai/sugerir-time-cap', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ movimentos: movs, tipo })
+  }).then(r => r.json()).then(res => {
+    if (res.error) throw new Error(res.error);
+    document.getElementById('edTimeCap').value = res.time_cap;
+    toast(`Time cap sugerido: ${res.time_cap}`, 'ok');
+  }).catch(e => toast('Erro: ' + e.message, 'err'));
+}
+
+function gerarDescricao() {
+  const tipo = document.getElementById('edTipo').value;
+  const wkt = {
+    nome: document.getElementById('edNome').value.trim(),
+    tipo,
+    time_cap: document.getElementById('edTimeCap').value.trim(),
+    movimentos: tipo === 'express' ? [] : getMovTableArray('main'),
+  };
+  fetch('/api/ai/auto-descricao', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ workout: wkt })
+  }).then(r => r.json()).then(res => {
+    if (res.error) throw new Error(res.error);
+    const linhas = res.descricao || [];
+    document.getElementById('edDescricao').value = linhas.join('\n');
+    toast(`${linhas.length} linha(s) gerada(s)`, 'ok');
+  }).catch(e => toast('Erro: ' + e.message, 'err'));
+}
+
+function abrirValidacao() {
+  document.getElementById('validModal').style.display = '';
+  document.getElementById('validacaoStatus').textContent = 'Analisando…';
+  document.getElementById('validacaoLista').innerHTML = '';
+  fetch('/api/ai/validar-evento', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ config })
+  }).then(r => r.json()).then(res => {
+    if (res.error) throw new Error(res.error);
+    const avisos = res.avisos || [];
+    const status = document.getElementById('validacaoStatus');
+    const lista  = document.getElementById('validacaoLista');
+    if (!avisos.length) {
+      status.innerHTML = '<strong style="color:var(--green)">✓ Nenhum problema encontrado.</strong>';
+      lista.innerHTML = '';
+      return;
+    }
+    const erros = avisos.filter(a => a.severidade === 'erro');
+    const aviso = avisos.filter(a => a.severidade === 'aviso');
+    status.innerHTML = `${erros.length} erro${erros.length !== 1 ? 's' : ''}, ${aviso.length} aviso${aviso.length !== 1 ? 's' : ''}.`;
+    lista.innerHTML = avisos.map(a => `
+      <div class="valid-row valid-${a.severidade}">
+        <span class="valid-icon">${a.severidade === 'erro' ? '✗' : '⚠'}</span>
+        <div class="valid-body">
+          <div class="valid-msg">${esc(a.msg)}</div>
+          <div class="valid-onde">${esc(a.onde || '')}</div>
+        </div>
+      </div>`).join('');
+  }).catch(e => {
+    document.getElementById('validacaoStatus').textContent = 'Erro: ' + e.message;
+  });
+}
+
+function fecharValidacao() {
+  document.getElementById('validModal').style.display = 'none';
+}
+
+// Atualiza o banner pós-import com resumo curto + botão validar
+function atualizarBannerPosImport() {
+  if (!temDados()) return;
+  fetch('/api/ai/resumo-evento', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ config })
+  }).then(r => r.json()).then(res => {
+    if (res.resumo) document.getElementById('pibMsg').textContent = res.resumo + ' Configure as datas pra aparecerem nas súmulas.';
+  }).catch(()=>{});
+}
+
 // Toggle de "outras opções" no rodapé
 function toggleMaisOpcoes() {
   const wrap = document.getElementById('gerarMaisOpcoes');
   const btn  = document.getElementById('btnMaisOpcoes');
   const open = wrap.style.display === 'none';
   wrap.style.display = open ? '' : 'none';
-  if (btn) btn.textContent = open ? 'menos opções ▴' : 'outras opções ▾';
+  if (btn) btn.textContent = open ? 'menos escopos ▴' : 'outros escopos ▾';
 }
 
 function onEventoChange() {
@@ -521,14 +614,14 @@ function atualizarBotaoGerar() {
   const nEvt = _contagemPaginas('evento', compOn);
   subEv.textContent = totalWkts === 0
     ? 'importe um Excel pra começar'
-    : `${nEvt} página${nEvt !== 1 ? 's' : ''} · ${dias.length} dia${dias.length !== 1 ? 's' : ''}${compOn ? '' : ' · em branco'}`;
+    : `${nEvt} página${nEvt !== 1 ? 's' : ''} · ${dias.length} dia${dias.length !== 1 ? 's' : ''}${compOn ? '' : ' · sem competidores'}`;
 
   // Botão "Dia atual"
   const diaCur = dias[diaAtual];
   btnDi.disabled = !diaCur || (diaCur.categorias || []).length === 0;
   const nDia = _contagemPaginas('dia', compOn);
   subDi.textContent = !diaCur ? 'sem dia ativo'
-    : `${nDia} página${nDia !== 1 ? 's' : ''} · ${diaCur.label || 'dia atual'}${compOn ? '' : ' · em branco'}`;
+    : `${nDia} página${nDia !== 1 ? 's' : ''} · ${diaCur.label || 'dia atual'}${compOn ? '' : ' · sem competidores'}`;
 
   // Botão "Categoria selecionada" (primário) — usa catSel atual
   const dia = dias[diaAtual];
@@ -538,7 +631,7 @@ function atualizarBotaoGerar() {
     subCt.textContent = 'sem categoria';
   } else {
     const nCat = _contagemPaginas('cat', compOn);
-    subCt.textContent = `${nCat} página${nCat !== 1 ? 's' : ''} · ${cat.nome}${compOn ? '' : ' · em branco'}`;
+    subCt.textContent = `${nCat} página${nCat !== 1 ? 's' : ''} · ${cat.nome}${compOn ? '' : ' · sem competidores'}`;
   }
 }
 
@@ -911,7 +1004,7 @@ function appendMovRow(section, mov) {
         <input class="mi-reps" type="text" inputmode="numeric" value="${mov.reps || ''}" placeholder="—">
         <button class="rs-btn" tabindex="-1" onclick="repsStep(this,+1)">+</button>
       </div>
-      <input class="mi-label" value="${esc(mov.label || '')}" placeholder="Label" style="width:72px;font-size:10.5px">
+      <input class="mi-label" value="${esc(mov.label || '')}" placeholder="Carga / variante" style="width:72px;font-size:10.5px">
       <div class="mi-ctrl">${ctrlBtns(section)}</div>`;
   }
   body.appendChild(row);
@@ -1111,8 +1204,9 @@ function aplicarImport(result) {
   saveState();
 
   const totalCats = result.dias.reduce((s, d) => s + (d.categorias || []).length, 0);
-  const msg = `${result.dias.length} dia(s), ${totalCats} categoria(s) importadas. Configure as datas pra aparecerem nas súmulas.`;
-  mostrarBannerPosImport(msg);
+  // Mensagem inicial (depois é substituída pelo resumo via IA/algoritmo)
+  mostrarBannerPosImport(`${result.dias.length} dia(s), ${totalCats} categoria(s) importadas. Configure as datas pra aparecerem nas súmulas.`);
+  atualizarBannerPosImport();  // busca resumo formatado
   toast(`${result.dias.length} dia(s), ${totalCats} categoria(s) importadas`, 'ok');
 }
 

@@ -52,7 +52,7 @@
         <span class="bge-main">⬇ Gerar categoria selecionada</span>
         <span class="bge-sub" id="bgeSubCat">—</span>
       </button>
-      <button class="ger-toggle-more" type="button" onclick="toggleMaisOpcoes()" id="btnMaisOpcoes">outras opções ▾</button>
+      <button class="ger-toggle-more" type="button" onclick="toggleMaisOpcoes()" id="btnMaisOpcoes">outros escopos ▾</button>
       <div id="gerarMaisOpcoes" style="display:none">
         <label class="ger-chk">
           <input type="checkbox" id="chkIncluirCompetidores" checked onchange="onGerarOptChange()">
@@ -74,9 +74,9 @@
   <div class="editor" id="editor">
     <div class="ed-hdr">
       <span class="ed-hdr-title" id="edTitle">Novo Workout</span>
-      <label class="ed-opt" title="Mostrar a coluna Label nas tabelas de movimento">
+      <label class="ed-opt" title="Mostrar a coluna Carga / Variante nas tabelas de movimento">
         <input type="checkbox" id="chkLabel" onchange="toggleLabelCol()">
-        <span>Label</span>
+        <span>Carga</span>
       </label>
       <button class="ed-close" onclick="fecharEditor()" title="Fechar">×</button>
     </div>
@@ -93,11 +93,11 @@
           <select id="edTipo" onchange="onTipoChange()">
             <option value="for_time">For Time</option>
             <option value="amrap">AMRAP</option>
-            <option value="express">Express (2 fases)</option>
+            <option value="express">Express — AMRAP + For Time</option>
           </select>
         </div>
         <div class="field w100">
-          <label>Time Cap</label>
+          <label>Time Cap <button type="button" class="btn-ai-mini" onclick="sugerirTimeCap()" title="Sugerir baseado nos movimentos">💡</button></label>
           <input id="edTimeCap" type="text" placeholder="Ex: 10 min">
         </div>
       </div>
@@ -122,7 +122,7 @@
           <div class="mov-table-hdr">
             <span class="mth-nome">Movimento</span>
             <span class="mth-reps">Reps</span>
-            <span class="mth-label">Label</span>
+            <span class="mth-label">Carga</span>
             <span class="mth-ctrl">Ações</span>
           </div>
           <div id="movTableBody">
@@ -163,7 +163,7 @@
             <div class="mov-table-hdr">
               <span class="mth-nome">Movimento</span>
               <span class="mth-reps">Reps</span>
-              <span class="mth-label">Label</span>
+              <span class="mth-label">Carga</span>
               <span class="mth-ctrl">Ações</span>
             </div>
             <div id="movTableF1Body">
@@ -196,7 +196,7 @@
             <div class="mov-table-hdr">
               <span class="mth-nome">Movimento</span>
               <span class="mth-reps">Reps</span>
-              <span class="mth-label">Label</span>
+              <span class="mth-label">Carga</span>
               <span class="mth-ctrl">Ações</span>
             </div>
             <div id="movTableF2Body">
@@ -213,9 +213,9 @@
 
       <hr class="divider">
 
-      <!-- Texto livre (opcional) -->
+      <!-- Notas adicionais (opcional) -->
       <div class="field">
-        <label>Texto livre (opcional)</label>
+        <label>Notas adicionais (opcional) <button type="button" class="btn-ai-mini" onclick="gerarDescricao()" title="Gerar a partir da tabela de movimentos">💡 gerar</button></label>
         <textarea id="edDescricao" placeholder="Ex: &quot;For time:&quot; ou &quot;Time cap: 10 minutos&quot;"></textarea>
         <span class="field-help">Aparece <strong>acima</strong> da tabela de movimentos. Deixe em branco se a tabela já é suficiente.</span>
       </div>
@@ -265,7 +265,23 @@
       <span class="pib-icon">✓</span>
       <span class="pib-msg" id="pibMsg">Importado.</span>
       <button class="pib-cta" onclick="abrirConfig('dias')">Configurar datas</button>
+      <button class="pib-cta secondary" onclick="abrirValidacao()" title="Verificar problemas no evento">Validar</button>
       <button class="pib-close" onclick="dispensarBanner()" title="Fechar">×</button>
+    </div>
+
+    <!-- Painel de validação (modal sobreposto) -->
+    <div class="cfg-modal" id="validModal" style="display:none">
+      <div class="cfg-overlay" onclick="fecharValidacao()"></div>
+      <div class="cfg-panel">
+        <div class="cfg-header">
+          <span class="cfg-title">Validação do evento</span>
+          <button class="ed-close" onclick="fecharValidacao()" title="Fechar">×</button>
+        </div>
+        <div class="cfg-pane" id="validacaoPane">
+          <p class="cfg-hint" id="validacaoStatus">Analisando…</p>
+          <div id="validacaoLista"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -336,7 +352,7 @@
       <p class="cfg-hint">Importe um Excel pra preencher dias, categorias, workouts e atletas de uma vez.</p>
       <button class="btn-import" style="width:100%" onclick="triggerImport('excel')">📊 Importar Excel (.xlsx)</button>
       <p class="cfg-hint" style="margin-top:14px">Apaga tudo e começa do zero:</p>
-      <button class="btn-clear-all" style="background:#3A1A1A;color:#C66;border:1px solid #4A2A2A;border-radius:var(--radius);padding:8px;width:100%" onclick="limparTudoModal()">Limpar tudo</button>
+      <button class="btn-clear-all" style="background:#3A1A1A;color:#C66;border:1px solid #4A2A2A;border-radius:var(--radius);padding:8px;width:100%" onclick="limparTudoModal()">Apagar evento</button>
     </div>
   </div>
 </div>
