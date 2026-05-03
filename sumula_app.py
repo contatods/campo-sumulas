@@ -17,7 +17,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.4.0'
+VERSION = '1.5.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -64,7 +64,7 @@ def _resolve_logo(value):
 from parsers import parse_excel, parse_pdf, assign_workout_numbers, _atleta_sort_key
 from ai_rounds import (enriquecer_workouts, AI_ATIVO,
                        sugerir_time_cap, auto_descricao,
-                       validar_evento, resumo_evento)
+                       validar_evento, resumo_evento, chat_evento)
 
 # ── Carregar fontes na inicialização ────────────────────────────────────────────
 _banner_inner = f"  Súmulas Digital Score  —  v{VERSION}"
@@ -170,6 +170,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 '/api/ai/auto-descricao':  self._handle_auto_descricao,
                 '/api/ai/validar-evento':  self._handle_validar_evento,
                 '/api/ai/resumo-evento':   self._handle_resumo_evento,
+                '/api/ai/chat':            self._handle_chat,
             }
             handler = routes.get(self.path)
             if handler: handler(body)
@@ -393,6 +394,26 @@ class SumulaHandler(BaseHTTPRequestHandler):
         resumo = resumo_evento(cfg)
         self._send(200, 'application/json; charset=utf-8',
                    json.dumps({'resumo': resumo}, ensure_ascii=False).encode('utf-8'))
+
+    def _handle_chat(self, body):
+        """Chat com Claude tendo o config como contexto. Body: {messages, config}."""
+        if not AI_ATIVO:
+            self._send(200, 'application/json; charset=utf-8',
+                       json.dumps({'error': 'IA inativa', 'ai_ativo': False}, ensure_ascii=False).encode('utf-8'))
+            return
+        mensagens = body.get('messages')
+        if not isinstance(mensagens, list) or not mensagens:
+            raise BadRequest("messages deve ser lista não-vazia")
+        cfg = body.get('config') or {}
+        try:
+            resposta = chat_evento(mensagens, cfg)
+        except Exception as e:
+            traceback.print_exc()
+            self._send(200, 'application/json; charset=utf-8',
+                       json.dumps({'error': f'IA falhou: {e.__class__.__name__}', 'ai_ativo': True}, ensure_ascii=False).encode('utf-8'))
+            return
+        self._send(200, 'application/json; charset=utf-8',
+                   json.dumps({'resposta': resposta}, ensure_ascii=False).encode('utf-8'))
 
     def _handle_import_pdf(self, body):
         try:

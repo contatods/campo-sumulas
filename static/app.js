@@ -165,6 +165,71 @@ function gerarDescricao() {
   }).catch(e => toast('Erro: ' + e.message, 'err'));
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  Chat assistente
+// ═══════════════════════════════════════════════════════════════════
+let chatOpen = false;
+let chatHistory = [];     // histórico {role: 'user'|'assistant', content: '...'}
+let chatAIAtiva = false;  // sabido após /api/status
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  document.getElementById('chatPanel').style.display = chatOpen ? '' : 'none';
+  if (chatOpen) {
+    if (!chatAIAtiva) {
+      document.getElementById('chatFooterInfo').style.display = '';
+      document.getElementById('chatInput').disabled = true;
+      document.getElementById('chatSend').disabled = true;
+    }
+    document.getElementById('chatInput').focus();
+  }
+}
+
+function enviarChat() {
+  const input = document.getElementById('chatInput');
+  const txt = input.value.trim();
+  if (!txt) return;
+  if (!chatAIAtiva) { toast('IA inativa — configure ANTHROPIC_API_KEY', 'err'); return; }
+  appendChatMsg('user', txt);
+  input.value = '';
+  chatHistory.push({ role: 'user', content: txt });
+  appendChatMsg('bot', 'pensando…', true);
+
+  fetch('/api/ai/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ messages: chatHistory, config })
+  }).then(r => r.json()).then(res => {
+    removerThinking();
+    if (res.error) {
+      appendChatMsg('bot', 'Erro: ' + res.error);
+      return;
+    }
+    const resposta = res.resposta || '(sem resposta)';
+    chatHistory.push({ role: 'assistant', content: resposta });
+    appendChatMsg('bot', resposta);
+  }).catch(e => {
+    removerThinking();
+    appendChatMsg('bot', 'Erro: ' + e.message);
+  });
+}
+
+function appendChatMsg(quem, texto, thinking) {
+  const msgs = document.getElementById('chatMsgs');
+  const div = document.createElement('div');
+  div.className = quem === 'user' ? 'chat-msg-user' : 'chat-msg-bot';
+  if (thinking) div.classList.add('thinking');
+  div.textContent = texto;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removerThinking() {
+  const msgs = document.getElementById('chatMsgs');
+  const last = msgs.querySelector('.chat-msg-bot.thinking');
+  if (last) last.remove();
+}
+
 function abrirValidacao() {
   document.getElementById('validModal').style.display = '';
   document.getElementById('validacaoStatus').textContent = 'Analisando…';
@@ -1363,6 +1428,7 @@ function toast(msg, type = 'ok') {
 // ═══════════════════════════════════════════════════════════════════
 (function initApp() {
   fetch('/api/status').then(r=>r.json()).then(s => {
+    chatAIAtiva = !!s.ai_ativo;
     if (s.ai_ativo) document.getElementById('aiBadge').style.display = '';
   }).catch(()=>{});
   loadState();

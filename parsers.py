@@ -16,6 +16,7 @@ import re
 from typing import Any, Optional
 
 from types_ds import Atleta, Movimento, Workout
+from movimentos import padronizar_workouts
 
 # Excel e PDF são opcionais (parsers respectivos só ativam se a lib estiver instalada)
 try:
@@ -222,6 +223,8 @@ def _adaptar_categoria_grid_para_multidia(
 ) -> dict[str, Any]:
     """Adapter: shape antigo categoria_grid → shape novo evento_multidia (1 dia 'Único')."""
     cats: list[dict[str, Any]] = []
+    for workouts in por_categoria.values():
+        padronizar_workouts(workouts)
     for cat_nome, workouts in por_categoria.items():
         atletas = atletas_por_categoria.get(cat_nome, [])
         baterias: list[dict[str, Any]] = []
@@ -924,6 +927,11 @@ def parse_excel_multidia(wb) -> dict[str, Any]:
                 cats_resultado.append({'nome': cat_nome, 'workouts': lista_workouts, 'baterias': []})
 
         dias_resultado.append({'label': dia_label, 'categorias': cats_resultado})
+
+    # Padroniza nomes de movimentos (PT-BR/EN/case → forma canônica)
+    for d in dias_resultado:
+        for c in d.get('categorias', []) or []:
+            padronizar_workouts(c.get('workouts', []) or [])
 
     return {
         'tipo': 'evento_multidia',

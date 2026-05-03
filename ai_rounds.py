@@ -23,6 +23,33 @@ try:
 except ImportError:
     HAS_ANTHROPIC = False
 
+
+def _carregar_env_local():
+    """Lê um arquivo .env na raiz do projeto (se existir) e popula os.environ.
+
+    Suporta linhas no formato `CHAVE=valor` e `CHAVE="valor com aspas"`.
+    Comentários (`#`) e linhas vazias são ignoradas. Não sobrescreve variáveis
+    já presentes no ambiente.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    env_path = os.path.join(here, '.env')
+    if not os.path.exists(env_path):
+        return
+    try:
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for raw in f:
+                linha = raw.strip()
+                if not linha or linha.startswith('#') or '=' not in linha:
+                    continue
+                k, _, v = linha.partition('=')
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except Exception:
+        pass  # falha silenciosa — arquivo malformado não deve quebrar startup
+
+_carregar_env_local()
 AI_KEY: str = os.environ.get('ANTHROPIC_API_KEY', '')
 AI_ATIVO: bool = HAS_ANTHROPIC and bool(AI_KEY)
 
@@ -273,7 +300,155 @@ def validar_evento(config: dict) -> list[dict]:
                         'msg': f'Workout "{wkt.get("nome", "?")}" (For Time) sem time cap',
                         'onde': f'{dlabel}/{cnome}',
                     })
+
+    # 6) Cronograma: slot da bateria menor que a duração estimada do workout
+    avisos.extend(_avisos_cronograma(dias))
     return avisos
+
+
+def _hhmm_to_min(s: str) -> Optional[int]:
+    """Converte 'HH:MM' (ou 'HH:MM:SS') em minutos desde 00:00."""
+    if not s:
+        return None
+    m = re.match(r'^(\d{1,2}):(\d{2})', str(s))
+    return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+
+
+def estimar_duracao_workout_min(wkt: Workout) -> int:
+    """Estima duração de execução de um workout em minutos.
+
+    For Time: usa time_cap se houver; senão estima por reps totais.
+    AMRAP: usa time_cap (é literalmente a duração).
+    Express: F1 duração + 1min descanso + F2 duração (ou time_cap geral).
+    """
+    tipo = wkt.get('tipo', 'for_time')
+    if tipo == 'amrap':
+        return _extrair_minutos(wkt.get('time_cap', '') or '') or 10
+
+    if tipo == 'express':
+        f1 = wkt.get('formula1', {}) or {}
+        f2 = wkt.get('formula2', {}) or {}
+        dur_f1 = _extrair_minutos(f1.get('janela', '') or '') or 5
+        dur_f2 = _extrair_minutos(f2.get('janela', '') or '') or _extrair_minutos(wkt.get('time_cap', '') or '') or 7
+        return dur_f1 + 1 + dur_f2
+
+    # for_time: prefere time_cap; cai no estimar via reps
+    tc = _extrair_minutos(wkt.get('time_cap', '') or '')
+    if tc:
+        return tc
+    movs = [m for m in (wkt.get('movimentos') or [])
+            if not m.get('separador') and not m.get('chegada')]
+    total_reps = sum(int(m.get('reps', 0)) for m in movs
+                     if str(m.get('reps', '')).isdigit())
+    if not total_reps:
+        return 10
+    pace = 10 if total_reps < 50 else 7
+    return max(5, int(total_reps / pace * 1.4))
+
+
+def _avisos_cronograma(dias: list[dict]) -> list[dict]:
+    """Compara duração estimada × slot disponível em cada bateria.
+
+    Slot = horario_aquecimento da PRÓXIMA bateria menos horario_fila desta.
+    Se a duração do workout > slot, flagga aviso.
+    """
+    avisos: list[dict] = []
+    for di, dia in enumerate(dias):
+        dlabel = dia.get('label', f'Dia {di+1}')
+        for cat in dia.get('categorias', []) or []:
+            cnome = cat.get('nome', '')
+            workouts = cat.get('workouts', []) or []
+            baterias = sorted(
+                (cat.get('baterias', []) or []),
+                key=lambda b: _hhmm_to_min(b.get('horario_aquecimento', '')) or 0,
+            )
+            for idx, b in enumerate(baterias):
+                aq      = _hhmm_to_min(b.get('horario_aquecimento', ''))
+                fila    = _hhmm_to_min(b.get('horario_fila', ''))
+                proxima = baterias[idx + 1] if idx + 1 < len(baterias) else None
+                aq_prox = _hhmm_to_min(proxima.get('horario_aquecimento', '')) if proxima else None
+                if fila is None or aq_prox is None:
+                    continue
+                slot_min = aq_prox - fila
+                if slot_min <= 0:
+                    continue
+                # Pega os workouts que rodam nesta bateria
+                idxs_workouts = b.get('workouts_que_rodam') or []
+                duracao_total = 0
+                for wi in idxs_workouts:
+                    if 1 <= wi <= len(workouts):
+                        duracao_total += estimar_duracao_workout_min(workouts[wi - 1])
+                if duracao_total > slot_min + 2:  # tolera 2 min de buffer
+                    avisos.append({
+                        'severidade': 'aviso',
+                        'msg': f'Bateria {b.get("numero")} ({b.get("codigo_evento")}) precisa ~{duracao_total}min mas slot tem {slot_min}min',
+                        'onde': f'{dlabel}/{cnome}',
+                    })
+    return avisos
+
+
+# ── Chat assistente do evento (Claude responde com base no config carregado) ─
+def chat_evento(mensagens: list[dict], config: dict) -> str:
+    """Chat com Claude tendo o config do evento como contexto.
+
+    `mensagens` é uma lista de turnos no formato Anthropic
+    [{ role: 'user'|'assistant', content: '...' }, ...].
+    Retorna a resposta textual.
+
+    Levanta RuntimeError quando IA não está ativa (chave ausente / SDK ausente).
+    """
+    if not AI_ATIVO:
+        raise RuntimeError('IA inativa — defina ANTHROPIC_API_KEY pra usar o chat.')
+    import json as _json
+    contexto = _json.dumps(config, ensure_ascii=False)
+    if len(contexto) > 60000:
+        # Truncate seguro: passa só nomes/baterias, não alocações detalhadas
+        ev = config.get('evento', {})
+        slim = {
+            'evento': ev,
+            'dias': [
+                {
+                    'label': d.get('label'),
+                    'data':  d.get('data', ''),
+                    'categorias': [
+                        {
+                            'nome': c.get('nome'),
+                            'workouts': [{'nome': w.get('nome'), 'tipo': w.get('tipo'),
+                                          'time_cap': w.get('time_cap', '')} for w in (c.get('workouts') or [])],
+                            'baterias': [
+                                {'numero': b.get('numero'), 'codigo_evento': b.get('codigo_evento'),
+                                 'horario_aquecimento': b.get('horario_aquecimento'),
+                                 'horario_fila': b.get('horario_fila'),
+                                 'workouts_que_rodam': b.get('workouts_que_rodam'),
+                                 'alocacoes': b.get('alocacoes', [])}
+                                for b in (c.get('baterias') or [])
+                            ],
+                        }
+                        for c in (d.get('categorias') or [])
+                    ],
+                }
+                for d in (config.get('dias') or [])
+            ],
+        }
+        contexto = _json.dumps(slim, ensure_ascii=False)
+
+    system = (
+        "Você é um assistente de organização de eventos de CrossFit. Responda em português brasileiro, "
+        "objetivo, baseando-se exclusivamente no JSON do evento abaixo. Quando perguntarem por dados "
+        "específicos (atleta, raia, bateria, horário), procure no JSON e responda com precisão. Se a "
+        "informação não está no JSON, diga claramente que não está.\n\n"
+        f"Estado atual do evento:\n{contexto}"
+    )
+    client = anthropic.Anthropic(api_key=AI_KEY, timeout=20.0)
+    resp = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=600,
+        system=system,
+        messages=mensagens,
+    )
+    if not resp.content:
+        return ""
+    return resp.content[0].text or ""
 
 
 # ── Resumo natural do evento (curto, conciso) ───────────────────────────────

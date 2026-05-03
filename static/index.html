@@ -375,6 +375,23 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<!-- Chat assistente (botão flutuante + painel) -->
+<button class="chat-fab" id="chatFab" onclick="toggleChat()" title="Chat assistente do evento">💬</button>
+<div class="chat-panel" id="chatPanel" style="display:none">
+  <div class="chat-hdr">
+    <span>Assistente</span>
+    <button class="ed-close" onclick="toggleChat()">×</button>
+  </div>
+  <div class="chat-msgs" id="chatMsgs">
+    <div class="chat-msg-bot">Oi. Posso ajudar com perguntas sobre o evento carregado — atletas, baterias, horários, conferências.</div>
+  </div>
+  <div class="chat-input-wrap">
+    <input id="chatInput" type="text" placeholder="Pergunte algo (ex: quem está na raia 3 do heat 5?)" onkeydown="if(event.key==='Enter')enviarChat()">
+    <button class="chat-send" onclick="enviarChat()" id="chatSend">↵</button>
+  </div>
+  <div class="chat-footer-info" id="chatFooterInfo" style="display:none">Configure <code>ANTHROPIC_API_KEY</code> no servidor pra ativar.</div>
+</div>
+
 <!-- Logo padrão DS injetada server-side antes do app.js -->
 <script>const DS_LOGO_PADRAO = "{{DS_LOGO_PADRAO_B64}}";</script>
 <script src="/app.js"></script>
