@@ -193,6 +193,11 @@ def parse_excel(data: bytes) -> dict[str, Any]:
     if _is_evento_multidia(wb):
         return parse_excel_multidia(wb)
 
+    # Formato grades-por-tipo (ex: Sun Challenge): abas grade Individuais/Duplas
+    # + abas <Dia> e <Dia> - Montagem (sem aba unificada Workouts)
+    if _is_layout_grades_e_dias(wb):
+        return parse_excel_grades_e_dias(wb)
+
     # Formato categoria_grid (modelo legado: 1 aba grade categoria × workout)
     todas_categorias: dict[str, list[Workout]] = {}
     evento_nome = ""
@@ -938,4 +943,204 @@ def parse_excel_multidia(wb) -> dict[str, Any]:
         'evento_nome': '',  # pode ser preenchido pela UI a partir do nome do arquivo ou config
         'dias': dias_resultado,
         'roster': _roster_individuais(wb),
+    }
+
+
+# ── Layout v2: grades por tipo (Individuais/Duplas) + dias com Montagem ────────
+# Caso de uso: planilhas onde os workouts estão em abas separadas por modalidade
+# (ex: `Individuais` e `Duplas`) e o cronograma/montagem está por dia. Sem aba
+# unificada `Workouts`. Visto no Sun Challenge 2026.
+
+def _is_layout_grades_e_dias(wb) -> bool:
+    nomes_lower = [s.lower() for s in wb.sheetnames]
+    if 'workouts' in nomes_lower:
+        return False  # se tem Workouts, o detector multidia clássico cuida disso
+    tem_grade    = any(_is_categoria_grid(wb[s]) for s in wb.sheetnames)
+    tem_montagem = any(' - montagem' in n for n in nomes_lower)
+    return tem_grade and tem_montagem
+
+
+def _quebrar_categoria_composta(s: str) -> list[str]:
+    """'A (Heat 1) & B (Heat 2)' → ['a', 'b'] (cada parte normalizada).
+
+    Diferente de `_normalizar_categoria`, que perde tudo depois do primeiro `(`
+    e portanto descarta a segunda categoria de baterias mistas.
+    """
+    if not s:
+        return []
+    return [_normalizar_categoria(p) for p in re.split(r'\s+&\s+', s) if p.strip()]
+
+
+def _bateria_casa_categoria(bateria_categoria: str, cat_grade_norm: str) -> bool:
+    """Match exato (após normalização e quebra de '&').
+
+    Substring causa falso positivo entre 'Rx Masculino' (Sábado) e 'Dupla Rx
+    Masculino' (Domingo) — categorias diferentes que rodam em dias diferentes.
+    """
+    return cat_grade_norm in _quebrar_categoria_composta(bateria_categoria)
+
+
+def _propagar_codigos_da_montagem(
+    cronograma: list[dict[str, Any]],
+    montagem: dict[tuple[str, str, str], list[dict[str, Any]]],
+) -> None:
+    """Quando o cronograma vem sem códigos (ex: Domingo do Sun Challenge),
+    procura o código correspondente na montagem pelo número da bateria.
+
+    Mutates `cronograma` in-place, preenchendo `codigo_evento`.
+    """
+    if any(b.get('codigo_evento') for b in cronograma):
+        return  # cronograma já tem códigos — não interfere
+    cods_por_bat: dict[str, str] = {}
+    for (cod, _cat, bat), _ in montagem.items():
+        if cod and bat:
+            cods_por_bat.setdefault(bat, cod)
+    for b in cronograma:
+        if not b.get('codigo_evento'):
+            b['codigo_evento'] = cods_por_bat.get(b.get('numero', ''), '')
+
+
+def _roster_de_abas_atletas(wb) -> list[dict[str, str]]:
+    """Lê abas tipo `Atleta - X` / `Atletas - X` sem header.
+
+    Estrutura esperada: col A = número, col B = nome, col C = box.
+    Concatena tudo num único roster.
+    """
+    out: list[dict[str, str]] = []
+    for sname in wb.sheetnames:
+        sl = sname.lower().strip()
+        if not (sl.startswith('atleta - ') or sl.startswith('atletas - ')):
+            continue
+        ws = wb[sname]
+        for row in ws.iter_rows(values_only=True):
+            if not row or all(c is None for c in row):
+                continue
+            numero = str(row[0]).strip() if row[0] is not None else ""
+            nome   = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
+            box    = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
+            if not nome or nome.upper() == '#N/A':
+                continue
+            out.append({'numero': numero, 'nome': nome, 'box': box})
+    return out
+
+
+def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
+    """Parser para layout: grades de workout por modalidade + dias com Montagem.
+
+    Estratégia:
+      1. Lê todas as abas grade (Individuais, Duplas, ...) → categoria → workouts.
+      2. Detecta pares `<Dia>` + `<Dia> - Montagem`.
+      3. Pra cada dia, lê cronograma + montagem. Se cronograma vem sem códigos,
+         puxa código da montagem pela bateria.
+      4. Pra cada categoria da grade, anexa ao dia onde aparece no cronograma.
+      5. Roster lido das abas `Atleta(s) - X`.
+    """
+    # 1) Grades — junta todas
+    grade_por_categoria: dict[str, list[Workout]] = {}
+    for sname in wb.sheetnames:
+        ws = wb[sname]
+        if not _is_categoria_grid(ws):
+            continue
+        r = _parse_excel_grade(wb, sname)
+        # Não sobrescreve: categorias com mesmo nome em grades diferentes mantêm
+        # a primeira ocorrência (raro — modelagem do usuário deve evitar).
+        for cat, wkts in r.get('por_categoria', {}).items():
+            grade_por_categoria.setdefault(cat, wkts)
+    if not grade_por_categoria:
+        return {'tipo': 'erro', 'erro': 'Nenhuma grade categoria×workout detectada'}
+
+    for workouts in grade_por_categoria.values():
+        padronizar_workouts(workouts)
+
+    # 2) Dias detectados a partir de `<Dia> - Montagem`
+    nomes_lower = {s.lower(): s for s in wb.sheetnames}
+    dias_detectados: list[str] = []
+    for sname in wb.sheetnames:
+        sl = sname.lower()
+        if sl.endswith(' - montagem'):
+            dia_sl = sl[: -len(' - montagem')]
+            if dia_sl in nomes_lower:
+                dias_detectados.append(nomes_lower[dia_sl])  # nome original (com acentos)
+    if not dias_detectados:
+        return {'tipo': 'erro', 'erro': 'Nenhum par <Dia> + <Dia> - Montagem encontrado'}
+
+    # 3-4) Pra cada dia, lê e agrupa categorias presentes
+    dias_resultado: list[dict[str, Any]] = []
+    for dia_label in dias_detectados:
+        sname_dia = nomes_lower[dia_label.lower()]
+        sname_mont = nomes_lower[f"{dia_label.lower()} - montagem"]
+        cronograma = _parse_cronograma_dia(wb[sname_dia])
+        montagem   = _parse_montagem_dia(wb[sname_mont])
+        _propagar_codigos_da_montagem(cronograma, montagem)
+
+        # Conjunto de categorias (normalizadas) presentes neste dia
+        cats_no_dia_norm: list[str] = []
+        for b in cronograma:
+            cats_no_dia_norm.extend(_quebrar_categoria_composta(b.get('categoria', '')))
+
+        cats_resultado: list[dict[str, Any]] = []
+        for cat_grade, workouts in grade_por_categoria.items():
+            cat_grade_norm = _normalizar_categoria(cat_grade)
+            # Só anexa categoria se ela aparece em alguma bateria deste dia
+            if cat_grade_norm not in cats_no_dia_norm:
+                continue
+
+            baterias_da_cat = [
+                b for b in cronograma
+                if _bateria_casa_categoria(b.get('categoria', ''), cat_grade_norm)
+            ]
+
+            baterias_full: list[dict[str, Any]] = []
+            for b in baterias_da_cat:
+                codigos_b = set(_split_codigo_evento(b.get('codigo_evento', '')))
+                # 1ª passada: match estrito (bat + cat + interseção de códigos).
+                # 2ª passada: match relaxado (só bat + cat) — só vale quando há um
+                # único candidato (sem ambiguidade). Cobre casos em que o código
+                # no cronograma e na montagem divergem, mas a categoria/bateria
+                # identificam unicamente a alocação.
+                candidatos_estrito: list[tuple] = []
+                candidatos_relaxado: list[tuple] = []
+                for (chave_cod, chave_cat, chave_bat), alocs in montagem.items():
+                    if chave_bat != b['numero']:
+                        continue
+                    if not _bateria_casa_categoria(chave_cat, cat_grade_norm):
+                        continue
+                    candidatos_relaxado.append((chave_cod, alocs))
+                    if codigos_b:
+                        codigos_chave = set(_split_codigo_evento(chave_cod))
+                        if codigos_b & codigos_chave:
+                            candidatos_estrito.append((chave_cod, alocs))
+                escolhido = candidatos_estrito[0] if candidatos_estrito else (
+                    candidatos_relaxado[0] if len(candidatos_relaxado) == 1 else None
+                )
+                codigo_montagem, aloc = escolhido if escolhido else ("", [])
+
+                codigo_final = b.get('codigo_evento') or codigo_montagem
+                codigos_finais = _split_codigo_evento(codigo_final) or (
+                    [codigo_final] if codigo_final else []
+                )
+                workouts_que_rodam = [
+                    n for n in (_workout_numero_de_codigo(c) for c in codigos_finais)
+                    if n is not None
+                ]
+                baterias_full.append({
+                    **b,
+                    'codigo_evento': codigo_final,
+                    'workouts_que_rodam': workouts_que_rodam,
+                    'alocacoes': aloc,
+                })
+
+            cats_resultado.append({
+                'nome':      cat_grade,
+                'workouts':  workouts,
+                'baterias':  baterias_full,
+            })
+
+        dias_resultado.append({'label': dia_label, 'categorias': cats_resultado})
+
+    return {
+        'tipo':         'evento_multidia',
+        'evento_nome':  '',
+        'dias':         dias_resultado,
+        'roster':       _roster_de_abas_atletas(wb),
     }
