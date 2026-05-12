@@ -1024,6 +1024,72 @@ def _roster_de_abas_atletas(wb) -> list[dict[str, str]]:
     return out
 
 
+def _parse_inscritos(wb) -> dict[str, tuple[int, int]]:
+    """Lê aba `Inscritos` (se houver) → mapa categoria_normalizada → (n_ini, n_fim).
+
+    Estrutura esperada: header com `Nome` + colunas que contenham `inicial` e
+    `final`. Múltiplos blocos (separados por linhas vazias) são suportados —
+    típico quando há Individuais e Duplas no mesmo evento. Retorna `{}` se a
+    aba não existir ou estiver fora do padrão.
+
+    Usado pra desambiguar alocações de baterias mistas (atletas de duas
+    categorias rodando juntos): a faixa de número diz quem pertence a qual.
+    """
+    sname = next((s for s in wb.sheetnames if s.strip().lower() == 'inscritos'), None)
+    if not sname:
+        return {}
+    ws = wb[sname]
+
+    resultado: dict[str, tuple[int, int]] = {}
+    col_nome = col_ini = col_fim = None
+    for row in ws.iter_rows(values_only=True):
+        if not row or all(c is None for c in row):
+            col_nome = col_ini = col_fim = None  # quebra de bloco: re-detecta header
+            continue
+        vals = [str(c).strip().lower() if c else '' for c in row]
+        # Header novo: precisa ter coluna 'nome' + uma 'inicial' + uma 'final'
+        if 'nome' in vals and any('inicial' in v for v in vals) and any('final' in v for v in vals):
+            col_nome = vals.index('nome')
+            col_ini  = next(i for i, v in enumerate(vals) if 'inicial' in v)
+            col_fim  = next(i for i, v in enumerate(vals) if 'final' in v)
+            continue
+        if col_nome is None:
+            continue
+        nome = row[col_nome] if col_nome < len(row) else None
+        ini  = row[col_ini]  if col_ini  < len(row) else None
+        fim  = row[col_fim]  if col_fim  < len(row) else None
+        if not nome or ini is None or fim is None:
+            continue
+        try:
+            ini_int, fim_int = int(ini), int(fim)
+        except (TypeError, ValueError):
+            continue
+        if ini_int > fim_int:
+            continue
+        resultado[_normalizar_categoria(str(nome))] = (ini_int, fim_int)
+    return resultado
+
+
+def _filtrar_alocacoes_por_faixa(
+    alocs: list[dict[str, Any]], faixa: tuple[int, int]
+) -> list[dict[str, Any]]:
+    """Mantém só alocações cuja `numero` cai em [ini, fim].
+
+    Alocações sem `numero` numérico são removidas — não há como saber a qual
+    categoria pertencem. Usado pra desambiguar baterias mistas.
+    """
+    ini, fim = faixa
+    out: list[dict[str, Any]] = []
+    for a in alocs:
+        try:
+            n = int(str(a.get('numero', '')).strip())
+        except (ValueError, AttributeError):
+            continue
+        if ini <= n <= fim:
+            out.append(a)
+    return out
+
+
 def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
     """Parser para layout: grades de workout por modalidade + dias com Montagem.
 
@@ -1051,6 +1117,9 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
 
     for workouts in grade_por_categoria.values():
         padronizar_workouts(workouts)
+
+    # Faixas de número por categoria — desambigua atletas em baterias mistas
+    inscritos_faixas = _parse_inscritos(wb)
 
     # 2) Dias detectados a partir de `<Dia> - Montagem`
     nomes_lower = {s.lower(): s for s in wb.sheetnames}
@@ -1114,6 +1183,14 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                     candidatos_relaxado[0] if len(candidatos_relaxado) == 1 else None
                 )
                 codigo_montagem, aloc = escolhido if escolhido else ("", [])
+
+                # Bateria mista (`X & Y`): a Montagem traz atletas das duas
+                # categorias juntos. Se temos faixa de número da categoria
+                # atual (via Inscritos), filtra pra não vazar atletas da outra.
+                if aloc and len(_quebrar_categoria_composta(b.get('categoria', ''))) > 1:
+                    faixa = inscritos_faixas.get(cat_grade_norm)
+                    if faixa:
+                        aloc = _filtrar_alocacoes_por_faixa(aloc, faixa)
 
                 codigo_final = b.get('codigo_evento') or codigo_montagem
                 codigos_finais = _split_codigo_evento(codigo_final) or (
