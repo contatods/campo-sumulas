@@ -833,7 +833,7 @@ DOC_TMPL_STR = r"""<!DOCTYPE html>
 {% if fonts.bold  %}@font-face{font-family:'Lato';font-weight:700;src:url('{{ fonts.bold  }}') format('truetype')}{% endif %}
 {% if fonts.reg   %}@font-face{font-family:'Lato';font-weight:400;src:url('{{ fonts.reg   }}') format('truetype')}{% endif %}
 {% if fonts.light %}@font-face{font-family:'Lato';font-weight:300;src:url('{{ fonts.light }}') format('truetype')}{% endif %}
-{{ css }}
+{{ css|safe }}
 </style>
 </head>
 <body>
@@ -993,7 +993,11 @@ PAGE_TMPL_STR = r"""<div class="page">
 
 
 def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
-    tmpl = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + SCORE_BOX_MACRO + PAGE_TMPL_STR)
+    # autoescape: nomes de evento/atleta/box/movimento são input do usuário e
+    # podem conter `<`, `>`, `&` ou aspas — escapar previne quebra de layout e
+    # XSS quando a súmula HTML é aberta no browser.
+    tmpl = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + SCORE_BOX_MACRO + PAGE_TMPL_STR,
+                    autoescape=True)
     return tmpl.render(ev=ev, wkt=wkt,
                        logo_src=logo_src, logo_evento_src=logo_evento_src,
                        atleta=atleta)
@@ -1003,7 +1007,7 @@ def render_workout(ev, wkt, fonts, logo_src, logo_evento="", atleta=None):
     """Renderiza uma súmula HTML completa (1 página) para um workout."""
     logo_evt_src = logo_evento or ""
     page = _render_page(ev, wkt, logo_src, logo_evt_src, atleta)
-    doc = Template(DOC_TMPL_STR)
+    doc = Template(DOC_TMPL_STR, autoescape=True)
     return doc.render(wkt=wkt, fonts=fonts, css=CSS, pages=[page])
 
 
@@ -1014,5 +1018,5 @@ def render_workout_combined(ev, wkt, fonts, logo_src, logo_evento, atletas):
     """
     logo_evt_src = logo_evento or ""
     pages = [_render_page(ev, wkt, logo_src, logo_evt_src, a) for a in atletas]
-    doc = Template(DOC_TMPL_STR)
+    doc = Template(DOC_TMPL_STR, autoescape=True)
     return doc.render(wkt=wkt, fonts=fonts, css=CSS, pages=pages)

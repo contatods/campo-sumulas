@@ -147,6 +147,16 @@ def test_parse_inscritos_retorna_vazio_sem_aba():
     assert _parse_inscritos(wb) == {}
 
 
+def test_parse_excel_vazio_retorna_erro_explicito():
+    # Excel sem nenhum dado reconhecível NÃO deve retornar estrutura fantasma
+    # com "Único/Geral" vazia — deve sinalizar erro explícito pra UI.
+    wb = openpyxl.Workbook()
+    buf = io.BytesIO(); wb.save(buf)
+    result = parse_excel(buf.getvalue())
+    assert result.get('tipo') == 'erro'
+    assert 'erro' in result and result['erro']
+
+
 def test_filtrar_alocacoes_remove_numero_invalido_ou_vazio():
     alocs = [
         {"raia": "1", "numero": "902", "nome": "Foo"},

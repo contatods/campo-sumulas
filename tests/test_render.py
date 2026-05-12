@@ -32,3 +32,23 @@ def test_render_workout_combined_n_paginas_na_ordem_dos_atletas(
     pos_nomes = [html.find(a["nome"]) for a in atletas_desordenados]
     assert all(p > 0 for p in pos_nomes)
     assert pos_nomes == sorted(pos_nomes)
+
+
+def test_render_escapa_html_de_input_do_usuario(fonts_empty):
+    """Garante que dados externos (nome, box, etc) são escapados — sem XSS."""
+    ev = {"nome": "<script>alert(1)</script>", "categoria": "A & B", "data": "2026"}
+    wkt = {
+        "numero": 1, "nome": '"Hack"', "tipo": "for_time", "modalidade": "individual",
+        "time_cap": "9 min",
+        "movimentos": [{"nome": "<img src=x>", "reps": 20}, {"chegada": True}],
+    }
+    atleta = {"nome": 'João <b>X</b>', "box": 'CF "Aspas"',
+              "raia": "1", "numero": "001", "bateria": "1"}
+    html = render_workout(ev, wkt, fonts_empty, logo_src="", logo_evento="", atleta=atleta)
+    # Strings cruas NÃO podem aparecer
+    assert "<script>alert" not in html
+    assert "<img src=x>" not in html
+    assert "<b>X</b>" not in html
+    # Versão escapada SIM — template usa |upper no nome do evento
+    assert "&lt;SCRIPT&gt;" in html
+    assert "A &amp; B" in html

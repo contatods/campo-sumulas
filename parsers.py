@@ -218,6 +218,10 @@ def parse_excel(data: bytes) -> dict[str, Any]:
 
     # Fallback final: formato template (1 evento, lista plana de workouts)
     template_result = _parse_excel_template(wb)
+    if not template_result.get('workouts') and not template_result.get('evento', {}).get('nome'):
+        # Nenhum formato reconhecido: melhor erro explícito que estrutura
+        # fantasma com "Único / Geral" vazia, que confunde a UI.
+        return {'tipo': 'erro', 'erro': 'Excel sem dados reconhecíveis — esperava grade categoria×workout, formato multi-dia, ou template Evento+WKT.'}
     return _adaptar_template_para_multidia(template_result)
 
 
