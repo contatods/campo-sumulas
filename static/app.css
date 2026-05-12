@@ -20,6 +20,11 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .hdr-version{font-size:9px;font-weight:700;color:var(--orange);letter-spacing:.1em;
   background:var(--orange-dim);border:1px solid var(--orange-edge);
   padding:2px 7px;border-radius:10px;text-transform:uppercase}
+.hdr-save{font-size:10px;color:var(--text3);font-weight:500;letter-spacing:.02em;
+  min-width:90px;text-align:right;transition:opacity .2s;user-select:none}
+.hdr-save.saving{color:var(--text4);font-style:italic}
+.hdr-save.saved{color:#7BB661}
+.hdr-save:empty{opacity:0}
 .hdr-brand{font-size:10px;color:var(--text4);letter-spacing:.05em}
 
 /* ── Layout ── */
@@ -567,6 +572,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .cfg-tab.active{color:var(--text);border-bottom-color:var(--orange)}
 .cfg-pane{padding:18px;overflow-y:auto;flex:1}
 .cfg-hint{font-size:10.5px;color:var(--text3);line-height:1.5;margin-bottom:10px}
+.cfg-divider{height:1px;background:var(--border);margin:16px 0 14px}
 
 /* ── Toggle "outras opções" no rodapé ─────────────────────────────── */
 .ger-toggle-more{background:none;border:none;color:var(--text3);

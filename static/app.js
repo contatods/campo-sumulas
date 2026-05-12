@@ -1244,6 +1244,64 @@ function handleImport(input, type) {
   reader.readAsDataURL(file);
 }
 
+// ─── Export/Import JSON (backup explícito do estado em arquivo) ──────────────
+function exportarJSON() {
+  const snapshot = { version: SCHEMA_VERSION, config, diaAtual, exportedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const slug = (config.evento.nome || 'sumulas').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'sumulas';
+  const ts   = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  a.href = url;
+  a.download = `${slug}-${ts}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Backup exportado', 'ok');
+}
+
+function importarJSON(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const snap = JSON.parse(e.target.result);
+      if (!snap || typeof snap !== 'object' || !snap.config || !Array.isArray(snap.config.dias)) {
+        throw new Error('arquivo não parece um backup válido');
+      }
+      if (snap.version !== SCHEMA_VERSION) {
+        if (!confirm(`Backup está em schema v${snap.version} (atual é v${SCHEMA_VERSION}). Tentar importar mesmo assim?`)) return;
+      }
+      const temAtual = temDados() || config.evento.nome;
+      if (temAtual && !confirm('Importar vai substituir o evento atual. Continuar?')) return;
+      if (!snap.config.evento.logo_empresa) snap.config.evento.logo_empresa = DS_LOGO_PADRAO;
+      config = { ...config, ...snap.config };
+      diaAtual = typeof snap.diaAtual === 'number' ? snap.diaAtual : 0;
+      catSel = 0; catListOpen = false;
+      previewPath = null;
+      // sincroniza inputs do formulário
+      document.getElementById('evNome').value = config.evento.nome || '';
+      document.getElementById('evCat').value  = config.evento.categoria || '';
+      document.getElementById('evData').value = config.evento.data || '';
+      renderEventoDisplay();
+      renderDiaTabs();
+      renderCategoriasList();
+      atualizarBotaoGerar();
+      updateClearAllVisibility();
+      updateEmptyState();
+      saveState();
+      fecharConfig();
+      toast('Backup restaurado', 'ok');
+    } catch (err) {
+      toast('Erro ao importar: ' + err.message, 'err');
+    }
+  };
+  reader.readAsText(file);
+}
+
 function aplicarImport(result) {
   if (!result || !result.dias) {
     toast('Resposta sem dias — formato inesperado', 'err');
@@ -1337,14 +1395,17 @@ function limparTudo() {
 // ═══════════════════════════════════════════════════════════════════
 let _saveTimer = null;
 function saveState() {
+  setSaveIndicator('saving');
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(_persistNow, 400);
 }
 
 function _persistNow() {
   const snapshot = { version: SCHEMA_VERSION, config, diaAtual };
+  let ok = false;
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify(snapshot));
+    ok = true;
   } catch (e) {
     try {
       const lite = JSON.parse(JSON.stringify(snapshot));
@@ -1352,11 +1413,32 @@ function _persistNow() {
       lite.config.evento.logo_empresa = '';
       localStorage.setItem(STATE_KEY, JSON.stringify(lite));
       console.warn('Persistência sem logos (cota cheia):', e.message);
+      ok = true;
     } catch (e2) {
       console.error('Falha ao persistir:', e2);
     }
   }
   updateClearAllVisibility();
+  setSaveIndicator(ok ? 'saved' : 'error');
+}
+
+function setSaveIndicator(state) {
+  const el = document.getElementById('saveIndicator');
+  if (!el) return;
+  if (state === 'saving') {
+    el.textContent = 'salvando…';
+    el.className = 'hdr-save saving';
+  } else if (state === 'saved') {
+    el.textContent = '✓ salvo ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+    el.className = 'hdr-save saved';
+  } else if (state === 'error') {
+    el.textContent = '⚠ falha ao salvar';
+    el.className = 'hdr-save';
+    el.style.color = '#D66';
+  } else {
+    el.textContent = '';
+    el.className = 'hdr-save';
+  }
 }
 
 function loadState() {
@@ -1373,6 +1455,7 @@ function loadState() {
       if (!snap.config.evento.logo_empresa) snap.config.evento.logo_empresa = DS_LOGO_PADRAO;
       config = { ...config, ...snap.config };
       if (typeof snap.diaAtual === 'number') diaAtual = snap.diaAtual;
+      setSaveIndicator('saved');  // sinaliza visualmente que algo foi restaurado
     }
   } catch (e) {
     console.warn('Falha ao restaurar estado:', e);
@@ -1384,6 +1467,7 @@ function clearState() {
     localStorage.removeItem(STATE_KEY);
     localStorage.removeItem(IMPORT_KEY);
   } catch (e) { /* ignore */ }
+  setSaveIndicator(null);
 }
 
 // ═══════════════════════════════════════════════════════════════════

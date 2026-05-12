@@ -16,6 +16,7 @@
   <div class="dia-tabs" id="diaTabs"></div>
   <button class="hdr-add-dia" id="hdrAddDia" onclick="adicionarDia()" title="Adicionar dia">+</button>
   <div class="hdr-right">
+    <span class="hdr-save" id="saveIndicator" title="Tudo é salvo automaticamente no navegador"></span>
     <button class="hdr-cfg" onclick="abrirConfig()" title="Configurações"><span>⚙</span> Configurar</button>
     <span class="hdr-version">v{{VERSION}}</span>
     <span id="aiBadge" title="IA estimando rounds AMRAP via Claude Haiku" style="display:none;font-size:9px;font-weight:700;color:#5A9;letter-spacing:.1em;
@@ -351,7 +352,19 @@
     <div class="cfg-pane" id="cfgPaneImportar" style="display:none">
       <p class="cfg-hint">Importe um Excel pra preencher dias, categorias, workouts e atletas de uma vez.</p>
       <button class="btn-import" style="width:100%" onclick="triggerImport('excel')">📊 Importar Excel (.xlsx)</button>
-      <p class="cfg-hint" style="margin-top:14px">Apaga tudo e começa do zero:</p>
+
+      <div class="cfg-divider"></div>
+
+      <p class="cfg-hint">Backup do trabalho atual em arquivo (.json). Use pra reabrir em outra máquina ou se temer perder o cache do navegador.</p>
+      <div class="field-row">
+        <button class="btn-import" style="flex:1" onclick="exportarJSON()">💾 Exportar JSON</button>
+        <button class="btn-import" style="flex:1" onclick="document.getElementById('fileJSON').click()">📂 Importar JSON</button>
+      </div>
+      <input type="file" id="fileJSON" accept=".json,application/json" style="display:none" onchange="importarJSON(this)">
+
+      <div class="cfg-divider"></div>
+
+      <p class="cfg-hint">Apaga tudo e começa do zero:</p>
       <button class="btn-clear-all" style="background:#3A1A1A;color:#C66;border:1px solid #4A2A2A;border-radius:var(--radius);padding:8px;width:100%" onclick="limparTudoModal()">Apagar evento</button>
     </div>
   </div>
