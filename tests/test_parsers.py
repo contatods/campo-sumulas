@@ -42,7 +42,7 @@ def test_parse_excel_modelo_retorna_estrutura_valida(modelo_xlsx_bytes):
     assert primeiro_workout["tipo"] in {"for_time", "amrap", "express"}
 
 
-# ── Layout grades-por-tipo (Sun Challenge 2026) ───────────────────────────────
+# ── Layout grades-por-modalidade + dias por aba ───────────────────────────────
 def test_quebrar_categoria_composta_separa_e_normaliza():
     partes = _quebrar_categoria_composta(
         "Iniciante Feminino (Heat 3) & Iniciante Masculino (Heat 1)"

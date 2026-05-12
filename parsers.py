@@ -193,7 +193,7 @@ def parse_excel(data: bytes) -> dict[str, Any]:
     if _is_evento_multidia(wb):
         return parse_excel_multidia(wb)
 
-    # Formato grades-por-tipo (ex: Sun Challenge): abas grade Individuais/Duplas
+    # Formato grades-por-modalidade: 1+ abas grade (ex: Individuais, Duplas, Times)
     # + abas <Dia> e <Dia> - Montagem (sem aba unificada Workouts)
     if _is_layout_grades_e_dias(wb):
         return parse_excel_grades_e_dias(wb)
@@ -946,10 +946,10 @@ def parse_excel_multidia(wb) -> dict[str, Any]:
     }
 
 
-# ── Layout v2: grades por tipo (Individuais/Duplas) + dias com Montagem ────────
-# Caso de uso: planilhas onde os workouts estão em abas separadas por modalidade
-# (ex: `Individuais` e `Duplas`) e o cronograma/montagem está por dia. Sem aba
-# unificada `Workouts`. Visto no Sun Challenge 2026.
+# ── Layout grades-por-modalidade + dias com Montagem ──────────────────────────
+# Caso de uso: planilhas com workouts em abas separadas por modalidade
+# (ex: `Individuais` + `Duplas`, ou `Times` + `Solo`, etc.) e cronograma +
+# montagem por dia (`<Dia>` + `<Dia> - Montagem`). Sem aba unificada `Workouts`.
 
 def _is_layout_grades_e_dias(wb) -> bool:
     nomes_lower = [s.lower() for s in wb.sheetnames]
@@ -984,7 +984,7 @@ def _propagar_codigos_da_montagem(
     cronograma: list[dict[str, Any]],
     montagem: dict[tuple[str, str, str], list[dict[str, Any]]],
 ) -> None:
-    """Quando o cronograma vem sem códigos (ex: Domingo do Sun Challenge),
+    """Quando o cronograma vem sem códigos de evento (`#1`, `#2 & #3`, etc),
     procura o código correspondente na montagem pelo número da bateria.
 
     Mutates `cronograma` in-place, preenchendo `codigo_evento`.
