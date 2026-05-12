@@ -88,7 +88,7 @@ def test_propagar_codigos_nao_sobrescreve_quando_cronograma_ja_tem():
 
 
 def test_filtrar_alocacoes_por_faixa_mantem_so_numeros_da_categoria():
-    # Bateria mista: 3 atletas Scaled Feminino (902-905) + 2 Scaled Masculino (1041-1043)
+    # Bateria mista: 3 atletas Scaled Feminino (902-904) + 2 Scaled Masculino (1041-1042)
     alocs = [
         {"raia": "1", "numero": "902",  "nome": "Brianna"},
         {"raia": "2", "numero": "903",  "nome": "Monica"},
@@ -96,12 +96,14 @@ def test_filtrar_alocacoes_por_faixa_mantem_so_numeros_da_categoria():
         {"raia": "4", "numero": "1041", "nome": "Dhener"},
         {"raia": "5", "numero": "1042", "nome": "Hiago"},
     ]
-    # Filtrando pra Scaled Feminino (901-999): mantém só as 3 primeiras
-    fem = _filtrar_alocacoes_por_faixa(alocs, (901, 999))
-    assert [a["nome"] for a in fem] == ["Brianna", "Monica", "Karla"]
-    # Filtrando pra Scaled Masculino (1001-1099): mantém só as 2 últimas
-    masc = _filtrar_alocacoes_por_faixa(alocs, (1001, 1099))
-    assert [a["nome"] for a in masc] == ["Dhener", "Hiago"]
+    # Filtrando pra Scaled Feminino (901-999): mantém as 3 primeiras, descarta as 2 últimas
+    fem_keep, fem_drop = _filtrar_alocacoes_por_faixa(alocs, (901, 999))
+    assert [a["nome"] for a in fem_keep] == ["Brianna", "Monica", "Karla"]
+    assert [a["nome"] for a in fem_drop] == ["Dhener", "Hiago"]
+    # Filtrando pra Scaled Masculino (1001-1099): inverso
+    masc_keep, masc_drop = _filtrar_alocacoes_por_faixa(alocs, (1001, 1099))
+    assert [a["nome"] for a in masc_keep] == ["Dhener", "Hiago"]
+    assert [a["nome"] for a in masc_drop] == ["Brianna", "Monica", "Karla"]
 
 
 def _wb_com_inscritos(linhas):
@@ -164,6 +166,6 @@ def test_filtrar_alocacoes_remove_numero_invalido_ou_vazio():
         {"raia": "3", "numero": "abc", "nome": "Não numérico"},
         {"raia": "4", "numero": None,  "nome": "None"},
     ]
-    out = _filtrar_alocacoes_por_faixa(alocs, (900, 999))
-    assert len(out) == 1
-    assert out[0]["nome"] == "Foo"
+    keep, drop = _filtrar_alocacoes_por_faixa(alocs, (900, 999))
+    assert len(keep) == 1 and keep[0]["nome"] == "Foo"
+    assert len(drop) == 3

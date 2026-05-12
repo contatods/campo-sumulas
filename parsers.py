@@ -1076,22 +1076,26 @@ def _parse_inscritos(wb) -> dict[str, tuple[int, int]]:
 
 def _filtrar_alocacoes_por_faixa(
     alocs: list[dict[str, Any]], faixa: tuple[int, int]
-) -> list[dict[str, Any]]:
-    """Mantém só alocações cuja `numero` cai em [ini, fim].
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Particiona alocações: as que caem em [ini, fim] vs as que ficam fora.
 
-    Alocações sem `numero` numérico são removidas — não há como saber a qual
-    categoria pertencem. Usado pra desambiguar baterias mistas.
+    Retorna (mantidas, descartadas). Alocações sem `numero` numérico vão pra
+    descartadas — não há como saber a qual categoria pertencem.
     """
     ini, fim = faixa
-    out: list[dict[str, Any]] = []
+    mantidas: list[dict[str, Any]] = []
+    descartadas: list[dict[str, Any]] = []
     for a in alocs:
         try:
             n = int(str(a.get('numero', '')).strip())
         except (ValueError, AttributeError):
+            descartadas.append(a)
             continue
         if ini <= n <= fim:
-            out.append(a)
-    return out
+            mantidas.append(a)
+        else:
+            descartadas.append(a)
+    return mantidas, descartadas
 
 
 def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
@@ -1139,6 +1143,7 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
 
     # 3-4) Pra cada dia, lê e agrupa categorias presentes
     dias_resultado: list[dict[str, Any]] = []
+    avisos_import: list[dict[str, str]] = []
     for dia_label in dias_detectados:
         sname_dia = nomes_lower[dia_label.lower()]
         sname_mont = nomes_lower[f"{dia_label.lower()} - montagem"]
@@ -1194,7 +1199,26 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                 if aloc and len(_quebrar_categoria_composta(b.get('categoria', ''))) > 1:
                     faixa = inscritos_faixas.get(cat_grade_norm)
                     if faixa:
-                        aloc = _filtrar_alocacoes_por_faixa(aloc, faixa)
+                        aloc, descartados = _filtrar_alocacoes_por_faixa(aloc, faixa)
+                        # Aviso só pra atletas que NÃO caem em NENHUMA faixa
+                        # conhecida — esses são erros reais (typo no Excel ou
+                        # atleta fora da numeração). Atletas descartados que
+                        # pertencem a outra categoria conhecida estão no lugar
+                        # certo, só não é a categoria sendo processada agora.
+                        for d in descartados:
+                            n_str = str(d.get('numero', '')).strip()
+                            try:
+                                n_int = int(n_str)
+                            except ValueError:
+                                continue   # número inválido — outro problema
+                            if any(lo <= n_int <= hi for lo, hi in inscritos_faixas.values()):
+                                continue   # pertence a outra categoria conhecida
+                            nome = (d.get('nome') or '?').strip() or '?'
+                            avisos_import.append({
+                                'nivel': 'aviso',
+                                'msg':   f'Atleta #{n_str} ({nome}) com número fora de toda faixa do Inscritos — não foi atribuído a nenhuma categoria',
+                                'onde':  f'{dia_label}/Bat {b.get("numero", "?")}',
+                            })
 
                 codigo_final = b.get('codigo_evento') or codigo_montagem
                 codigos_finais = _split_codigo_evento(codigo_final) or (
@@ -1224,4 +1248,5 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
         'evento_nome':  '',
         'dias':         dias_resultado,
         'roster':       _roster_de_abas_atletas(wb),
+        'avisos_import': avisos_import,
     }

@@ -5,8 +5,9 @@ Servidor web local. Sem dependências além de Jinja2 + fontes Lato.
 Uso: python3 sumula_app.py   →  abre http://localhost:8765
 """
 
-import json, os, io, zipfile, threading, webbrowser, sys, base64, re, signal, traceback
+import json, os, io, zipfile, threading, webbrowser, sys, base64, re, signal, time, traceback
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from campo_generator import render_workout, render_workout_combined, load_fonts, img_b64, sanitize
@@ -17,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.7.3'
+VERSION = '1.8.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -30,6 +31,27 @@ WORKOUT_TIPOS = frozenset({'for_time', 'amrap', 'express'})
 class BadRequest(ValueError):
     """Payload inválido — handler devolve 400 com a mensagem."""
     pass
+
+
+# Rate limit do endpoint /api/ai/chat — single-instance, em memória.
+# Janela deslizante de 60s, máx N chamadas globais. Protege contra loop
+# acidental no front (custo da API Anthropic é por chamada).
+CHAT_RATE_LIMIT_MAX = 30        # chamadas
+CHAT_RATE_LIMIT_WINDOW_S = 60   # janela em segundos
+_chat_calls: list[float] = []
+_chat_calls_lock = threading.Lock()
+
+
+def _chat_rate_limit_ok() -> tuple[bool, int]:
+    """Retorna (allowed, retry_after_seconds). Limpa calls fora da janela."""
+    now = time.time()
+    with _chat_calls_lock:
+        _chat_calls[:] = [t for t in _chat_calls if now - t < CHAT_RATE_LIMIT_WINDOW_S]
+        if len(_chat_calls) >= CHAT_RATE_LIMIT_MAX:
+            mais_antiga = _chat_calls[0]
+            return False, int(CHAT_RATE_LIMIT_WINDOW_S - (now - mais_antiga)) + 1
+        _chat_calls.append(now)
+        return True, 0
 
 
 def _to_int_or_max(v) -> int:
@@ -124,16 +146,19 @@ class SumulaHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args): pass  # silencia log
 
     def do_GET(self):
-        if self.path in ('/', '/index.html'):
+        # Strip query string: '/?_=123' (cache buster) e '/api/status?x=1' devem
+        # bater com a rota base.
+        path = urlsplit(self.path).path
+        if path in ('/', '/index.html'):
             html = (INDEX_HTML
                     .replace('{{DS_LOGO_PADRAO_B64}}', DS_LOGO_PADRAO)
                     .replace('{{VERSION}}', VERSION))
             self._send(200, 'text/html; charset=utf-8', html.encode('utf-8'))
-        elif self.path == '/app.css':
+        elif path == '/app.css':
             self._send(200, 'text/css; charset=utf-8', APP_CSS.encode('utf-8'))
-        elif self.path == '/app.js':
+        elif path == '/app.js':
             self._send(200, 'application/javascript; charset=utf-8', APP_JS.encode('utf-8'))
-        elif self.path == '/api/status':
+        elif path == '/api/status':
             payload = json.dumps({
                 "ai_ativo":    AI_ATIVO,
                 "ai_provider": "Anthropic Claude Haiku" if AI_ATIVO else None,
@@ -400,6 +425,14 @@ class SumulaHandler(BaseHTTPRequestHandler):
         if not AI_ATIVO:
             self._send(200, 'application/json; charset=utf-8',
                        json.dumps({'error': 'IA inativa', 'ai_ativo': False}, ensure_ascii=False).encode('utf-8'))
+            return
+        ok, retry_after = _chat_rate_limit_ok()
+        if not ok:
+            self._send(429, 'application/json; charset=utf-8',
+                       json.dumps({
+                           'error': f'Muitas mensagens em pouco tempo. Tente de novo em {retry_after}s.',
+                           'retry_after': retry_after,
+                       }, ensure_ascii=False).encode('utf-8'))
             return
         mensagens = body.get('messages')
         if not isinstance(mensagens, list) or not mensagens:

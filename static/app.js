@@ -1331,6 +1331,13 @@ function aplicarImport(result) {
   mostrarBannerPosImport(`${result.dias.length} dia(s), ${totalCats} categoria(s) importadas. Configure as datas pra aparecerem nas súmulas.`);
   atualizarBannerPosImport();  // busca resumo formatado
   toast(`${result.dias.length} dia(s), ${totalCats} categoria(s) importadas`, 'ok');
+
+  // Avisos do parser (ex: atletas descartados por número fora da faixa)
+  const avisos = result.avisos_import || [];
+  if (avisos.length) {
+    console.warn(`Import com ${avisos.length} aviso(s):`, avisos);
+    toast(`Importado com ${avisos.length} aviso(s) — veja console (F12) ou rode Validar`, 'warn');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
