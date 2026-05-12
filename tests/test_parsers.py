@@ -6,6 +6,7 @@ from parsers import (
     _quebrar_categoria_composta, _bateria_casa_categoria,
     _propagar_codigos_da_montagem, _filtrar_alocacoes_por_faixa,
     _parse_inscritos,
+    _normalizar_categoria, _normalizar_categoria_relaxada,
 )
 
 
@@ -58,6 +59,45 @@ def test_bateria_casa_categoria_evita_falso_positivo_dupla_vs_individual():
     assert _bateria_casa_categoria("Rx Masculino (Single Heat)", "rx masculino") is True
     assert _bateria_casa_categoria("Dupla Rx Masculino (Heat 1)", "rx masculino") is False
     assert _bateria_casa_categoria("Dupla Rx Masculino (Heat 1)", "dupla rx masculino") is True
+
+
+def test_normalizar_categoria_remove_so_sufixos_de_heat():
+    # Sufixos de bateria são removidos
+    assert _normalizar_categoria("Iniciante Feminino (Heat 1)") == "iniciante feminino"
+    assert _normalizar_categoria("Rx Masculino (Single Heat)") == "rx masculino"
+    assert _normalizar_categoria("Amador Feminino (Final Heat)") == "amador feminino"
+    # Descritor livre é preservado (parêntese não-heat)
+    assert _normalizar_categoria("Master 35-39 Masculino (identico ao amador)") == "master 35-39 masculino (identico ao amador)"
+    assert _normalizar_categoria("Rx Misto (Iniciante)") == "rx misto (iniciante)"
+
+
+def test_normalizar_categoria_relaxada_remove_tudo():
+    assert _normalizar_categoria_relaxada("Master 35-39 Masculino (identico ao amador)") == "master 35-39 masculino"
+    assert _normalizar_categoria_relaxada("Rx Misto (Iniciante)") == "rx misto"
+    assert _normalizar_categoria_relaxada("Iniciante Feminino (Heat 1)") == "iniciante feminino"
+
+
+def test_bateria_casa_categoria_com_fallback_relaxado():
+    # Grade tem descritor extra, cronograma só tem sufixo de heat — match
+    # relaxado precisa funcionar quando habilitado
+    bat_cat = "Master 35-39 Masculino (Single Heat)"
+    grade_norm   = "master 35-39 masculino (identico ao amador)"
+    grade_relax  = "master 35-39 masculino"
+    # Sem fallback: não casa (estrita falha)
+    assert _bateria_casa_categoria(bat_cat, grade_norm) is False
+    # Com fallback: casa
+    assert _bateria_casa_categoria(bat_cat, grade_norm, grade_relax, permite_relaxado=True) is True
+
+
+def test_bateria_casa_categoria_fallback_desligado_evita_colisao():
+    # Cenário hipotético: 'Rx Misto (Iniciante)' e 'Rx Misto (Avançado)' no
+    # mesmo evento. Relaxada das duas é 'rx misto' — fallback NÃO pode bater
+    # uma com a outra. Caller passa permite_relaxado=False nesse caso.
+    bat_cat = "Rx Misto (Avançado) (Heat 1)"
+    grade_norm  = "rx misto (iniciante)"
+    grade_relax = "rx misto"
+    # Estrita falha (descritores diferentes) e fallback desligado → não casa
+    assert _bateria_casa_categoria(bat_cat, grade_norm, grade_relax, permite_relaxado=False) is False
 
 
 def test_propagar_codigos_da_montagem_preenche_cronograma_vazio():

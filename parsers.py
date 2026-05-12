@@ -796,21 +796,44 @@ def _parse_montagem_dia(ws) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
     return resultado
 
 
-def _normalizar_categoria(s: str) -> str:
-    """Normaliza nome de categoria pra comparação tolerante.
+# Parênteses que rotulam bateria/heat — removidos na normalização estrita.
+# Cobre: '(Heat 1)', '(Heat 2-3)', '(Heats)', '(Single Heat)', '(Final Heat)'.
+_HEAT_PAREN_RE = re.compile(
+    r'\s*\((?:single heat|final heat|heat\s*[\d\-/]*|heats?)\)\s*',
+    re.I,
+)
 
-    Remove sufixos `(Heat N)`, `(Single Heat)`, etc., baixa caixa, comprime
-    espaços, e tolera erros comuns de digitação como `begginer` → `beginner`.
-    Retorna apenas o "core" da categoria pra match parcial via substring.
+
+def _normalizar_categoria(s: str) -> str:
+    """Normaliza nome de categoria pra comparação — remove sufixos de bateria.
+
+    Tira só `(Heat N)`, `(Single Heat)`, `(Final Heat)` etc. — parênteses que
+    rotulam bateria no cronograma mas não fazem parte do nome da categoria.
+    Preserva descritores livres como `(identico ao amador)` ou `(Iniciante)`
+    que diferenciam categorias distintas dentro do mesmo evento.
     """
     if not s:
         return ""
-    # Pega só o trecho antes do primeiro `(` (corta sufixos de heat)
-    core = s.split('(')[0]
-    core = re.sub(r'\s+', ' ', core).strip().lower()
-    # Normaliza variantes ortográficas comuns
-    core = core.replace('begginer', 'beginner')
-    return core
+    s = _HEAT_PAREN_RE.sub(' ', s)
+    s = re.sub(r'\s+', ' ', s).strip().lower()
+    s = s.replace('begginer', 'beginner')
+    return s
+
+
+def _normalizar_categoria_relaxada(s: str) -> str:
+    """Versão relaxada: remove TODOS os parênteses, não só os de heat.
+
+    Usada como fallback no match. Útil quando a grade tem descritor extra
+    (ex: 'Master 35-39 (identico ao amador)') que o cronograma não repete.
+    Só deve ser aplicada quando não há ambiguidade — duas categorias da grade
+    com mesma versão relaxada precisam ser desambiguadas pelo nome cheio.
+    """
+    if not s:
+        return ""
+    s = re.sub(r'\s*\([^)]*\)\s*', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip().lower()
+    s = s.replace('begginer', 'beginner')
+    return s
 
 
 def _split_codigo_evento(codigo: str) -> list[str]:
@@ -975,13 +998,29 @@ def _quebrar_categoria_composta(s: str) -> list[str]:
     return [_normalizar_categoria(p) for p in re.split(r'\s+&\s+', s) if p.strip()]
 
 
-def _bateria_casa_categoria(bateria_categoria: str, cat_grade_norm: str) -> bool:
+def _bateria_casa_categoria(
+    bateria_categoria: str,
+    cat_grade_norm: str,
+    cat_grade_relaxada: str | None = None,
+    permite_relaxado: bool = False,
+) -> bool:
     """Match exato (após normalização e quebra de '&').
 
     Substring causa falso positivo entre 'Rx Masculino' (Sábado) e 'Dupla Rx
     Masculino' (Domingo) — categorias diferentes que rodam em dias diferentes.
+
+    Fallback relaxado (sem parênteses) só roda quando `permite_relaxado=True`,
+    o que o caller deve passar apenas se a categoria não colide com outra.
     """
-    return cat_grade_norm in _quebrar_categoria_composta(bateria_categoria)
+    partes = _quebrar_categoria_composta(bateria_categoria)
+    if cat_grade_norm in partes:
+        return True
+    if permite_relaxado and cat_grade_relaxada:
+        partes_relax = [_normalizar_categoria_relaxada(p)
+                        for p in re.split(r'\s+&\s+', bateria_categoria) if p.strip()]
+        if cat_grade_relaxada in partes_relax:
+            return True
+    return False
 
 
 def _propagar_codigos_da_montagem(
@@ -1129,6 +1168,18 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
     # Faixas de número por categoria — desambigua atletas em baterias mistas
     inscritos_faixas = _parse_inscritos(wb)
 
+    # Detecta categorias da grade com mesma "relaxada" — match relaxado é
+    # ambíguo nesse caso e não pode ser usado como fallback. Ex: se aparecer
+    # 'Rx Misto (Iniciante)' e 'Rx Misto (Avançado)' na mesma grade, as duas
+    # têm relaxada 'rx misto' → match relaxado proibido pra essas.
+    cats_grade_relaxadas = {cat: _normalizar_categoria_relaxada(cat)
+                            for cat in grade_por_categoria}
+    _contagem_relaxada: dict[str, int] = {}
+    for r in cats_grade_relaxadas.values():
+        _contagem_relaxada[r] = _contagem_relaxada.get(r, 0) + 1
+    cats_ambiguas = {cat for cat, r in cats_grade_relaxadas.items()
+                     if _contagem_relaxada[r] > 1}
+
     # 2) Dias detectados a partir de `<Dia> - Montagem`
     nomes_lower = {s.lower(): s for s in wb.sheetnames}
     dias_detectados: list[str] = []
@@ -1151,21 +1202,34 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
         montagem   = _parse_montagem_dia(wb[sname_mont])
         _propagar_codigos_da_montagem(cronograma, montagem)
 
-        # Conjunto de categorias (normalizadas) presentes neste dia
-        cats_no_dia_norm: list[str] = []
+        # Conjunto de categorias (normalizadas) presentes neste dia — coleta as
+        # duas formas pra suportar match estrito ou relaxado.
+        cats_no_dia_norm: set[str] = set()
+        cats_no_dia_relax: set[str] = set()
         for b in cronograma:
-            cats_no_dia_norm.extend(_quebrar_categoria_composta(b.get('categoria', '')))
+            cat_str = b.get('categoria', '')
+            cats_no_dia_norm.update(_quebrar_categoria_composta(cat_str))
+            cats_no_dia_relax.update(
+                _normalizar_categoria_relaxada(p)
+                for p in re.split(r'\s+&\s+', cat_str) if p.strip()
+            )
 
         cats_resultado: list[dict[str, Any]] = []
         for cat_grade, workouts in grade_por_categoria.items():
             cat_grade_norm = _normalizar_categoria(cat_grade)
+            cat_grade_relax = cats_grade_relaxadas[cat_grade]
+            permite_relax = cat_grade not in cats_ambiguas
             # Só anexa categoria se ela aparece em alguma bateria deste dia
-            if cat_grade_norm not in cats_no_dia_norm:
+            # (match estrito sempre, relaxado só se categoria não-ambígua)
+            if cat_grade_norm not in cats_no_dia_norm and not (
+                permite_relax and cat_grade_relax in cats_no_dia_relax
+            ):
                 continue
 
             baterias_da_cat = [
                 b for b in cronograma
-                if _bateria_casa_categoria(b.get('categoria', ''), cat_grade_norm)
+                if _bateria_casa_categoria(b.get('categoria', ''), cat_grade_norm,
+                                           cat_grade_relax, permite_relax)
             ]
 
             baterias_full: list[dict[str, Any]] = []
@@ -1181,7 +1245,8 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                 for (chave_cod, chave_cat, chave_bat), alocs in montagem.items():
                     if chave_bat != b['numero']:
                         continue
-                    if not _bateria_casa_categoria(chave_cat, cat_grade_norm):
+                    if not _bateria_casa_categoria(chave_cat, cat_grade_norm,
+                                                   cat_grade_relax, permite_relax):
                         continue
                     candidatos_relaxado.append((chave_cod, alocs))
                     if codigos_b:
@@ -1197,7 +1262,13 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                 # categorias juntos. Se temos faixa de número da categoria
                 # atual (via Inscritos), filtra pra não vazar atletas da outra.
                 if aloc and len(_quebrar_categoria_composta(b.get('categoria', ''))) > 1:
-                    faixa = inscritos_faixas.get(cat_grade_norm)
+                    # Lookup da faixa: tenta chave estrita (com descritores) e
+                    # depois relaxada — Inscritos pode ter nome sem descritor
+                    # (ex: 'Master 35-39 Feminino') enquanto a grade tem o
+                    # nome completo ('Master 35-39 Feminino (identico ao amador)').
+                    faixa = inscritos_faixas.get(cat_grade_norm) or (
+                        inscritos_faixas.get(cat_grade_relax) if permite_relax else None
+                    )
                     if faixa:
                         aloc, descartados = _filtrar_alocacoes_por_faixa(aloc, faixa)
                         # Aviso só pra atletas que NÃO caem em NENHUMA faixa
