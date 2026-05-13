@@ -1246,7 +1246,26 @@ function handleImport(input, type) {
 
 // ─── Export/Import JSON (backup explícito do estado em arquivo) ──────────────
 function exportarJSON() {
-  const snapshot = { version: SCHEMA_VERSION, config, diaAtual, exportedAt: new Date().toISOString() };
+  // Logos em base64 são responsáveis pela maior parte do tamanho. Se passarem
+  // de ~500KB no total, oferece exportar sem logos (arquivo mais leve, com
+  // custo de precisar reupload depois).
+  const logoEvt = config.evento.logo_evento  || '';
+  const logoEmp = config.evento.logo_empresa || '';
+  const logosBytes = (logoEvt.length + logoEmp.length);
+  let snapshot = { version: SCHEMA_VERSION, config, diaAtual, exportedAt: new Date().toISOString() };
+  if (logosBytes > 500 * 1024) {
+    const mb = (logosBytes / 1024 / 1024).toFixed(1);
+    const incluir = confirm(
+      `Logos somam ${mb} MB. Incluir no backup?\n\n` +
+      `OK = incluir logos (arquivo maior)\n` +
+      `Cancelar = sem logos (você precisa reupload ao restaurar)`
+    );
+    if (!incluir) {
+      snapshot = JSON.parse(JSON.stringify(snapshot));   // clona pra não mexer no config vivo
+      snapshot.config.evento.logo_evento  = '';
+      snapshot.config.evento.logo_empresa = '';
+    }
+  }
   const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');

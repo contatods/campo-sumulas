@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.8.1'
+VERSION = '1.9.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -374,14 +374,26 @@ class SumulaHandler(BaseHTTPRequestHandler):
                    {'Content-Disposition': f'attachment; filename="{nome_zip}.zip"'})
 
     def _handle_import_excel(self, body):
+        data_b64 = body.get('data')
+        if not data_b64:
+            raise BadRequest("campo 'data' (Excel em base64) é obrigatório")
         try:
-            data   = base64.b64decode(body['data'])
+            data = base64.b64decode(data_b64)
+        except (ValueError, TypeError) as e:
+            raise BadRequest(f"base64 inválido: {e}")
+        try:
             result = parse_excel(data)
-            self._send(200, 'application/json; charset=utf-8',
-                       json.dumps(result, ensure_ascii=False).encode('utf-8'))
         except Exception as e:
-            self._send(200, 'application/json',
-                       json.dumps({"error": str(e)}).encode('utf-8'))
+            # Excel corrompido / formato desconhecido — input ruim, 400
+            self._send(400, 'application/json; charset=utf-8',
+                       json.dumps({"error": f"falha ao parsear Excel: {e}"}).encode('utf-8'))
+            return
+        if result.get('tipo') == 'erro':
+            self._send(400, 'application/json; charset=utf-8',
+                       json.dumps({"error": result.get('erro', 'formato não reconhecido')}).encode('utf-8'))
+            return
+        self._send(200, 'application/json; charset=utf-8',
+                   json.dumps(result, ensure_ascii=False).encode('utf-8'))
 
     def _handle_sugerir_time_cap(self, body):
         """Sugere um time cap baseado nos movimentos. Body: {movimentos, tipo}."""
@@ -449,14 +461,21 @@ class SumulaHandler(BaseHTTPRequestHandler):
                    json.dumps({'resposta': resposta}, ensure_ascii=False).encode('utf-8'))
 
     def _handle_import_pdf(self, body):
+        data_b64 = body.get('data')
+        if not data_b64:
+            raise BadRequest("campo 'data' (PDF em base64) é obrigatório")
         try:
-            data   = base64.b64decode(body['data'])
+            data = base64.b64decode(data_b64)
+        except (ValueError, TypeError) as e:
+            raise BadRequest(f"base64 inválido: {e}")
+        try:
             result = parse_pdf(data)
-            self._send(200, 'application/json; charset=utf-8',
-                       json.dumps(result, ensure_ascii=False).encode('utf-8'))
         except Exception as e:
-            self._send(200, 'application/json',
-                       json.dumps({"error": str(e)}).encode('utf-8'))
+            self._send(400, 'application/json; charset=utf-8',
+                       json.dumps({"error": f"falha ao parsear PDF: {e}"}).encode('utf-8'))
+            return
+        self._send(200, 'application/json; charset=utf-8',
+                   json.dumps(result, ensure_ascii=False).encode('utf-8'))
 
     def _send(self, code, content_type, data, extra=None):
         self.send_response(code)

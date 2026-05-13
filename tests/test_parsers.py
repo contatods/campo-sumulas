@@ -7,6 +7,7 @@ from parsers import (
     _propagar_codigos_da_montagem, _filtrar_alocacoes_por_faixa,
     _parse_inscritos,
     _normalizar_categoria, _normalizar_categoria_relaxada,
+    _workout_numero_de_codigo,
 )
 
 
@@ -187,6 +188,20 @@ def test_parse_inscritos_retorna_vazio_sem_aba():
     wb = openpyxl.Workbook()
     wb.active.title = "OutraAba"
     assert _parse_inscritos(wb) == {}
+
+
+def test_workout_numero_de_codigo_exige_prefixo_explicito():
+    # Aceita formatos com prefixo
+    assert _workout_numero_de_codigo("#1") == 1
+    assert _workout_numero_de_codigo("#02") == 2
+    assert _workout_numero_de_codigo("WKT 4") == 4
+    assert _workout_numero_de_codigo("Workout 04") == 4
+    assert _workout_numero_de_codigo("  #5  ") == 5
+    # Rejeita texto qualquer com dígito (evita falso positivo)
+    assert _workout_numero_de_codigo("Bat 12") is None
+    assert _workout_numero_de_codigo("foo") is None
+    assert _workout_numero_de_codigo("") is None
+    assert _workout_numero_de_codigo("123") is None
 
 
 def test_parse_excel_vazio_retorna_erro_explicito():

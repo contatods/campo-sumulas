@@ -285,9 +285,20 @@ def _adaptar_template_para_multidia(template_result: dict[str, Any]) -> dict[str
 
 
 def _parse_atletas(wb) -> dict[str, list[Atleta]]:
-    """Lê atletas de qualquer aba que tenha as colunas: Nome/Atleta, Box, Raia, Bateria, Nº.
-    Retorna dict { categoria: [ {nome, box, raia, bateria, numero}, ... ] }
+    """Lê atletas de abas dedicadas (Atleta(s), Inscritos, Athletes, Participants).
+
+    Antes varria toda aba procurando coluna 'Nome' — frágil, pegava header
+    'Nome' da Montagem (que tem N blocos repetidos) e contaminava o roster.
+    Agora filtra por nome de aba pra ser explícito sobre intenção do usuário.
+
+    Retorna dict { categoria: [ {nome, box, raia, bateria, numero}, ... ] }.
     """
+    # Prefixos/substrings que indicam aba de atletas. Tolera variações como
+    # 'Atletas - Individuais', 'Inscritos', 'Athletes (RX)', etc.
+    ATLETA_SHEET_KEYWORDS = (
+        'atleta', 'atletas', 'inscritos', 'athletes', 'participants', 'participantes',
+    )
+
     CAMPOS = {
         "nome":    ["nome", "atleta", "name", "athlete"],
         "box":     ["box", "afiliacao", "afiliação", "affiliate", "team"],
@@ -303,9 +314,15 @@ def _parse_atletas(wb) -> dict[str, list[Atleta]]:
                 return i
         return None
 
+    def eh_aba_de_atletas(sname: str) -> bool:
+        sl = sname.strip().lower()
+        return any(kw in sl for kw in ATLETA_SHEET_KEYWORDS)
+
     resultado: dict[str, list[Atleta]] = {}
 
     for sname in wb.sheetnames:
+        if not eh_aba_de_atletas(sname):
+            continue
         ws = wb[sname]
         rows = list(ws.iter_rows(values_only=True))
         if len(rows) < 2: continue
@@ -844,8 +861,12 @@ def _split_codigo_evento(codigo: str) -> list[str]:
 
 
 def _workout_numero_de_codigo(codigo: str) -> int | None:
-    """Extrai o número do workout de '#1' → 1, '#02' → 2, 'Workout 04' → 4."""
-    m = re.search(r'(\d+)', codigo)
+    """Extrai o número do workout. Aceita '#1', '#02', 'WKT 4', 'Workout 04'.
+
+    Exige prefixo explícito ('#', 'WKT' ou 'Workout') pra evitar pegar dígito
+    de texto qualquer (ex: 'Bat 12' não deve virar workout 12).
+    """
+    m = re.match(r'^\s*(?:#|wkt|workout)\s*(\d+)\s*$', codigo, re.I)
     return int(m.group(1)) if m else None
 
 
