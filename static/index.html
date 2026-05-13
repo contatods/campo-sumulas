@@ -17,6 +17,7 @@
   <button class="hdr-add-dia" id="hdrAddDia" onclick="adicionarDia()" title="Adicionar dia">+</button>
   <div class="hdr-right">
     <span class="hdr-save" id="saveIndicator" title="Tudo é salvo automaticamente no navegador"></span>
+    <button class="hdr-cfg" onclick="abrirEventos()" title="Trocar entre eventos salvos"><span>📂</span> Eventos</button>
     <button class="hdr-cfg" onclick="abrirConfig()" title="Configurações"><span>⚙</span> Configurar</button>
     <span class="hdr-version">v{{VERSION}}</span>
     <span id="aiBadge" title="IA estimando rounds AMRAP via Claude Haiku" style="display:none;font-size:9px;font-weight:700;color:#5A9;letter-spacing:.1em;
@@ -366,6 +367,23 @@
 
       <p class="cfg-hint">Apaga tudo e começa do zero:</p>
       <button class="btn-clear-all" style="background:#3A1A1A;color:#C66;border:1px solid #4A2A2A;border-radius:var(--radius);padding:8px;width:100%" onclick="limparTudoModal()">Apagar evento</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: gerenciador de eventos (multi-evento) -->
+<div id="eventosModal" class="cfg-modal" style="display:none">
+  <div class="cfg-overlay" onclick="fecharEventos()"></div>
+  <div class="cfg-panel">
+    <div class="cfg-header">
+      <span class="cfg-title">Eventos salvos</span>
+      <button class="ed-close" onclick="fecharEventos()" title="Fechar">×</button>
+    </div>
+    <div class="cfg-pane" id="cfgPaneEventos">
+      <p class="cfg-hint">Cada evento é salvo separado no navegador. Pode alternar, duplicar, renomear ou arquivar.</p>
+      <button class="btn-import" style="width:100%" onclick="novoEvento()">＋ Novo evento</button>
+      <div class="cfg-divider"></div>
+      <div id="listaEventos"></div>
     </div>
   </div>
 </div>

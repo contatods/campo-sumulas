@@ -574,6 +574,19 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .cfg-hint{font-size:10.5px;color:var(--text3);line-height:1.5;margin-bottom:10px}
 .cfg-divider{height:1px;background:var(--border);margin:16px 0 14px}
 
+/* Modal de eventos (multi-evento) */
+.evt-item{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);
+  border-radius:var(--radius);margin-bottom:6px;background:var(--surface2)}
+.evt-item-ativo{border-color:var(--orange-edge);background:var(--orange-dim)}
+.evt-info{flex:1;min-width:0}
+.evt-nome{font-size:13px;font-weight:600;color:var(--text1);margin-bottom:3px;display:flex;align-items:center;gap:8px}
+.evt-meta{font-size:10.5px;color:var(--text3)}
+.evt-tag-ativo{font-size:8.5px;font-weight:700;color:var(--orange);letter-spacing:.1em;
+  background:rgba(229,93,0,.15);border:1px solid var(--orange-edge);
+  padding:1px 6px;border-radius:8px;text-transform:uppercase}
+.evt-actions{display:flex;gap:4px;flex-shrink:0}
+.evt-actions .btn-mov{padding:4px 10px;font-size:11px}
+
 /* ── Toggle "outras opções" no rodapé ─────────────────────────────── */
 .ger-toggle-more{background:none;border:none;color:var(--text3);
   font-family:inherit;font-size:9.5px;font-weight:600;letter-spacing:.06em;

@@ -20,11 +20,15 @@ let catListOpen = false;   // dropdown de seleção de categoria aberto?
 let editingPath = null;    // {dia, cat, wkt} quando editando (criar = wkt = -1)
 let previewPath = null;    // {dia, cat, wkt} do workout em preview
 
-const STATE_KEY      = 'ds_sumulas_v2_state';
+const STATE_KEY      = 'ds_sumulas_v2_state';        // legacy (1 evento) — só pra migração
+const MULTI_STATE_KEY = 'ds_sumulas_v3_multi_state'; // novo: { activeId, events: {...} }
 const IMPORT_KEY     = 'ds_sumulas_v2_import';
 const LABEL_COL_KEY  = 'ds_sumulas_v2_show_label';
-// Bump quando mudar shape de `config`. State antigo (v1) é descartado.
-const SCHEMA_VERSION = 2;
+// Bump quando mudar shape de `config`. State antigo é descartado/migrado.
+const SCHEMA_VERSION = 3;
+
+// Evento ativo no momento. ID é gerado quando o evento é criado/migrado.
+let eventoAtivoId = null;
 
 const TIPO_LABEL = { for_time: 'For Time', amrap: 'AMRAP', express: 'Express' };
 
@@ -70,6 +74,46 @@ function abrirConfig(tab) {
 
 function fecharConfig() {
   document.getElementById('configModal').style.display = 'none';
+}
+
+// ─── Modal de eventos (multi-evento) ─────────────────────────────────────────
+function abrirEventos() {
+  // Garante que evento atual está salvo antes de listar
+  if (eventoAtivoId) _persistNow();
+  document.getElementById('eventosModal').style.display = 'block';
+  renderListaEventos();
+}
+
+function fecharEventos() {
+  document.getElementById('eventosModal').style.display = 'none';
+}
+
+function renderListaEventos() {
+  const wrap = document.getElementById('listaEventos');
+  if (!wrap) return;
+  const eventos = listarEventos();
+  if (!eventos.length) {
+    wrap.innerHTML = '<p class="cfg-hint" style="font-style:italic">Nenhum evento salvo ainda.</p>';
+    return;
+  }
+  wrap.innerHTML = eventos.map(e => {
+    const data = e.atualizadoEm ? new Date(e.atualizadoEm).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—';
+    const ativoTag = e.ativo ? '<span class="evt-tag-ativo">ativo</span>' : '';
+    return `
+      <div class="evt-item ${e.ativo ? 'evt-item-ativo' : ''}">
+        <div class="evt-info">
+          <div class="evt-nome">${esc(e.nome)} ${ativoTag}</div>
+          <div class="evt-meta">${e.totalDias} dia(s) · ${e.totalCategorias} categoria(s) · atualizado ${esc(data)}</div>
+        </div>
+        <div class="evt-actions">
+          ${e.ativo ? '' : `<button class="btn-mov" onclick="trocarEvento('${e.id}')" title="Abrir esse evento">Abrir</button>`}
+          <button class="btn-mov" onclick="duplicarEvento('${e.id}')" title="Duplicar">⎘</button>
+          <button class="btn-mov" onclick="renomearEvento('${e.id}')" title="Renomear">✎</button>
+          <button class="btn-mov" onclick="arquivarEvento('${e.id}')" title="Arquivar (apagar do navegador)">🗑</button>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function cfgTab(tab) {
@@ -1427,17 +1471,27 @@ function saveState() {
 }
 
 function _persistNow() {
-  const snapshot = { version: SCHEMA_VERSION, config, diaAtual };
+  // Garante que sempre existe um evento ativo (cria 1 se for primeiro save)
+  if (!eventoAtivoId) eventoAtivoId = _gerarIdEvento(config.evento.nome);
+  const multi = _carregarMultiState() || { version: SCHEMA_VERSION, activeId: eventoAtivoId, events: {} };
+  multi.activeId = eventoAtivoId;
+  multi.version  = SCHEMA_VERSION;
+  multi.events[eventoAtivoId] = {
+    config, diaAtual,
+    nome: config.evento.nome || multi.events[eventoAtivoId]?.nome || 'Evento sem nome',
+    atualizadoEm: new Date().toISOString(),
+  };
   let ok = false;
   try {
-    localStorage.setItem(STATE_KEY, JSON.stringify(snapshot));
+    localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(multi));
     ok = true;
   } catch (e) {
     try {
-      const lite = JSON.parse(JSON.stringify(snapshot));
-      lite.config.evento.logo_evento = '';
-      lite.config.evento.logo_empresa = '';
-      localStorage.setItem(STATE_KEY, JSON.stringify(lite));
+      // Cota cheia: tenta sem logos do evento ativo
+      const lite = JSON.parse(JSON.stringify(multi));
+      lite.events[eventoAtivoId].config.evento.logo_evento = '';
+      lite.events[eventoAtivoId].config.evento.logo_empresa = '';
+      localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(lite));
       console.warn('Persistência sem logos (cota cheia):', e.message);
       ok = true;
     } catch (e2) {
@@ -1446,6 +1500,21 @@ function _persistNow() {
   }
   updateClearAllVisibility();
   setSaveIndicator(ok ? 'saved' : 'error');
+}
+
+function _carregarMultiState() {
+  try {
+    const raw = localStorage.getItem(MULTI_STATE_KEY);
+    if (!raw) return null;
+    const m = JSON.parse(raw);
+    if (!m || typeof m !== 'object' || m.version !== SCHEMA_VERSION) return null;
+    return m;
+  } catch (e) { return null; }
+}
+
+function _gerarIdEvento(nome) {
+  const slug = (nome || 'evento').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'evento';
+  return `${slug}-${Date.now().toString(36)}`;
 }
 
 function setSaveIndicator(state) {
@@ -1468,32 +1537,205 @@ function setSaveIndicator(state) {
 }
 
 function loadState() {
+  // 1) Tenta carregar formato v3 (multi-evento)
+  const multi = _carregarMultiState();
+  if (multi && multi.activeId && multi.events[multi.activeId]) {
+    _carregarEventoAtivo(multi, multi.activeId);
+    return;
+  }
+
+  // 2) Migração v2 → v3: state antigo é convertido pra primeiro evento
   try {
-    const raw = localStorage.getItem(STATE_KEY);
-    if (!raw) return;
-    const snap = JSON.parse(raw);
-    if (snap && snap.version !== SCHEMA_VERSION) {
-      console.info(`localStorage state schema antigo (v${snap.version}); descartando.`);
-      clearState();
-      return;
-    }
-    if (snap && snap.config) {
-      if (!snap.config.evento.logo_empresa) snap.config.evento.logo_empresa = DS_LOGO_PADRAO;
-      config = { ...config, ...snap.config };
-      if (typeof snap.diaAtual === 'number') diaAtual = snap.diaAtual;
-      setSaveIndicator('saved');  // sinaliza visualmente que algo foi restaurado
+    const rawLegado = localStorage.getItem(STATE_KEY);
+    if (rawLegado) {
+      const v2 = JSON.parse(rawLegado);
+      if (v2 && v2.config) {
+        eventoAtivoId = _gerarIdEvento(v2.config?.evento?.nome);
+        if (!v2.config.evento.logo_empresa) v2.config.evento.logo_empresa = DS_LOGO_PADRAO;
+        config = { ...config, ...v2.config };
+        if (typeof v2.diaAtual === 'number') diaAtual = v2.diaAtual;
+        _persistNow();   // grava no formato novo
+        localStorage.removeItem(STATE_KEY);   // descarta legado
+        setSaveIndicator('saved');
+        console.info('localStorage migrado v2 → v3 (multi-evento).');
+        return;
+      }
     }
   } catch (e) {
-    console.warn('Falha ao restaurar estado:', e);
+    console.warn('Falha ao migrar state v2:', e);
   }
 }
 
+function _carregarEventoAtivo(multi, id) {
+  const ev = multi.events[id];
+  if (!ev || !ev.config) return;
+  eventoAtivoId = id;
+  if (!ev.config.evento.logo_empresa) ev.config.evento.logo_empresa = DS_LOGO_PADRAO;
+  config = { ...config, ...ev.config };
+  diaAtual = typeof ev.diaAtual === 'number' ? ev.diaAtual : 0;
+  catSel = 0; catListOpen = false;
+  previewPath = null;
+  setSaveIndicator('saved');
+}
+
 function clearState() {
-  try {
-    localStorage.removeItem(STATE_KEY);
-    localStorage.removeItem(IMPORT_KEY);
-  } catch (e) { /* ignore */ }
+  // Remove SÓ o evento ativo (mantém os outros)
+  if (!eventoAtivoId) {
+    try {
+      localStorage.removeItem(MULTI_STATE_KEY);
+      localStorage.removeItem(STATE_KEY);
+      localStorage.removeItem(IMPORT_KEY);
+    } catch (e) { /* ignore */ }
+    setSaveIndicator(null);
+    return;
+  }
+  const multi = _carregarMultiState();
+  if (multi && multi.events[eventoAtivoId]) {
+    delete multi.events[eventoAtivoId];
+    // Pega o próximo evento existente como ativo, ou zera
+    const restantes = Object.keys(multi.events);
+    multi.activeId = restantes[0] || null;
+    if (multi.activeId) {
+      try { localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(multi)); } catch (e) {}
+    } else {
+      try { localStorage.removeItem(MULTI_STATE_KEY); } catch (e) {}
+    }
+  }
+  eventoAtivoId = null;
+  try { localStorage.removeItem(IMPORT_KEY); } catch (e) {}
   setSaveIndicator(null);
+}
+
+// ─── API pública multi-evento ───────────────────────────────────────────────
+function listarEventos() {
+  const m = _carregarMultiState();
+  if (!m) return [];
+  return Object.entries(m.events).map(([id, ev]) => ({
+    id,
+    nome: ev.nome || ev.config?.evento?.nome || 'Sem nome',
+    totalDias: (ev.config?.dias || []).length,
+    totalCategorias: (ev.config?.dias || []).reduce((s, d) => s + (d.categorias || []).length, 0),
+    atualizadoEm: ev.atualizadoEm,
+    ativo: id === m.activeId,
+  })).sort((a, b) => (b.atualizadoEm || '').localeCompare(a.atualizadoEm || ''));
+}
+
+function trocarEvento(id) {
+  const m = _carregarMultiState();
+  if (!m || !m.events[id]) { toast('Evento não encontrado', 'err'); return; }
+  // Garante que o estado atual está salvo antes de trocar
+  if (eventoAtivoId && eventoAtivoId !== id) _persistNow();
+  _carregarEventoAtivo(m, id);
+  // Sincroniza inputs e re-renderiza
+  document.getElementById('evNome').value = config.evento.nome || '';
+  document.getElementById('evCat').value  = config.evento.categoria || '';
+  document.getElementById('evData').value = config.evento.data || '';
+  renderEventoDisplay();
+  renderDiaTabs();
+  renderCategoriasList();
+  atualizarBotaoGerar();
+  updateClearAllVisibility();
+  updateEmptyState();
+  document.getElementById('previewFrame').style.display = 'none';
+  document.getElementById('pbName').textContent = '—';
+  // Atualiza no localStorage (muda activeId)
+  m.activeId = id;
+  try { localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(m)); } catch (e) {}
+  fecharEventos();
+  toast(`Evento "${m.events[id].nome}" carregado`, 'ok');
+}
+
+function novoEvento() {
+  const nome = prompt('Nome do novo evento:');
+  if (nome === null) return;
+  const nomeFinal = (nome || '').trim();
+  if (!nomeFinal) { toast('Nome obrigatório', 'err'); return; }
+  // Salva o estado atual antes de criar novo
+  if (eventoAtivoId) _persistNow();
+  eventoAtivoId = _gerarIdEvento(nomeFinal);
+  config = {
+    evento: { nome: nomeFinal, categoria: '', data: '', logo_empresa: DS_LOGO_PADRAO, logo_evento: '' },
+    dias: [], roster: [],
+  };
+  diaAtual = 0; catSel = 0; catListOpen = false;
+  previewPath = null; editingPath = null;
+  ['evNome','evCat','evData'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = id === 'evNome' ? nomeFinal : '';
+  });
+  renderEventoDisplay();
+  renderDiaTabs();
+  renderCategoriasList();
+  atualizarBotaoGerar();
+  updateClearAllVisibility();
+  updateEmptyState();
+  document.getElementById('previewFrame').style.display = 'none';
+  document.getElementById('pbName').textContent = '—';
+  saveState();
+  fecharEventos();
+  toast(`Evento "${nomeFinal}" criado`, 'ok');
+}
+
+function duplicarEvento(id) {
+  const m = _carregarMultiState();
+  if (!m || !m.events[id]) return;
+  const novoNome = prompt('Nome do evento duplicado:', `${m.events[id].nome} (cópia)`);
+  if (novoNome === null) return;
+  const nomeFinal = (novoNome || '').trim();
+  if (!nomeFinal) { toast('Nome obrigatório', 'err'); return; }
+  const novoId = _gerarIdEvento(nomeFinal);
+  const clone = JSON.parse(JSON.stringify(m.events[id]));
+  clone.nome = nomeFinal;
+  clone.config.evento.nome = nomeFinal;
+  clone.atualizadoEm = new Date().toISOString();
+  m.events[novoId] = clone;
+  try { localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(m)); } catch (e) {
+    toast('Erro ao duplicar: ' + e.message, 'err'); return;
+  }
+  renderListaEventos();
+  toast(`Evento duplicado como "${nomeFinal}"`, 'ok');
+}
+
+function renomearEvento(id) {
+  const m = _carregarMultiState();
+  if (!m || !m.events[id]) return;
+  const novoNome = prompt('Novo nome:', m.events[id].nome);
+  if (novoNome === null) return;
+  const nomeFinal = (novoNome || '').trim();
+  if (!nomeFinal) { toast('Nome obrigatório', 'err'); return; }
+  m.events[id].nome = nomeFinal;
+  m.events[id].config.evento.nome = nomeFinal;
+  m.events[id].atualizadoEm = new Date().toISOString();
+  try { localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(m)); } catch (e) {}
+  // Se for o evento ativo, atualiza UI
+  if (id === eventoAtivoId) {
+    config.evento.nome = nomeFinal;
+    document.getElementById('evNome').value = nomeFinal;
+    renderEventoDisplay();
+  }
+  renderListaEventos();
+  toast('Renomeado', 'ok');
+}
+
+function arquivarEvento(id) {
+  const m = _carregarMultiState();
+  if (!m || !m.events[id]) return;
+  if (!confirm(`Arquivar "${m.events[id].nome}"?\nEle será removido do navegador. Esta ação não pode ser desfeita.`)) return;
+  delete m.events[id];
+  if (m.activeId === id) m.activeId = Object.keys(m.events)[0] || null;
+  try { localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(m)); } catch (e) {}
+  // Se arquivou o ativo, troca pra outro (ou limpa)
+  if (id === eventoAtivoId) {
+    if (m.activeId) {
+      trocarEvento(m.activeId);
+      return;
+    }
+    eventoAtivoId = null;
+    limparTudo();
+    return;
+  }
+  renderListaEventos();
+  toast('Evento arquivado', 'ok');
 }
 
 // ═══════════════════════════════════════════════════════════════════
