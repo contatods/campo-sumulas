@@ -46,7 +46,7 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     if not m: return None
     num_s, sep, rest = m.group(1), m.group(2), m.group(3).strip()
     try: num = int(num_s)
-    except: return None
+    except ValueError: return None
     if num >= 1000: return None  # evita anos
     if sep == '-':
         nome = f"{num_s}-{rest}".upper()
@@ -435,7 +435,7 @@ def _parse_excel_template(wb) -> dict[str, Any]:
                 if h in ("movimento", "exercise", "movement", "nome", "name"): mov["nome"] = v.upper()
                 elif h in ("reps", "rep", "repetições"):
                     try: mov["reps"] = int(float(v))
-                    except: mov["reps"] = v
+                    except (ValueError, TypeError): mov["reps"] = v
                 elif h in ("label", "bloco", "grupo", "block"): mov["label"] = v
             if "nome" in mov: movs.append(mov)
         wkt: Workout = {"numero": num, "nome": f"WKT {num}", "tipo": "for_time",

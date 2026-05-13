@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.9.0'
+VERSION = '1.9.1'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -52,6 +52,35 @@ def _chat_rate_limit_ok() -> tuple[bool, int]:
             return False, int(CHAT_RATE_LIMIT_WINDOW_S - (now - mais_antiga)) + 1
         _chat_calls.append(now)
         return True, 0
+
+
+def _mensagem_erro_ia(exc: Exception) -> str:
+    """Mapeia exception do SDK Anthropic em mensagem útil em PT-BR.
+
+    Permite que o usuário entenda se é problema de rede, quota, chave inválida
+    ou outro — em vez de só ver 'IA falhou: TimeoutError'.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        return f'Erro inesperado: {exc.__class__.__name__}'
+    if isinstance(exc, anthropic.AuthenticationError):
+        return 'Chave da API rejeitada — confira ANTHROPIC_API_KEY no servidor.'
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        return 'Sem permissão pra esse modelo — verifique o plano da conta Anthropic.'
+    if isinstance(exc, anthropic.RateLimitError):
+        return 'Limite da API atingido. Aguarde alguns segundos antes de mandar de novo.'
+    if isinstance(exc, anthropic.APITimeoutError):
+        return 'Timeout — a API demorou pra responder. Tente de novo.'
+    if isinstance(exc, anthropic.APIConnectionError):
+        return 'Sem conexão com a API da Anthropic. Verifique sua internet.'
+    if isinstance(exc, anthropic.BadRequestError):
+        return f'Pedido inválido: {exc}'
+    if isinstance(exc, anthropic.InternalServerError):
+        return 'A API da Anthropic está com problema. Tente de novo em alguns minutos.'
+    if isinstance(exc, anthropic.APIError):
+        return f'Erro da API ({exc.__class__.__name__}): {exc}'
+    return f'Erro inesperado: {exc.__class__.__name__}'
 
 
 def _to_int_or_max(v) -> int:
@@ -453,9 +482,10 @@ class SumulaHandler(BaseHTTPRequestHandler):
         try:
             resposta = chat_evento(mensagens, cfg)
         except Exception as e:
-            traceback.print_exc()
+            traceback.print_exc()   # stack completo no log do servidor
             self._send(200, 'application/json; charset=utf-8',
-                       json.dumps({'error': f'IA falhou: {e.__class__.__name__}', 'ai_ativo': True}, ensure_ascii=False).encode('utf-8'))
+                       json.dumps({'error': _mensagem_erro_ia(e), 'ai_ativo': True},
+                                  ensure_ascii=False).encode('utf-8'))
             return
         self._send(200, 'application/json; charset=utf-8',
                    json.dumps({'resposta': resposta}, ensure_ascii=False).encode('utf-8'))
@@ -481,7 +511,11 @@ class SumulaHandler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(data)))
-        self.send_header('Access-Control-Allow-Origin', '*')
+        # Em dev local: CORS aberto pra facilitar (pode chamar API de outro port).
+        # Em cloud: omite o header — same-origin já basta (frontend e API mesma origem)
+        # e evita expor /api/* pra qualquer site cross-origin.
+        if not IS_CLOUD:
+            self.send_header('Access-Control-Allow-Origin', '*')
         if extra:
             for k, v in extra.items(): self.send_header(k, v)
         self.end_headers()
