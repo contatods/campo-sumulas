@@ -914,7 +914,8 @@ FOR_LOAD_TABLE_MACRO = r"""
 {% macro for_load_table(wkt, atleta) %}
 {% set unidade  = wkt.unidade | default('kg') %}
 {% set genero   = wkt._genero | default('M') %}
-{% set barra    = wkt.barra_masculina if genero == 'M' else wkt.barra_feminina %}
+{# Default conservador: só F usa barra feminina; M e MISTO usam masculina. #}
+{% set barra    = wkt.barra_feminina if genero == 'F' else wkt.barra_masculina %}
 {% set tentativas = wkt.tentativas | default(3) %}
 {% set anilhas  = wkt.anilhas | default([25, 20, 15, 10, 5, 2.5, 1.25]) %}
 <div class="fl-zone">

@@ -67,6 +67,16 @@ def test_render_for_load_categoria_masculina_usa_barra_de_20kg(fonts_empty):
     assert "20 kg" in html or ">20<" in html
 
 
+def test_render_for_load_categoria_mista_usa_barra_masculina(fonts_empty):
+    """Categoria 'Dupla Misto' deve usar barra masculina (default conservador)."""
+    ev = {"nome": "EVT", "categoria": "Dupla Misto", "data": "2026", "unidade_default": "kg"}
+    wkt = {"numero": 1, "nome": "MAX", "tipo": "for_load",
+           "modalidade": "dupla", "tentativas": 3}
+    html = render_workout(ev, wkt, fonts_empty, logo_src="", logo_evento="")
+    assert "20 kg" in html, "MISTO deve usar barra masculina (20kg)"
+    assert "15 kg" not in html, "MISTO não deve renderizar barra feminina"
+
+
 def test_render_for_load_libras(fonts_empty):
     ev = {"nome": "EVT", "categoria": "Rx Masculino", "data": "2026", "unidade_default": "lb"}
     wkt = {

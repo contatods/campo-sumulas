@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.11.0'
+VERSION = '1.11.1'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -91,14 +91,56 @@ def _to_int_or_max(v) -> int:
         return 10**9
 
 
+FOR_LOAD_TENTATIVAS_MIN = 1
+FOR_LOAD_TENTATIVAS_MAX = 8   # cap pra não estourar A4 — estudo mostra ~5-6 cabem
+
+
 def _validate_workout_tipos(workouts):
-    """Garante que cada workout tem 'tipo' válido. Levanta BadRequest se não."""
+    """Garante que cada workout tem 'tipo' válido. Levanta BadRequest se não.
+
+    Pra For Load, valida também tentativas/anilhas/barras pra evitar súmula
+    inutilizável (régua vazia, número absurdo de tentativas, peso negativo).
+    """
     for i, w in enumerate(workouts):
-        tipo = (w or {}).get('tipo')
+        wkt = w or {}
+        tipo = wkt.get('tipo')
         if tipo not in WORKOUT_TIPOS:
             raise BadRequest(
                 f"workouts[{i}].tipo inválido ({tipo!r}); use um de {sorted(WORKOUT_TIPOS)}"
             )
+        if tipo == 'for_load':
+            _validate_for_load(wkt, i)
+
+
+def _validate_for_load(wkt: dict, idx: int) -> None:
+    """Valida campos específicos de For Load. Levanta BadRequest se ruim."""
+    tent = wkt.get('tentativas')
+    if not isinstance(tent, int) or not (FOR_LOAD_TENTATIVAS_MIN <= tent <= FOR_LOAD_TENTATIVAS_MAX):
+        raise BadRequest(
+            f"workouts[{idx}].tentativas inválido ({tent!r}); "
+            f"use inteiro entre {FOR_LOAD_TENTATIVAS_MIN} e {FOR_LOAD_TENTATIVAS_MAX}"
+        )
+    anilhas = wkt.get('anilhas')
+    if not isinstance(anilhas, list) or not anilhas:
+        raise BadRequest(f"workouts[{idx}].anilhas vazio ou inválido")
+    for j, a in enumerate(anilhas):
+        if not isinstance(a, (int, float)) or a <= 0:
+            raise BadRequest(
+                f"workouts[{idx}].anilhas[{j}] inválido ({a!r}); use número positivo"
+            )
+    for campo in ('barra_masculina', 'barra_feminina'):
+        v = wkt.get(campo)
+        if v is None:
+            continue   # default aplicado no render
+        if not isinstance(v, (int, float)) or v <= 0:
+            raise BadRequest(
+                f"workouts[{idx}].{campo} inválido ({v!r}); use número positivo"
+            )
+    unidade = wkt.get('unidade')
+    if unidade is not None and unidade not in ('kg', 'lb'):
+        raise BadRequest(
+            f"workouts[{idx}].unidade inválido ({unidade!r}); use 'kg' ou 'lb'"
+        )
 
 def _resolve_logo(value):
     """Retorna uma data-URL de logo.

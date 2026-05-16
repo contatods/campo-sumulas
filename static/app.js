@@ -1549,6 +1549,19 @@ function _persistNow() {
   setSaveIndicator(ok ? 'saved' : 'error');
 }
 
+// Setter de multi-state com feedback. Retorna true se gravou, false e mostra
+// toast se falhou (tipicamente cota cheia: 5MB de localStorage).
+function _salvarMultiState(multi, contexto = 'salvar') {
+  try {
+    localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(multi));
+    return true;
+  } catch (e) {
+    console.error(`Falha ao ${contexto}:`, e);
+    toast(`Falha ao ${contexto} (cota do navegador cheia?). Exporte JSON pra preservar`, 'err');
+    return false;
+  }
+}
+
 function _carregarMultiState() {
   try {
     const raw = localStorage.getItem(MULTI_STATE_KEY);
@@ -1643,9 +1656,9 @@ function clearState() {
     const restantes = Object.keys(multi.events);
     multi.activeId = restantes[0] || null;
     if (multi.activeId) {
-      try { localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(multi)); } catch (e) {}
+      _salvarMultiState(multi, 'apagar evento');
     } else {
-      try { localStorage.removeItem(MULTI_STATE_KEY); } catch (e) {}
+      try { localStorage.removeItem(MULTI_STATE_KEY); } catch (e) { /* remove não estoura cota */ }
     }
   }
   eventoAtivoId = null;
@@ -1687,7 +1700,7 @@ function trocarEvento(id) {
   document.getElementById('pbName').textContent = '—';
   // Atualiza no localStorage (muda activeId)
   m.activeId = id;
-  try { localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(m)); } catch (e) {}
+  _salvarMultiState(m, 'trocar evento');
   fecharEventos();
   toast(`Evento "${m.events[id].nome}" carregado`, 'ok');
 }
@@ -1736,9 +1749,7 @@ function duplicarEvento(id) {
   clone.config.evento.nome = nomeFinal;
   clone.atualizadoEm = new Date().toISOString();
   m.events[novoId] = clone;
-  try { localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(m)); } catch (e) {
-    toast('Erro ao duplicar: ' + e.message, 'err'); return;
-  }
+  if (!_salvarMultiState(m, 'duplicar')) return;
   renderListaEventos();
   toast(`Evento duplicado como "${nomeFinal}"`, 'ok');
 }
@@ -1753,7 +1764,7 @@ function renomearEvento(id) {
   m.events[id].nome = nomeFinal;
   m.events[id].config.evento.nome = nomeFinal;
   m.events[id].atualizadoEm = new Date().toISOString();
-  try { localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(m)); } catch (e) {}
+  if (!_salvarMultiState(m, 'renomear')) return;
   // Se for o evento ativo, atualiza UI
   if (id === eventoAtivoId) {
     config.evento.nome = nomeFinal;
@@ -1770,7 +1781,7 @@ function arquivarEvento(id) {
   if (!confirm(`Arquivar "${m.events[id].nome}"?\nEle será removido do navegador. Esta ação não pode ser desfeita.`)) return;
   delete m.events[id];
   if (m.activeId === id) m.activeId = Object.keys(m.events)[0] || null;
-  try { localStorage.setItem(MULTI_STATE_KEY, JSON.stringify(m)); } catch (e) {}
+  if (!_salvarMultiState(m, 'arquivar')) return;
   // Se arquivou o ativo, troca pra outro (ou limpa)
   if (id === eventoAtivoId) {
     if (m.activeId) {

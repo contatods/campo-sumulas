@@ -204,6 +204,39 @@ def test_workout_numero_de_codigo_exige_prefixo_explicito():
     assert _workout_numero_de_codigo("123") is None
 
 
+def test_validate_for_load_aceita_workout_bem_formado():
+    """Workout For Load válido passa sem exceção."""
+    import pytest
+    from sumula_app import _validate_workout_tipos, BadRequest
+    wkts = [{
+        "tipo": "for_load", "nome": "MAX CLEAN", "tentativas": 3,
+        "anilhas": [25, 20, 15, 10, 5, 2.5, 1.25],
+        "barra_masculina": 20, "barra_feminina": 15, "unidade": "kg",
+    }]
+    _validate_workout_tipos(wkts)   # não deve levantar
+
+
+def test_validate_for_load_rejeita_config_invalida():
+    """For Load com tentativas/anilhas/barras inválidas → BadRequest."""
+    import pytest
+    from sumula_app import _validate_workout_tipos, BadRequest
+
+    casos = [
+        ({"tipo": "for_load", "tentativas": 0,  "anilhas": [25]}, "tentativas"),
+        ({"tipo": "for_load", "tentativas": 99, "anilhas": [25]}, "tentativas"),
+        ({"tipo": "for_load", "tentativas": "3","anilhas": [25]}, "tentativas"),
+        ({"tipo": "for_load", "tentativas": 3,  "anilhas": []},  "anilhas"),
+        ({"tipo": "for_load", "tentativas": 3,  "anilhas": [25, -5]}, "anilhas"),
+        ({"tipo": "for_load", "tentativas": 3,  "anilhas": [25, "abc"]}, "anilhas"),
+        ({"tipo": "for_load", "tentativas": 3,  "anilhas": [25], "barra_masculina": -1}, "barra_masculina"),
+        ({"tipo": "for_load", "tentativas": 3,  "anilhas": [25], "unidade": "g"}, "unidade"),
+    ]
+    for wkt, contem in casos:
+        with pytest.raises(BadRequest) as exc:
+            _validate_workout_tipos([wkt])
+        assert contem in str(exc.value), f"esperava '{contem}' em '{exc.value}'"
+
+
 def test_parse_workout_text_detecta_for_load():
     """For Load: detecta tipo, tentativas e não cria movimentos."""
     texto = '"MAX CLEAN"\nFor Load — 5 tentativas\nEncontre a maior carga em 8 minutos.'
