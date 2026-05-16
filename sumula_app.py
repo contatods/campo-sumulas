@@ -18,14 +18,14 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.10.0'
+VERSION = '1.11.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
 
 # Tipos de workout suportados (canônicos). Frontend e parsers só devem produzir
 # valores deste conjunto; adicionar um novo tipo começa por aqui.
-WORKOUT_TIPOS = frozenset({'for_time', 'amrap', 'express'})
+WORKOUT_TIPOS = frozenset({'for_time', 'amrap', 'express', 'for_load'})
 
 
 class BadRequest(ValueError):

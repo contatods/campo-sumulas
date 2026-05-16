@@ -128,6 +128,7 @@ def enriquecer_workouts(workouts: list[Workout]) -> list[Workout]:
     """Calcula campos derivados antes de renderizar.
     - AMRAP: adiciona 'n_rounds' (estimado por IA ou algoritmo)
     - Express F1 (que é AMRAP): idem na formula1
+    - For Load: garante 'tentativas' (estima se não veio do Excel)
     Modifica a lista in-place e retorna ela.
     """
     for wkt in workouts:
@@ -139,6 +140,9 @@ def enriquecer_workouts(workouts: list[Workout]) -> list[Workout]:
             f1 = wkt.get('formula1', {})
             if f1 and 'n_rounds' not in f1:
                 f1['n_rounds'] = _estimar_rounds_ia(f1.get('movimentos', []), f1.get('janela', ''))
+        elif wkt.get('tipo') == 'for_load':
+            if not wkt.get('tentativas'):
+                wkt['tentativas'] = estimar_tentativas_for_load(wkt)
     return workouts
 
 
@@ -164,6 +168,21 @@ def sugerir_time_cap(movimentos: list[Movimento], tipo: str = 'for_time') -> str
     # Arredonda pra múltiplos de 5 (cleaner)
     minutos = ((minutos + 2) // 5) * 5 or 5
     return f'{minutos} min'
+
+
+def estimar_tentativas_for_load(workout: Workout) -> int:
+    """Estima quantas tentativas faz sentido pra um workout For Load.
+
+    Heurística simples sem IA: 3 é o padrão CrossFit (máximo lift); workouts
+    com 'max' ou 'establish' no nome confirmam isso. Se for clearly progressivo
+    (com palavras como 'progression', 'wave'), pode ser 5.
+    """
+    nome = (workout.get('nome', '') or '').lower()
+    desc = ' '.join(workout.get('descricao', []) or []).lower()
+    full = nome + ' ' + desc
+    if any(k in full for k in ('progression', 'wave', 'ladder', 'progressi')):
+        return 5
+    return 3
 
 
 # ── Geração automática de "Notas adicionais" a partir da tabela ─────────────
@@ -281,6 +300,20 @@ def validar_evento(config: dict) -> list[dict]:
                             'msg': f'Express "{wkt.get("nome", "?")}" sem movimentos em F1 nem F2',
                             'onde': f'{dlabel}/{cnome}',
                         })
+                elif tipo == 'for_load':
+                    # For Load não tem movimentos; valida config específica
+                    if not (wkt.get('anilhas') or []):
+                        avisos.append({
+                            'severidade': 'aviso',
+                            'msg': f'For Load "{wkt.get("nome", "?")}" sem anilhas configuradas (usará default)',
+                            'onde': f'{dlabel}/{cnome}',
+                        })
+                    if not (wkt.get('tentativas') or 0):
+                        avisos.append({
+                            'severidade': 'aviso',
+                            'msg': f'For Load "{wkt.get("nome", "?")}" sem nº de tentativas (usará 3)',
+                            'onde': f'{dlabel}/{cnome}',
+                        })
                 elif not (wkt.get('movimentos') or []):
                     avisos.append({
                         'severidade': 'aviso',
@@ -331,6 +364,11 @@ def estimar_duracao_workout_min(wkt: Workout) -> int:
         dur_f1 = _extrair_minutos(f1.get('janela', '') or '') or 5
         dur_f2 = _extrair_minutos(f2.get('janela', '') or '') or _extrair_minutos(wkt.get('time_cap', '') or '') or 7
         return dur_f1 + 1 + dur_f2
+
+    if tipo == 'for_load':
+        # ~2 min por tentativa (preparação + execução + setup) é uma boa heurística
+        tentativas = wkt.get('tentativas') or 3
+        return max(5, int(tentativas) * 2)
 
     # for_time: prefere time_cap; cai no estimar via reps
     tc = _extrair_minutos(wkt.get('time_cap', '') or '')

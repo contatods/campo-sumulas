@@ -75,6 +75,18 @@ def parse_workout_text(text: str, numero: int) -> Workout:
 
     # Tipo
     full = '\n'.join(lines).lower()
+    if 'for load' in full or 'max lift' in full or 'max load' in full or \
+       re.search(r'\bcarga m[áa]xima\b', full):
+        wkt["tipo"] = "for_load"
+        # Tentativas explícitas no texto (ex: "5 tentativas")
+        m_tent = re.search(r'(\d+)\s*tentativas?', full)
+        if m_tent:
+            try: wkt["tentativas"] = int(m_tent.group(1))
+            except ValueError: pass
+        # Texto livre fica em descricao; movimentos não fazem sentido pra For Load
+        wkt["descricao"] = lines
+        wkt["movimentos"] = []
+        return wkt
     if 'for time' in full or 'por tempo' in full:
         wkt["tipo"] = "for_time"
     elif 'amrap' in full or 'as many reps' in full:

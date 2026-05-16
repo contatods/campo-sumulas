@@ -30,7 +30,14 @@ const SCHEMA_VERSION = 3;
 // Evento ativo no momento. ID é gerado quando o evento é criado/migrado.
 let eventoAtivoId = null;
 
-const TIPO_LABEL = { for_time: 'For Time', amrap: 'AMRAP', express: 'Express' };
+const TIPO_LABEL = { for_time: 'For Time', amrap: 'AMRAP', express: 'Express', for_load: 'For Load' };
+
+// Defaults For Load (espelham types_ds.py — manter sincronizado)
+const ANILHAS_KG_DEFAULT = [25, 20, 15, 10, 5, 2.5, 1.25];
+const ANILHAS_LB_DEFAULT = [55, 45, 35, 25, 15, 10, 5, 2.5];
+function _anilhasDefault(unidade) {
+  return (unidade || 'kg').toLowerCase() === 'lb' ? ANILHAS_LB_DEFAULT : ANILHAS_KG_DEFAULT;
+}
 
 // Helpers de navegação
 function diaCorrente() {
@@ -887,6 +894,12 @@ function editarWorkout(ci, wi) {
     setMovTableFromArray('f1', (w.formula1 || {}).movimentos || []);
     setMovTableFromArray('f2', (w.formula2 || {}).movimentos || []);
     switchExpressTab('f1');
+  } else if (w.tipo === 'for_load') {
+    document.getElementById('edFlTentativas').value = w.tentativas || 3;
+    document.getElementById('edFlUnidade').value    = w.unidade || 'kg';
+    document.getElementById('edFlBarraM').value     = w.barra_masculina || 20;
+    document.getElementById('edFlBarraF').value     = w.barra_feminina  || 15;
+    document.getElementById('edFlAnilhas').value    = (w.anilhas || _anilhasDefault(w.unidade || 'kg')).join(', ');
   } else {
     setMovTableFromArray('main', w.movimentos || []);
   }
@@ -906,10 +919,31 @@ function fecharEditor() {
 
 function onTipoChange() {
   const t = document.getElementById('edTipo').value;
-  document.getElementById('secMovimentos').style.display = t !== 'express' ? '' : 'none';
+  // For Load não tem movimentos — esconde a seção de movimentos
+  document.getElementById('secMovimentos').style.display = (t !== 'express' && t !== 'for_load') ? '' : 'none';
   document.getElementById('secExpress').style.display    = t === 'express' ? '' : 'none';
+  document.getElementById('secForLoad').style.display    = t === 'for_load' ? '' : 'none';
   document.getElementById('btnChegadaMain').style.display = t === 'amrap' ? 'none' : '';
+  // Time cap não faz sentido pra For Load
+  const tcWrap = document.getElementById('edTimeCap').closest('.field');
+  if (tcWrap) tcWrap.style.display = t === 'for_load' ? 'none' : '';
   if (t === 'express') switchExpressTab('f1');
+  // Quando vai pra For Load, popula defaults se vazio
+  if (t === 'for_load') _preencherDefaultsForLoad();
+}
+
+function _preencherDefaultsForLoad() {
+  const unidade = document.getElementById('edFlUnidade').value || 'kg';
+  const anilhasInp = document.getElementById('edFlAnilhas');
+  if (!anilhasInp.value.trim()) {
+    anilhasInp.value = _anilhasDefault(unidade).join(', ');
+  }
+  const tent = document.getElementById('edFlTentativas');
+  if (!tent.value) tent.value = 3;
+  const barraM = document.getElementById('edFlBarraM');
+  if (!barraM.value) barraM.value = unidade === 'lb' ? 45 : 20;
+  const barraF = document.getElementById('edFlBarraF');
+  if (!barraF.value) barraF.value = unidade === 'lb' ? 35 : 15;
 }
 
 function switchExpressTab(tab) {
@@ -1003,6 +1037,19 @@ function salvarWorkout() {
     wkt.formula1 = { janela: buildJanelaAmrap(f1Start, f1End), descricao: [], movimentos: getMovTableArray('f1') };
     wkt.formula2 = { janela: buildJanelaForTime(f2Start, f2End), descricao: [], movimentos: getMovTableArray('f2') };
     delete wkt.movimentos;
+  } else if (tipo === 'for_load') {
+    wkt.tentativas = parseInt(document.getElementById('edFlTentativas').value, 10) || 3;
+    wkt.unidade = document.getElementById('edFlUnidade').value || 'kg';
+    wkt.barra_masculina = parseFloat(document.getElementById('edFlBarraM').value) || 20;
+    wkt.barra_feminina  = parseFloat(document.getElementById('edFlBarraF').value) || 15;
+    wkt.anilhas = document.getElementById('edFlAnilhas').value
+      .split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0)
+      .sort((a, b) => b - a);   // grande → pequeno
+    if (!wkt.anilhas.length) wkt.anilhas = _anilhasDefault(wkt.unidade);
+    wkt.movimentos = [];
+    wkt.time_cap = '';
+    delete wkt.formula1;
+    delete wkt.formula2;
   } else {
     wkt.movimentos = getMovTableArray('main');
     delete wkt.formula1;

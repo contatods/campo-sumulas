@@ -204,6 +204,18 @@ def test_workout_numero_de_codigo_exige_prefixo_explicito():
     assert _workout_numero_de_codigo("123") is None
 
 
+def test_parse_workout_text_detecta_for_load():
+    """For Load: detecta tipo, tentativas e não cria movimentos."""
+    texto = '"MAX CLEAN"\nFor Load — 5 tentativas\nEncontre a maior carga em 8 minutos.'
+    wkt = parse_workout_text(texto, numero=1)
+    assert wkt["tipo"] == "for_load"
+    assert wkt["nome"] == "MAX CLEAN"
+    assert wkt.get("tentativas") == 5
+    assert wkt["movimentos"] == []
+    # Texto vira descrição (notas)
+    assert any("Encontre" in l for l in wkt.get("descricao", []))
+
+
 def test_parse_excel_vazio_retorna_erro_explicito():
     # Excel sem nenhum dado reconhecível NÃO deve retornar estrutura fantasma
     # com "Único/Geral" vazia — deve sinalizar erro explícito pra UI.

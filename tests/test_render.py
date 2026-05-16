@@ -34,6 +34,52 @@ def test_render_workout_combined_n_paginas_na_ordem_dos_atletas(
     assert pos_nomes == sorted(pos_nomes)
 
 
+def test_render_for_load_individual_emite_tentativas_e_barra_correta(fonts_empty):
+    """Súmula For Load: barra deduzida do gênero, tentativas, anilhas."""
+    ev = {"nome": "EVT", "categoria": "Rx Feminino", "data": "2026", "unidade_default": "kg"}
+    wkt = {
+        "numero": 1, "nome": "MAX CLEAN", "tipo": "for_load", "modalidade": "individual",
+        "tentativas": 3,
+        "descricao": [],
+    }
+    html = render_workout(ev, wkt, fonts_empty, logo_src="", logo_evento="")
+    # Tem as 3 tentativas
+    for t in ("T1", "T2", "T3"):
+        assert t in html, f"esperava {t} na súmula"
+    # Anilhas default kg
+    for p in (25, 20, 15, 10, 5, 2.5, 1.25):
+        assert str(p) in html
+    # Barra feminina (categoria Rx Feminino) — 15kg
+    assert "15 kg" in html or ">15<" in html
+    # NÃO usa barra masculina
+    assert "20 kg" not in html  # confere que não vazou a M
+    # Melhor Carga aparece
+    assert "Melhor Carga" in html or "MELHOR CARGA" in html.upper()
+
+
+def test_render_for_load_categoria_masculina_usa_barra_de_20kg(fonts_empty):
+    ev = {"nome": "EVT", "categoria": "Rx Masculino", "data": "2026", "unidade_default": "kg"}
+    wkt = {
+        "numero": 1, "nome": "MAX CLEAN", "tipo": "for_load", "modalidade": "individual",
+        "tentativas": 3,
+    }
+    html = render_workout(ev, wkt, fonts_empty, logo_src="", logo_evento="")
+    assert "20 kg" in html or ">20<" in html
+
+
+def test_render_for_load_libras(fonts_empty):
+    ev = {"nome": "EVT", "categoria": "Rx Masculino", "data": "2026", "unidade_default": "lb"}
+    wkt = {
+        "numero": 1, "nome": "MAX CLEAN", "tipo": "for_load", "modalidade": "individual",
+        "tentativas": 3,
+    }
+    html = render_workout(ev, wkt, fonts_empty, logo_src="", logo_evento="")
+    # Barra M default em lb = 45
+    assert "45 lb" in html
+    # Anilha default lb inclui 55
+    assert ">55<" in html or "55" in html
+
+
 def test_render_escapa_html_de_input_do_usuario(fonts_empty):
     """Garante que dados externos (nome, box, etc) são escapados — sem XSS."""
     ev = {"nome": "<script>alert(1)</script>", "categoria": "A & B", "data": "2026"}

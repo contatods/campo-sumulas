@@ -635,10 +635,52 @@ body{
 .obs-lines{flex:1;display:flex;flex-direction:column;justify-content:space-evenly}
 .obs-line{border-bottom:1px solid var(--rule);min-height:3.5mm}
 
+/* ── FOR LOAD ── régua de anilhas + barra desenhada + carga + validade ── */
+.fl-zone{border:2px solid var(--ink);margin-bottom:0}
+.fl-zone-hdr{display:flex;align-items:center;justify-content:space-between;
+  background:var(--panel);color:var(--w);padding:1mm 3mm;height:6mm}
+.fl-zone-t{font-weight:900;font-size:10pt;letter-spacing:.08em;text-transform:uppercase}
+.fl-zone-meta{font-size:9pt;font-weight:400;color:#CCC}
+.fl-row{display:flex;align-items:stretch;border-top:1px solid var(--rule);
+  min-height:11mm;background:var(--w)}
+.fl-row:nth-child(odd of .fl-row){background:var(--paper)}
+.fl-row-hdr{width:9mm;display:flex;align-items:center;justify-content:center;
+  font-weight:900;font-size:11pt;color:var(--ink);background:var(--dk);color:var(--w);
+  border-right:1px solid var(--rule)}
+.fl-anilhas{display:flex;align-items:center;padding:1mm 0}
+.fl-anilha{width:6mm;height:6mm;border:1px solid var(--ink);
+  display:flex;align-items:center;justify-content:center;background:var(--w);
+  border-right:none}
+.fl-anilha:last-child{border-right:1px solid var(--ink)}
+.fl-anilha span{font-size:6.5pt;font-weight:700;color:var(--mid);
+  pointer-events:none}
+.fl-barra{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-width:18mm;padding:0 1mm}
+.fl-barra-traco{width:100%;height:2mm;background:var(--ink);border-radius:1mm}
+.fl-barra-lbl{font-size:7pt;font-weight:700;color:var(--ink);margin-top:0.5mm}
+.fl-carga{flex:1;display:flex;flex-direction:column;justify-content:center;
+  padding:0 2mm;min-width:25mm}
+.fl-carga-lbl{font-size:7pt;font-weight:700;color:var(--ghost);
+  text-transform:uppercase;letter-spacing:.06em}
+.fl-carga-line{border-bottom:1.5px solid var(--ink);min-height:5mm;
+  background:var(--field)}
+.fl-val{display:flex;align-items:center;gap:1.5mm;padding:0 2mm;
+  border-left:1px solid var(--rule)}
+.fl-val-circle{width:6.5mm;height:6.5mm;border:1.5px solid var(--ink);
+  border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:10pt;font-weight:900;color:var(--ink);background:var(--w)}
+.fl-melhor{display:flex;align-items:center;border-top:2px solid var(--ink);
+  background:var(--dk);color:var(--w);padding:2mm 3mm;gap:3mm}
+.fl-melhor-lbl{font-size:9pt;font-weight:900;letter-spacing:.06em;
+  text-transform:uppercase}
+.fl-melhor-line{flex:1;min-height:6mm;background:var(--w);
+  border-bottom:1.5px solid var(--w)}
+.fl-melhor-unidade{font-size:9pt;font-weight:700}
+
 @media print{
   body{margin:0}
   .a4-marker{display:none!important}
-  .mov-wrap,.prekit,.score-box,.score-box-dual,.sign-zone,.obs-box,.amrap-wrap{page-break-inside:avoid}
+  .mov-wrap,.prekit,.score-box,.score-box-dual,.sign-zone,.obs-box,.amrap-wrap,.fl-zone{page-break-inside:avoid}
 }
 """
 
@@ -819,7 +861,76 @@ SCORE_BOX_MACRO = r"""
     <span class="sb-tc-sub">marcar se atingido</span>
   </div>
 </div>
+{% elif tipo == 'for_load' %}
+<div class="score-section">
+  <span class="sc-t">Maior Carga</span>
+  <span class="sc-s">Maior tentativa válida</span>
+</div>
+<div class="score-box">
+  <div class="sb-lbl-col">
+    <span class="sb-lbl-tag">For Load</span>
+    <span class="sb-lbl-name">Pontuação</span>
+  </div>
+  <div class="sb-field sb-field-tempo">
+    <span class="sb-field-lbl">Melhor Carga</span>
+    <div class="sb-field-line"></div>
+  </div>
+</div>
 {% endif %}
+{% endmacro %}
+"""
+
+
+FOR_LOAD_TABLE_MACRO = r"""
+{# Macro de tentativa única: régua esq + barra desenhada + régua dir + carga + ✓/✗ #}
+{% macro for_load_tentativa(idx, anilhas_ordem_grande_pequeno, barra_peso, unidade) %}
+<div class="fl-row">
+  <div class="fl-row-hdr">T{{ idx }}</div>
+  {# Anilhas esq: maior colada na barra (interno) → mais leve na ponta (externo).
+     Lemos visualmente da extremidade pra barra: pequenas→grandes. #}
+  <div class="fl-anilhas fl-anilhas-esq">
+    {% for p in anilhas_ordem_grande_pequeno|reverse %}
+    <div class="fl-anilha"><span>{{ p }}</span></div>
+    {% endfor %}
+  </div>
+  <div class="fl-barra">
+    <div class="fl-barra-traco"></div>
+    <div class="fl-barra-lbl">{{ barra_peso }} {{ unidade }}</div>
+  </div>
+  <div class="fl-anilhas fl-anilhas-dir">
+    {% for p in anilhas_ordem_grande_pequeno %}
+    <div class="fl-anilha"><span>{{ p }}</span></div>
+    {% endfor %}
+  </div>
+  <div class="fl-carga"><span class="fl-carga-lbl">Carga</span><div class="fl-carga-line"></div></div>
+  <div class="fl-val">
+    <div class="fl-val-circle">✓</div>
+    <div class="fl-val-circle">✗</div>
+  </div>
+</div>
+{% endmacro %}
+
+{# Macro principal: header da modalidade + N tentativas + linha 'MELHOR CARGA' #}
+{% macro for_load_table(wkt, atleta) %}
+{% set unidade  = wkt.unidade | default('kg') %}
+{% set genero   = wkt._genero | default('M') %}
+{% set barra    = wkt.barra_masculina if genero == 'M' else wkt.barra_feminina %}
+{% set tentativas = wkt.tentativas | default(3) %}
+{% set anilhas  = wkt.anilhas | default([25, 20, 15, 10, 5, 2.5, 1.25]) %}
+<div class="fl-zone">
+  <div class="fl-zone-hdr">
+    <span class="fl-zone-t">For Load</span>
+    <span class="fl-zone-meta">Barra {{ barra }} {{ unidade }} · {{ tentativas }} tentativa{% if tentativas != 1 %}s{% endif %}</span>
+  </div>
+  {% for i in range(1, tentativas + 1) %}
+    {{ for_load_tentativa(i, anilhas, barra, unidade) }}
+  {% endfor %}
+  <div class="fl-melhor">
+    <span class="fl-melhor-lbl">Melhor Carga</span>
+    <div class="fl-melhor-line"></div>
+    <span class="fl-melhor-unidade">{{ unidade }}</span>
+  </div>
+</div>
 {% endmacro %}
 """
 
@@ -960,6 +1071,10 @@ PAGE_TMPL_STR = r"""<div class="page">
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
   {{ amrap_table(wkt.movimentos, wkt.numero, wkt.n_rounds|default(3)) }}
 
+{% elif tipo == 'for_load' %}
+  {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
+  {{ for_load_table(wkt, atleta) }}
+
 {% else %}
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
   {{ mov_table(wkt.movimentos, wkt.numero) }}
@@ -996,7 +1111,19 @@ def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
     # autoescape: nomes de evento/atleta/box/movimento são input do usuário e
     # podem conter `<`, `>`, `&` ou aspas — escapar previne quebra de layout e
     # XSS quando a súmula HTML é aberta no browser.
-    tmpl = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + SCORE_BOX_MACRO + PAGE_TMPL_STR,
+    # For Load precisa saber o gênero da categoria pra escolher barra M/F.
+    if wkt.get('tipo') == 'for_load' and not wkt.get('_genero'):
+        from types_ds import detectar_genero_categoria, anilhas_default, barra_default
+        wkt = dict(wkt)
+        wkt['_genero']  = detectar_genero_categoria(ev.get('categoria', ''))
+        wkt.setdefault('unidade', ev.get('unidade_default', 'kg'))
+        wkt.setdefault('tentativas', 3)
+        wkt.setdefault('anilhas', anilhas_default(wkt['unidade']))
+        wkt.setdefault('barra_masculina', barra_default('M', wkt['unidade']))
+        wkt.setdefault('barra_feminina',  barra_default('F', wkt['unidade']))
+
+    tmpl = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + SCORE_BOX_MACRO
+                    + FOR_LOAD_TABLE_MACRO + PAGE_TMPL_STR,
                     autoescape=True)
     return tmpl.render(ev=ev, wkt=wkt,
                        logo_src=logo_src, logo_evento_src=logo_evento_src,
