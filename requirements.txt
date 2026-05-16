@@ -1,3 +1,8 @@
-jinja2>=3.1.0
-openpyxl>=3.1.0
-anthropic>=0.20.0
+# Pinado em range compatível (~= = mesma major, minor compatível).
+# Permite security/bugfix updates automáticos, bloqueia breaking changes em
+# major releases — especialmente relevante pro anthropic SDK que muda shape
+# entre minors. Versões testadas: jinja2 3.1.6, openpyxl 3.1.5, anthropic 0.97.x.
+jinja2~=3.1
+openpyxl~=3.1
+anthropic~=0.97
+</content>

@@ -98,14 +98,29 @@ function fecharEventos() {
 function renderListaEventos() {
   const wrap = document.getElementById('listaEventos');
   if (!wrap) return;
-  const eventos = listarEventos();
-  if (!eventos.length) {
+  const ativos = listarEventos(false);
+  const arquivados = listarEventos(true).filter(e => e.archived);
+  if (!ativos.length && !arquivados.length) {
     wrap.innerHTML = '<p class="cfg-hint" style="font-style:italic">Nenhum evento salvo ainda.</p>';
     return;
   }
-  wrap.innerHTML = eventos.map(e => {
+  const renderItem = (e) => {
     const data = e.atualizadoEm ? new Date(e.atualizadoEm).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—';
     const ativoTag = e.ativo ? '<span class="evt-tag-ativo">ativo</span>' : '';
+    if (e.archived) {
+      return `
+        <div class="evt-item evt-item-archived">
+          <div class="evt-info">
+            <div class="evt-nome">${esc(e.nome)}</div>
+            <div class="evt-meta">${e.totalDias} dia(s) · ${e.totalCategorias} categoria(s) · arquivado em ${esc(data)}</div>
+          </div>
+          <div class="evt-actions">
+            <button class="btn-mov" onclick="restaurarEvento('${e.id}')" title="Restaurar">↩</button>
+            <button class="btn-mov" onclick="excluirDefinitivamente('${e.id}')" title="Excluir definitivamente">✕</button>
+          </div>
+        </div>
+      `;
+    }
     return `
       <div class="evt-item ${e.ativo ? 'evt-item-ativo' : ''}">
         <div class="evt-info">
@@ -116,11 +131,23 @@ function renderListaEventos() {
           ${e.ativo ? '' : `<button class="btn-mov" onclick="trocarEvento('${e.id}')" title="Abrir esse evento">Abrir</button>`}
           <button class="btn-mov" onclick="duplicarEvento('${e.id}')" title="Duplicar">⎘</button>
           <button class="btn-mov" onclick="renomearEvento('${e.id}')" title="Renomear">✎</button>
-          <button class="btn-mov" onclick="arquivarEvento('${e.id}')" title="Arquivar (apagar do navegador)">🗑</button>
+          <button class="btn-mov" onclick="arquivarEvento('${e.id}')" title="Arquivar (pode restaurar depois)">🗑</button>
         </div>
       </div>
     `;
-  }).join('');
+  };
+  const ativosHtml = ativos.length
+    ? ativos.map(renderItem).join('')
+    : '<p class="cfg-hint" style="font-style:italic">Nenhum evento ativo.</p>';
+  const arqToggle = arquivados.length
+    ? `<button class="btn-mov" style="width:100%;margin-top:12px" onclick="toggleArquivados()">
+         ${_mostrarArquivados ? '▼' : '▶'} Arquivados (${arquivados.length})
+       </button>`
+    : '';
+  const arqHtml = (_mostrarArquivados && arquivados.length)
+    ? `<div style="margin-top:8px">${arquivados.map(renderItem).join('')}</div>`
+    : '';
+  wrap.innerHTML = ativosHtml + arqToggle + arqHtml;
 }
 
 function cfgTab(tab) {
@@ -1042,9 +1069,9 @@ function salvarWorkout() {
     wkt.unidade = document.getElementById('edFlUnidade').value || 'kg';
     wkt.barra_masculina = parseFloat(document.getElementById('edFlBarraM').value) || 20;
     wkt.barra_feminina  = parseFloat(document.getElementById('edFlBarraF').value) || 15;
-    wkt.anilhas = document.getElementById('edFlAnilhas').value
-      .split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0)
-      .sort((a, b) => b - a);   // grande → pequeno
+    const anilhasInp = document.getElementById('edFlAnilhas').value
+      .split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0);
+    wkt.anilhas = [...new Set(anilhasInp)].sort((a, b) => b - a);   // dedup + grande → pequeno
     if (!wkt.anilhas.length) wkt.anilhas = _anilhasDefault(wkt.unidade);
     wkt.movimentos = [];
     wkt.time_cap = '';
@@ -1574,7 +1601,10 @@ function _carregarMultiState() {
 
 function _gerarIdEvento(nome) {
   const slug = (nome || 'evento').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'evento';
-  return `${slug}-${Date.now().toString(36)}`;
+  // Sufixo: timestamp + 4 chars aleatórios pra evitar colisão em chamadas
+  // muito rápidas (raras em uso humano mas possíveis em scripts/migração)
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `${slug}-${Date.now().toString(36)}-${rand}`;
 }
 
 function setSaveIndicator(state) {
@@ -1667,17 +1697,23 @@ function clearState() {
 }
 
 // ─── API pública multi-evento ───────────────────────────────────────────────
-function listarEventos() {
+// Lista eventos: por default só ativos (flag archived !== true). Passa
+// `incluirArquivados=true` pra ver arquivados também.
+function listarEventos(incluirArquivados = false) {
   const m = _carregarMultiState();
   if (!m) return [];
-  return Object.entries(m.events).map(([id, ev]) => ({
-    id,
-    nome: ev.nome || ev.config?.evento?.nome || 'Sem nome',
-    totalDias: (ev.config?.dias || []).length,
-    totalCategorias: (ev.config?.dias || []).reduce((s, d) => s + (d.categorias || []).length, 0),
-    atualizadoEm: ev.atualizadoEm,
-    ativo: id === m.activeId,
-  })).sort((a, b) => (b.atualizadoEm || '').localeCompare(a.atualizadoEm || ''));
+  return Object.entries(m.events)
+    .filter(([_, ev]) => incluirArquivados || !ev.archived)
+    .map(([id, ev]) => ({
+      id,
+      nome: ev.nome || ev.config?.evento?.nome || 'Sem nome',
+      totalDias: (ev.config?.dias || []).length,
+      totalCategorias: (ev.config?.dias || []).reduce((s, d) => s + (d.categorias || []).length, 0),
+      atualizadoEm: ev.atualizadoEm,
+      ativo: id === m.activeId,
+      archived: !!ev.archived,
+    }))
+    .sort((a, b) => (b.atualizadoEm || '').localeCompare(a.atualizadoEm || ''));
 }
 
 function trocarEvento(id) {
@@ -1761,12 +1797,19 @@ function renomearEvento(id) {
   if (novoNome === null) return;
   const nomeFinal = (novoNome || '').trim();
   if (!nomeFinal) { toast('Nome obrigatório', 'err'); return; }
-  m.events[id].nome = nomeFinal;
-  m.events[id].config.evento.nome = nomeFinal;
-  m.events[id].atualizadoEm = new Date().toISOString();
+  // Recria ID pra que o slug acompanhe o nome novo (afeta export JSON e
+  // futuras URLs de compartilhamento). Move o evento sob chave nova,
+  // remove antiga, ajusta activeId/eventoAtivoId se necessário.
+  const novoId = _gerarIdEvento(nomeFinal);
+  m.events[novoId] = m.events[id];
+  m.events[novoId].nome = nomeFinal;
+  m.events[novoId].config.evento.nome = nomeFinal;
+  m.events[novoId].atualizadoEm = new Date().toISOString();
+  delete m.events[id];
+  if (m.activeId === id) m.activeId = novoId;
+  if (eventoAtivoId === id) eventoAtivoId = novoId;
   if (!_salvarMultiState(m, 'renomear')) return;
-  // Se for o evento ativo, atualiza UI
-  if (id === eventoAtivoId) {
+  if (eventoAtivoId === novoId) {
     config.evento.nome = nomeFinal;
     document.getElementById('evNome').value = nomeFinal;
     renderEventoDisplay();
@@ -1778,9 +1821,13 @@ function renomearEvento(id) {
 function arquivarEvento(id) {
   const m = _carregarMultiState();
   if (!m || !m.events[id]) return;
-  if (!confirm(`Arquivar "${m.events[id].nome}"?\nEle será removido do navegador. Esta ação não pode ser desfeita.`)) return;
-  delete m.events[id];
-  if (m.activeId === id) m.activeId = Object.keys(m.events)[0] || null;
+  if (!confirm(`Arquivar "${m.events[id].nome}"?\nPode restaurar depois em "Ver arquivados".`)) return;
+  m.events[id].archived = true;
+  // Se arquivou o ativo, escolhe outro ativo entre os não-arquivados
+  if (m.activeId === id) {
+    const restantes = Object.entries(m.events).filter(([_, ev]) => !ev.archived);
+    m.activeId = restantes.length ? restantes[0][0] : null;
+  }
   if (!_salvarMultiState(m, 'arquivar')) return;
   // Se arquivou o ativo, troca pra outro (ou limpa)
   if (id === eventoAtivoId) {
@@ -1794,6 +1841,34 @@ function arquivarEvento(id) {
   }
   renderListaEventos();
   toast('Evento arquivado', 'ok');
+}
+
+function restaurarEvento(id) {
+  const m = _carregarMultiState();
+  if (!m || !m.events[id]) return;
+  m.events[id].archived = false;
+  m.events[id].atualizadoEm = new Date().toISOString();
+  if (!_salvarMultiState(m, 'restaurar')) return;
+  renderListaEventos();
+  toast('Evento restaurado', 'ok');
+}
+
+function excluirDefinitivamente(id) {
+  const m = _carregarMultiState();
+  if (!m || !m.events[id]) return;
+  if (!confirm(`Excluir DEFINITIVAMENTE "${m.events[id].nome}"?\nEsta ação não pode ser desfeita.`)) return;
+  delete m.events[id];
+  if (m.activeId === id) m.activeId = null;
+  if (!_salvarMultiState(m, 'excluir')) return;
+  renderListaEventos();
+  toast('Evento excluído', 'ok');
+}
+
+// Estado da UI: mostrar arquivados na listagem?
+let _mostrarArquivados = false;
+function toggleArquivados() {
+  _mostrarArquivados = !_mostrarArquivados;
+  renderListaEventos();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1851,4 +1926,14 @@ function toast(msg, type = 'ok') {
   updateClearAllVisibility();
   atualizarBotaoGerar();
   updateEmptyState();
+
+  // Sincronização entre abas do mesmo navegador: se outra aba mudar o
+  // localStorage (criar/trocar/arquivar evento), avisa pra recarregar pra
+  // evitar conflito (cada aba tem `eventoAtivoId` próprio em memória, e
+  // _persistNow sobrescreveria o mapa inteiro).
+  window.addEventListener('storage', (e) => {
+    if (e.key !== MULTI_STATE_KEY) return;
+    toast('Outra aba alterou o estado. Recarregando…', 'warn');
+    setTimeout(() => location.reload(), 1500);
+  });
 })();

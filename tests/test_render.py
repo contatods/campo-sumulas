@@ -1,5 +1,5 @@
 """Render de súmulas: HTML único e HTML combinado por workout."""
-from campo_generator import render_workout, render_workout_combined
+from campo_generator import render_workout, render_workout_combined, render_for_load_team_summary
 
 
 def test_render_workout_for_time_emite_doc_completo(evento_basico, workout_for_time, fonts_empty):
@@ -88,6 +88,25 @@ def test_render_for_load_libras(fonts_empty):
     assert "45 lb" in html
     # Anilha default lb inclui 55
     assert ">55<" in html or "55" in html
+
+
+def test_render_for_load_team_summary_lista_atletas_e_soma(fonts_empty):
+    """Resumo de time For Load: lista cada atleta com campo de melhor carga + soma."""
+    ev = {"nome": "EVT", "categoria": "Dupla Misto", "data": "2026", "unidade_default": "kg"}
+    wkt = {"numero": 1, "nome": "MAX CLEAN", "tipo": "for_load",
+           "modalidade": "dupla", "tentativas": 3, "unidade": "kg"}
+    atletas = [
+        {"nome": "João Silva", "box": "CF ALFA", "numero": "401", "raia": "1", "bateria": "1"},
+        {"nome": "Maria Souza", "box": "CF DELTA", "numero": "402", "raia": "1", "bateria": "1"},
+    ]
+    html = render_for_load_team_summary(ev, wkt, fonts_empty, "", "", atletas)
+    # Tem todos os atletas pelo nome
+    for a in atletas:
+        assert a["nome"].upper() in html
+    # Tem o campo "Soma do Time"
+    assert "Soma do Time" in html or "SOMA DO TIME" in html.upper()
+    # Header tem "Resumo do Time"
+    assert "RESUMO DO TIME" in html.upper()
 
 
 def test_render_escapa_html_de_input_do_usuario(fonts_empty):

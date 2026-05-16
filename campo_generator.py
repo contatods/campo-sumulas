@@ -643,7 +643,9 @@ body{
 .fl-zone-meta{font-size:9pt;font-weight:400;color:#CCC}
 .fl-row{display:flex;align-items:stretch;border-top:1px solid var(--rule);
   min-height:11mm;background:var(--w)}
-.fl-row:nth-child(odd of .fl-row){background:var(--paper)}
+/* Zebra striping — classe manual em vez de :nth-child(odd of ...) (sintaxe
+   moderna sem suporte universal). Aplicada pelo template em índice par. */
+.fl-row-alt{background:var(--paper)}
 .fl-row-hdr{width:9mm;display:flex;align-items:center;justify-content:center;
   font-weight:900;font-size:11pt;color:var(--ink);background:var(--dk);color:var(--w);
   border-right:1px solid var(--rule)}
@@ -676,6 +678,18 @@ body{
 .fl-melhor-line{flex:1;min-height:6mm;background:var(--w);
   border-bottom:1.5px solid var(--w)}
 .fl-melhor-unidade{font-size:9pt;font-weight:700}
+.fl-team-atleta{display:flex;align-items:center;border-top:1px solid var(--rule);
+  padding:3mm;gap:4mm;background:var(--w)}
+.fl-team-info{flex:1;display:flex;align-items:center;gap:3mm;min-width:0}
+.fl-team-num{font-weight:900;font-size:11pt;color:var(--ghost);min-width:14mm}
+.fl-team-nome{font-weight:700;font-size:10pt;color:var(--ink);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.fl-team-box{font-size:8pt;color:var(--mid);font-style:italic}
+.fl-team-carga{display:flex;align-items:center;gap:2mm;flex-shrink:0;min-width:55mm}
+.fl-team-carga-lbl{font-size:8pt;font-weight:700;color:var(--ghost);text-transform:uppercase}
+.fl-team-carga-line{flex:1;min-height:6mm;border-bottom:1.5px solid var(--ink);
+  background:var(--field);min-width:30mm}
+.fl-team-unidade{font-size:9pt;font-weight:700;color:var(--ink)}
 
 @media print{
   body{margin:0}
@@ -881,10 +895,87 @@ SCORE_BOX_MACRO = r"""
 """
 
 
+FOR_LOAD_TEAM_SUMMARY_TMPL = r"""<div class="page">
+
+<div class="a4-marker"></div>
+
+{# ── HEADER ── #}
+<div class="hdr">
+  <div class="hdr-logo-col">
+    {% if logo_src %}<img class="hdr-logo" src="{{ logo_src }}">{% endif %}
+  </div>
+  <div class="hdr-body">
+    <div class="hdr-event">{{ ev.nome|upper }}</div>
+    {% if ev.categoria %}<div class="hdr-cat">{{ ev.categoria|upper }} · RESUMO DO TIME</div>{% endif %}
+  </div>
+  <div class="hdr-evento-col">
+    {% if logo_evento_src %}<img class="hdr-evento-logo" src="{{ logo_evento_src }}">{% endif %}
+    {% if ev.data %}<div class="hdr-evento-date">{{ ev.data }}</div>{% endif %}
+  </div>
+</div>
+
+{# ── HEADER WORKOUT ── #}
+<div class="wkt-zone">
+  <div class="wkt-badge">{{ wkt.numero }}</div>
+  <div class="wkt-body">
+    <div class="wkt-name">{{ wkt.nome }} · Soma do Time</div>
+    <span class="wkt-type">For Load</span>
+  </div>
+</div>
+
+{# ── ATLETAS DO TIME ── #}
+<div class="fl-zone">
+  <div class="fl-zone-hdr">
+    <span class="fl-zone-t">Melhor carga por atleta</span>
+    <span class="fl-zone-meta">{{ atletas|length }} atleta{% if atletas|length != 1 %}s{% endif %} · unidade {{ unidade }}</span>
+  </div>
+  {% for a in atletas %}
+  <div class="fl-team-atleta">
+    <div class="fl-team-info">
+      <span class="fl-team-num">#{{ a.numero }}</span>
+      <span class="fl-team-nome">{{ a.nome|upper }}</span>
+      {% if a.box %}<span class="fl-team-box">{{ a.box }}</span>{% endif %}
+    </div>
+    <div class="fl-team-carga">
+      <span class="fl-team-carga-lbl">Melhor</span>
+      <div class="fl-team-carga-line"></div>
+      <span class="fl-team-unidade">{{ unidade }}</span>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="fl-melhor">
+    <span class="fl-melhor-lbl">Soma do Time</span>
+    <div class="fl-melhor-line"></div>
+    <span class="fl-melhor-unidade">{{ unidade }}</span>
+  </div>
+</div>
+
+{# ── ASSINATURAS ── #}
+<div class="sign-zone">
+  <div class="sign-cell sign-wide"><div class="fl">Assinatura do Capitão</div><div class="fline"></div></div>
+  <div class="sign-cell sign-narrow"><div class="fl">Assinatura do Árbitro / Juiz</div><div class="fline"></div></div>
+</div>
+<div class="no-rasure">Não rasure a súmula — Qualquer correção deve ser registrada no campo de observações</div>
+
+<div class="page-footer">
+  <div class="obs-box">
+    <div class="obs-lbl">Observações</div>
+    <div class="obs-lines">
+      <div class="obs-line"></div><div class="obs-line"></div>
+      <div class="obs-line"></div>
+    </div>
+  </div>
+  <div class="ds-credit">Gerada pelo sistema Digital Score · Todos os direitos reservados à Digital Score · Reprodução proibida sem autorização</div>
+</div>
+
+</div>
+"""
+
+
 FOR_LOAD_TABLE_MACRO = r"""
 {# Macro de tentativa única: régua esq + barra desenhada + régua dir + carga + ✓/✗ #}
 {% macro for_load_tentativa(idx, anilhas_ordem_grande_pequeno, barra_peso, unidade) %}
-<div class="fl-row">
+<div class="fl-row {% if idx is even %}fl-row-alt{% endif %}">
   <div class="fl-row-hdr">T{{ idx }}</div>
   {# Anilhas esq: maior colada na barra (interno) → mais leve na ponta (externo).
      Lemos visualmente da extremidade pra barra: pequenas→grandes. #}
@@ -1135,6 +1226,23 @@ def render_workout(ev, wkt, fonts, logo_src, logo_evento="", atleta=None):
     """Renderiza uma súmula HTML completa (1 página) para um workout."""
     logo_evt_src = logo_evento or ""
     page = _render_page(ev, wkt, logo_src, logo_evt_src, atleta)
+    doc = Template(DOC_TMPL_STR, autoescape=True)
+    return doc.render(wkt=wkt, fonts=fonts, css=CSS, pages=[page])
+
+
+def render_for_load_team_summary(ev, wkt, fonts, logo_src, logo_evento, atletas):
+    """Renderiza HTML de uma página com 'Resumo do Time' — usado pra somar
+    a melhor carga de cada atleta + total do time no fim do bloco.
+
+    Sai como página única (sem combined). Caller normalmente concatena com
+    as páginas individuais dos atletas no ZIP.
+    """
+    unidade = wkt.get('unidade') or ev.get('unidade_default') or 'kg'
+    page_tmpl = Template(FOR_LOAD_TEAM_SUMMARY_TMPL, autoescape=True)
+    page = page_tmpl.render(
+        ev=ev, wkt=wkt, atletas=atletas, unidade=unidade,
+        logo_src=logo_src, logo_evento_src=logo_evento or '',
+    )
     doc = Template(DOC_TMPL_STR, autoescape=True)
     return doc.render(wkt=wkt, fonts=fonts, css=CSS, pages=[page])
 

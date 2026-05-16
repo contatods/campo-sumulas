@@ -578,6 +578,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .evt-item{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);
   border-radius:var(--radius);margin-bottom:6px;background:var(--surface2)}
 .evt-item-ativo{border-color:var(--orange-edge);background:var(--orange-dim)}
+.evt-item-archived{opacity:.65;background:transparent}
+.evt-item-archived .evt-nome{font-style:italic;text-decoration:line-through}
 .evt-info{flex:1;min-width:0}
 .evt-nome{font-size:13px;font-weight:600;color:var(--text1);margin-bottom:3px;display:flex;align-items:center;gap:8px}
 .evt-meta{font-size:10.5px;color:var(--text3)}

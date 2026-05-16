@@ -10,7 +10,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from campo_generator import render_workout, render_workout_combined, load_fonts, img_b64, sanitize
+from campo_generator import render_workout, render_workout_combined, render_for_load_team_summary, load_fonts, img_b64, sanitize
 
 PORT = int(os.environ.get('PORT', 8765))
 # Render sempre define PORT via env — usa isso para detectar ambiente cloud
@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.11.1'
+VERSION = '1.12.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -40,6 +40,9 @@ CHAT_RATE_LIMIT_MAX = 30        # chamadas
 CHAT_RATE_LIMIT_WINDOW_S = 60   # janela em segundos
 _chat_calls: list[float] = []
 _chat_calls_lock = threading.Lock()
+
+# Timestamp de startup pra calcular uptime no /api/status
+_STARTUP_TS = time.time()
 
 
 def _chat_rate_limit_ok() -> tuple[bool, int]:
@@ -233,7 +236,10 @@ class SumulaHandler(BaseHTTPRequestHandler):
             payload = json.dumps({
                 "ai_ativo":    AI_ATIVO,
                 "ai_provider": "Anthropic Claude Haiku" if AI_ATIVO else None,
-                "versao":      VERSION
+                "versao":      VERSION,
+                "uptime_s":    int(time.time() - _STARTUP_TS),
+                "python":      sys.version.split()[0],
+                "ambiente":    "cloud" if IS_CLOUD else "local",
             })
             self._send(200, 'application/json; charset=utf-8', payload.encode())
         else:
@@ -439,6 +445,20 @@ class SumulaHandler(BaseHTTPRequestHandler):
                         else:
                             html = render_workout(ev_local, wkt, FONTS, logo, logo_evt)
                         zf.writestr(caminho, html.encode('utf-8'))
+
+                        # For Load em time/dupla: adiciona página de resumo
+                        # com soma da melhor carga de cada atleta + total. O
+                        # árbitro consolida ali em vez de fazer conta no caderno.
+                        if (wkt.get('tipo') == 'for_load'
+                            and wkt.get('modalidade') in ('dupla', 'time')
+                            and incluir_competidores
+                            and len(atletas) >= 2):
+                            resumo_html = render_for_load_team_summary(
+                                ev_local, wkt, FONTS, logo, logo_evt, atletas
+                            )
+                            resumo_arq = f"{wkt_pos:02d}_{sanitize(wkt.get('nome', 'wkt'))}_resumo.html"
+                            zf.writestr(f"{dia_pasta}/{cat_pasta}/{resumo_arq}",
+                                        resumo_html.encode('utf-8'))
 
         nome_zip = sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas'
         self._send(200, 'application/zip', buf.getvalue(),
