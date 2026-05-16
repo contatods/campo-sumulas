@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.12.0'
+VERSION = '1.13.1'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -445,20 +445,11 @@ class SumulaHandler(BaseHTTPRequestHandler):
                         else:
                             html = render_workout(ev_local, wkt, FONTS, logo, logo_evt)
                         zf.writestr(caminho, html.encode('utf-8'))
-
-                        # For Load em time/dupla: adiciona página de resumo
-                        # com soma da melhor carga de cada atleta + total. O
-                        # árbitro consolida ali em vez de fazer conta no caderno.
-                        if (wkt.get('tipo') == 'for_load'
-                            and wkt.get('modalidade') in ('dupla', 'time')
-                            and incluir_competidores
-                            and len(atletas) >= 2):
-                            resumo_html = render_for_load_team_summary(
-                                ev_local, wkt, FONTS, logo, logo_evt, atletas
-                            )
-                            resumo_arq = f"{wkt_pos:02d}_{sanitize(wkt.get('nome', 'wkt'))}_resumo.html"
-                            zf.writestr(f"{dia_pasta}/{cat_pasta}/{resumo_arq}",
-                                        resumo_html.encode('utf-8'))
+                        # 'render_for_load_team_summary' fica disponível mas
+                        # não é auto-acionado: no modelo atual dupla/time = 1
+                        # entrada no Excel (cada alocação já É o time inteiro).
+                        # Se um dia houver agrupamento por time_id de atletas
+                        # individuais, esta é a hora de chamar o resumo.
 
         nome_zip = sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas'
         self._send(200, 'application/zip', buf.getvalue(),

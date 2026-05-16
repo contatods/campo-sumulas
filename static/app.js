@@ -102,10 +102,18 @@ function ajudaTab(t) {
 }
 
 // Reset completo: apaga TUDO do localStorage (todos eventos, prefs, cache).
-// Pede confirmação dupla pra evitar disparo acidental.
+// Pede confirmação dupla com contagem real do que vai ser apagado.
 function resetCompleto() {
-  if (!confirm('⚠ Apagar TODOS os eventos salvos no navegador, prefs e cache.\n\nTem certeza?')) return;
-  if (!confirm('Última confirmação. Vai apagar TUDO — eventos ativos e arquivados. Sem volta. Continuar?')) return;
+  const todos      = listarEventos(true);
+  const ativos     = todos.filter(e => !e.archived).length;
+  const arquivados = todos.filter(e => e.archived).length;
+  const msg = `⚠ Vai apagar do navegador:\n\n` +
+              `• ${ativos} evento(s) ativo(s)\n` +
+              `• ${arquivados} evento(s) arquivado(s)\n` +
+              `• Todas as preferências\n\n` +
+              `Tem certeza?`;
+  if (!confirm(msg)) return;
+  if (!confirm('Última confirmação. Sem volta. Continuar?')) return;
   try {
     localStorage.clear();
   } catch (e) {
@@ -184,7 +192,10 @@ function renderListaEventos() {
 }
 
 function cfgTab(tab) {
-  document.querySelectorAll('.cfg-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  // Escopa em #configModal pra não afetar tabs do modal de Ajuda (que também
+  // usam .cfg-tab mas com data-ajuda-tab em vez de data-tab).
+  document.querySelectorAll('#configModal .cfg-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
   ['evento','dias','importar'].forEach(t => {
     const pane = document.getElementById('cfgPane' + t.charAt(0).toUpperCase() + t.slice(1));
     if (pane) pane.style.display = (t === tab) ? '' : 'none';
@@ -1968,5 +1979,20 @@ function toast(msg, type = 'ok') {
     if (e.key !== MULTI_STATE_KEY) return;
     toast('Outra aba alterou o estado. Recarregando…', 'warn');
     setTimeout(() => location.reload(), 1500);
+  });
+
+  // Esc fecha o modal mais "em cima" (último aberto vence). Ordem reflete
+  // hierarquia visual: Ajuda > Eventos > Configurar > Validação > Chat.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const aberto = (id) => {
+      const el = document.getElementById(id);
+      return el && el.style.display && el.style.display !== 'none';
+    };
+    if (aberto('ajudaModal'))   { fecharAjuda();    return; }
+    if (aberto('eventosModal')) { fecharEventos();  return; }
+    if (aberto('configModal'))  { fecharConfig();   return; }
+    if (aberto('validModal'))   { fecharValidacao(); return; }
+    if (aberto('chatPanel'))    { toggleChat();     return; }
   });
 })();
