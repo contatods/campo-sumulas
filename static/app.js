@@ -114,14 +114,26 @@ function resetCompleto() {
               `Tem certeza?`;
   if (!confirm(msg)) return;
   if (!confirm('Última confirmação. Sem volta. Continuar?')) return;
-  try {
-    localStorage.clear();
-  } catch (e) {
-    toast('Erro ao limpar: ' + e.message, 'err');
-    return;
-  }
-  toast('Limpeza completa. Recarregando…', 'ok');
-  setTimeout(() => location.reload(), 1200);
+  // Overlay enquanto roda + recarrega. Previne usuário clicar em outra
+  // coisa e ver tela meio quebrada (sem state) antes do reload.
+  const overlay = document.createElement('div');
+  overlay.className = 'reset-overlay';
+  overlay.innerHTML = '<div class="reset-overlay-inner">' +
+    '<div class="reset-spinner">⏳</div>' +
+    '<div class="reset-msg">Limpando estado do navegador…</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  // Delay mínimo pro browser pintar o overlay antes do trabalho síncrono
+  setTimeout(() => {
+    try {
+      localStorage.clear();
+    } catch (e) {
+      overlay.remove();
+      toast('Erro ao limpar: ' + e.message, 'err');
+      return;
+    }
+    location.reload();
+  }, 80);
 }
 
 // ─── Modal de eventos (multi-evento) ─────────────────────────────────────────
