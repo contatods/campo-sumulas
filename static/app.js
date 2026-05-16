@@ -83,6 +83,39 @@ function fecharConfig() {
   document.getElementById('configModal').style.display = 'none';
 }
 
+// ─── Modal de ajuda / manual ────────────────────────────────────────────────
+function abrirAjuda() {
+  document.getElementById('ajudaModal').style.display = 'block';
+  ajudaTab('visao');
+}
+function fecharAjuda() {
+  document.getElementById('ajudaModal').style.display = 'none';
+}
+function ajudaTab(t) {
+  document.querySelectorAll('[data-ajuda-tab]').forEach(b => {
+    b.classList.toggle('active', b.dataset.ajudaTab === t);
+  });
+  ['visao','importar','editar','gerar','eventos','backup','reset'].forEach(name => {
+    const pane = document.getElementById('ajudaPane' + name.charAt(0).toUpperCase() + name.slice(1));
+    if (pane) pane.style.display = (name === t) ? '' : 'none';
+  });
+}
+
+// Reset completo: apaga TUDO do localStorage (todos eventos, prefs, cache).
+// Pede confirmação dupla pra evitar disparo acidental.
+function resetCompleto() {
+  if (!confirm('⚠ Apagar TODOS os eventos salvos no navegador, prefs e cache.\n\nTem certeza?')) return;
+  if (!confirm('Última confirmação. Vai apagar TUDO — eventos ativos e arquivados. Sem volta. Continuar?')) return;
+  try {
+    localStorage.clear();
+  } catch (e) {
+    toast('Erro ao limpar: ' + e.message, 'err');
+    return;
+  }
+  toast('Limpeza completa. Recarregando…', 'ok');
+  setTimeout(() => location.reload(), 1200);
+}
+
 // ─── Modal de eventos (multi-evento) ─────────────────────────────────────────
 function abrirEventos() {
   // Garante que evento atual está salvo antes de listar

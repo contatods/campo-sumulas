@@ -580,6 +580,29 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .evt-item-ativo{border-color:var(--orange-edge);background:var(--orange-dim)}
 .evt-item-archived{opacity:.65;background:transparent}
 .evt-item-archived .evt-nome{font-style:italic;text-decoration:line-through}
+
+/* Modal de Ajuda — painel mais largo pra acomodar texto longo */
+.cfg-panel-wide{max-width:760px}
+.ajuda-pane h3{font-size:13px;font-weight:700;color:var(--text1);
+  margin:18px 0 8px;letter-spacing:.02em}
+.ajuda-pane h3:first-child{margin-top:4px}
+.ajuda-pane p{font-size:12px;line-height:1.65;color:var(--text2);margin:0 0 10px}
+.ajuda-pane ul,.ajuda-pane ol{font-size:12px;line-height:1.7;color:var(--text2);
+  padding-left:22px;margin:0 0 10px}
+.ajuda-pane li{margin-bottom:3px}
+.ajuda-pane code{background:var(--surface2);padding:1px 6px;border-radius:3px;
+  font-size:11px;color:var(--orange);font-family:ui-monospace,Menlo,monospace}
+.ajuda-pane strong{color:var(--text1);font-weight:700}
+.ajuda-pane pre{background:var(--surface2);padding:10px;border-radius:var(--radius);
+  font-size:11px;color:var(--text2);font-family:ui-monospace,Menlo,monospace;
+  margin:8px 0;overflow-x:auto;border:1px solid var(--border)}
+.ajuda-pane pre code{background:transparent;padding:0;color:var(--text2)}
+.ajuda-tab-table{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+.ajuda-tab-table th,.ajuda-tab-table td{text-align:left;padding:6px 10px;
+  border-bottom:1px solid var(--border);vertical-align:top}
+.ajuda-tab-table th{font-weight:700;color:var(--text1);font-size:11px;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--text3)}
+.ajuda-tab-table td:first-child{font-weight:600;color:var(--text1);width:35%}
 .evt-info{flex:1;min-width:0}
 .evt-nome{font-size:13px;font-weight:600;color:var(--text1);margin-bottom:3px;display:flex;align-items:center;gap:8px}
 .evt-meta{font-size:10.5px;color:var(--text3)}

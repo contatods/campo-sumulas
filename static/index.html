@@ -17,6 +17,7 @@
   <button class="hdr-add-dia" id="hdrAddDia" onclick="adicionarDia()" title="Adicionar dia">+</button>
   <div class="hdr-right">
     <span class="hdr-save" id="saveIndicator" title="Tudo é salvo automaticamente no navegador"></span>
+    <button class="hdr-cfg" onclick="abrirAjuda()" title="Como usar o sistema"><span>?</span> Ajuda</button>
     <button class="hdr-cfg" onclick="abrirEventos()" title="Trocar entre eventos salvos"><span>📂</span> Eventos</button>
     <button class="hdr-cfg" onclick="abrirConfig()" title="Configurações"><span>⚙</span> Configurar</button>
     <span class="hdr-version">v{{VERSION}}</span>
@@ -399,6 +400,163 @@
 
       <p class="cfg-hint">Apaga tudo e começa do zero:</p>
       <button class="btn-clear-all" style="background:#3A1A1A;color:#C66;border:1px solid #4A2A2A;border-radius:var(--radius);padding:8px;width:100%" onclick="limparTudoModal()">Apagar evento</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Ajuda / Manual do sistema -->
+<div id="ajudaModal" class="cfg-modal" style="display:none">
+  <div class="cfg-overlay" onclick="fecharAjuda()"></div>
+  <div class="cfg-panel cfg-panel-wide">
+    <div class="cfg-header">
+      <span class="cfg-title">Manual do sistema</span>
+      <button class="ed-close" onclick="fecharAjuda()" title="Fechar">×</button>
+    </div>
+    <div class="cfg-tabs">
+      <button class="cfg-tab active" data-ajuda-tab="visao" onclick="ajudaTab('visao')">Visão geral</button>
+      <button class="cfg-tab" data-ajuda-tab="importar" onclick="ajudaTab('importar')">Importar Excel</button>
+      <button class="cfg-tab" data-ajuda-tab="editar" onclick="ajudaTab('editar')">Editar workouts</button>
+      <button class="cfg-tab" data-ajuda-tab="gerar" onclick="ajudaTab('gerar')">Gerar súmulas</button>
+      <button class="cfg-tab" data-ajuda-tab="eventos" onclick="ajudaTab('eventos')">Eventos salvos</button>
+      <button class="cfg-tab" data-ajuda-tab="backup" onclick="ajudaTab('backup')">Backup</button>
+      <button class="cfg-tab" data-ajuda-tab="reset" onclick="ajudaTab('reset')">Reset</button>
+    </div>
+
+    <div class="cfg-pane ajuda-pane" id="ajudaPaneVisao">
+      <h3>O que esse sistema faz</h3>
+      <p>Gera súmulas impressas para eventos de CrossFit. Cada workout vira uma folha A4 (ou um lote de folhas, uma por atleta) pronta pra Ctrl+P → PDF.</p>
+      <h3>Fluxo típico</h3>
+      <ol>
+        <li><strong>Configurar</strong> nome do evento, datas e logos (botão <code>⚙ Configurar</code>).</li>
+        <li><strong>Importar Excel</strong> do organizador com workouts, cronograma e atletas. O sistema reconhece 4 formatos automaticamente.</li>
+        <li><strong>Revisar</strong> dias, categorias e workouts no editor. Ajustar se necessário (mover entre dias, editar movimentos, etc).</li>
+        <li><strong>Gerar súmulas</strong> — baixa um ZIP com pastas Dia/Categoria/Workout em HTML.</li>
+        <li><strong>Imprimir</strong>: abre o HTML no browser e Ctrl+P → salvar como PDF ou imprimir.</li>
+      </ol>
+      <h3>Tudo é salvo automaticamente</h3>
+      <p>O canto superior direito mostra <code>✓ salvo HH:MM</code> sempre que o estado é gravado no navegador. Se der F5 ou fechar a aba, ao voltar tá tudo lá. Não precisa de botão "salvar".</p>
+      <p class="cfg-hint">Quer um backup externo? Veja a aba <strong>Backup</strong>.</p>
+    </div>
+
+    <div class="cfg-pane ajuda-pane" id="ajudaPaneImportar" style="display:none">
+      <h3>Formatos de Excel suportados</h3>
+      <p>O parser detecta o formato automaticamente. Em ordem de preferência:</p>
+      <table class="ajuda-tab-table">
+        <thead><tr><th>Formato</th><th>Quando usar</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Multi-dia</strong></td><td>Aba <code>Workouts</code> + abas <code>&lt;Dia&gt;</code> + <code>&lt;Dia&gt; - Montagem</code></td></tr>
+          <tr><td><strong>Grades por modalidade</strong></td><td>Abas <code>Individuais</code> / <code>Duplas</code> + abas <code>&lt;Dia&gt;</code> + <code>&lt;Dia&gt; - Montagem</code></td></tr>
+          <tr><td><strong>Categoria × workout</strong></td><td>1 aba só com grade (categorias nas colunas, workouts nas linhas)</td></tr>
+          <tr><td><strong>Template plano</strong></td><td>Abas <code>Evento</code> + <code>WKT 1</code>, <code>WKT 2</code>...</td></tr>
+        </tbody>
+      </table>
+      <h3>Aba <code>Inscritos</code> (opcional, recomendada)</h3>
+      <p>Define faixas de número por categoria (ex: Scaled Feminino = 901–999, Scaled Masculino = 1001–1099). Usada pra <strong>desambiguar atletas em baterias mistas</strong> — quando duas categorias correm juntas, o sistema separa quem é de qual usando o número.</p>
+      <h3>Aba <code>Atleta(s) - X</code></h3>
+      <p>Lista de atletas/duplas inscritas. Formato: <code>número | nome | box</code>, sem header. O sistema reconhece qualquer aba começando com "Atleta -" ou "Atletas -".</p>
+      <h3>Como importar</h3>
+      <ol>
+        <li>Botão <code>⚙ Configurar</code> → aba <strong>Importar</strong></li>
+        <li><code>📊 Importar Excel</code> → seleciona o arquivo</li>
+        <li>O sistema lê tudo e mostra resumo: N dias, N categorias, N atletas</li>
+        <li>Se aparecer aviso, abra console (F12) pra ver detalhes — geralmente é número de atleta fora de qualquer faixa</li>
+      </ol>
+    </div>
+
+    <div class="cfg-pane ajuda-pane" id="ajudaPaneEditar" style="display:none">
+      <h3>Estrutura</h3>
+      <p>Evento → Dias → Categorias → Workouts (+ baterias com atletas alocados).</p>
+      <h3>Navegação</h3>
+      <ul>
+        <li><strong>Dias</strong> aparecem como abas no header (só se tiver 2+)</li>
+        <li><strong>Categorias</strong> no seletor à esquerda (mostra 1 por vez, com "1/N")</li>
+        <li><strong>Workouts</strong> da categoria selecionada no painel principal</li>
+      </ul>
+      <h3>Tipos de workout</h3>
+      <ul>
+        <li><strong>For Time</strong> — atleta completa tudo o mais rápido possível, com time cap</li>
+        <li><strong>AMRAP</strong> — máximo de rounds em N minutos</li>
+        <li><strong>Express</strong> — 2 fórmulas encadeadas (AMRAP + For Time)</li>
+        <li><strong>For Load</strong> — N tentativas pra estabelecer carga máxima. Tem régua de anilhas marcáveis</li>
+      </ul>
+      <h3>Para criar/editar</h3>
+      <ol>
+        <li>Passe o mouse sobre o workout pra ver botões de ação</li>
+        <li><code>✎ Editar</code> abre o painel direito com todos os campos</li>
+        <li>Pode mover entre dias/categorias no próprio editor</li>
+        <li><strong>Notas adicionais</strong>: campo livre que aparece acima da tabela. Use pro "Time cap: 10 min" ou regras especiais</li>
+      </ol>
+      <h3>IA (quando ativa)</h3>
+      <p>Botão <code>💡</code> ao lado de Time Cap sugere um valor com base nos movimentos. Em AMRAP, n° de rounds é estimado automaticamente.</p>
+    </div>
+
+    <div class="cfg-pane ajuda-pane" id="ajudaPaneGerar" style="display:none">
+      <h3>Baixar súmulas</h3>
+      <p>No canto inferior esquerdo, o botão <code>⬇ Gerar súmulas</code> tem 4 escopos:</p>
+      <table class="ajuda-tab-table">
+        <tbody>
+          <tr><td><strong>Categoria selecionada</strong></td><td>(default) só a categoria do dropdown atual</td></tr>
+          <tr><td><strong>Dia atual</strong></td><td>todas as categorias do dia ativo</td></tr>
+          <tr><td><strong>Evento inteiro</strong></td><td>todos os dias e categorias</td></tr>
+          <tr><td><strong>Sem nomes</strong></td><td>súmulas em branco (sem atletas) — pra fotocópia</td></tr>
+        </tbody>
+      </table>
+      <h3>Estrutura do ZIP</h3>
+      <pre><code>Sábado/
+  Scaled_Masculino/
+    01_TWENTIES.html       ← todos os atletas dessa categoria/workout
+    02_DOWNHILL.html
+  Dupla_Misto/
+    01_MAX_CLEAN.html
+    01_MAX_CLEAN_resumo.html  ← For Load em time tem resumo extra</code></pre>
+      <h3>Imprimir</h3>
+      <p>Abra o HTML no browser → Ctrl+P (Cmd+P no Mac) → "Salvar como PDF" ou imprimir direto. Cada atleta vira uma folha A4 separada (page-break-after automático).</p>
+    </div>
+
+    <div class="cfg-pane ajuda-pane" id="ajudaPaneEventos" style="display:none">
+      <h3>Vários eventos ao mesmo tempo</h3>
+      <p>O botão <code>📂 Eventos</code> abre a lista de todos os eventos salvos no navegador. Você pode trabalhar em vários em paralelo sem perder dados.</p>
+      <h3>Ações por evento</h3>
+      <ul>
+        <li><strong>Abrir</strong> — troca pro evento clicado (o atual é salvo antes da troca)</li>
+        <li><strong>⎘ Duplicar</strong> — cria cópia com novo nome (útil pra ano seguinte)</li>
+        <li><strong>✎ Renomear</strong> — só muda o nome</li>
+        <li><strong>🗑 Arquivar</strong> — tira da lista principal mas não deleta (pode restaurar depois)</li>
+      </ul>
+      <h3>Arquivados</h3>
+      <p>No fim do modal aparece <code>▶ Arquivados (N)</code> se houver. Clique pra expandir. Cada arquivado tem 2 botões:</p>
+      <ul>
+        <li><strong>↩ Restaurar</strong> — volta pra lista de ativos</li>
+        <li><strong>✕ Excluir definitivamente</strong> — remove do navegador (sem volta)</li>
+      </ul>
+      <p class="cfg-hint">Eventos passados ficam aqui. Se for usar 1 vez por ano, arquivar é melhor que deletar.</p>
+    </div>
+
+    <div class="cfg-pane ajuda-pane" id="ajudaPaneBackup" style="display:none">
+      <h3>Por que fazer backup?</h3>
+      <p>Tudo fica salvo no navegador (<code>localStorage</code>). Se você limpar o cache, mudar de máquina, ou der pau no navegador, perde tudo. Backup em arquivo <code>.json</code> resolve isso.</p>
+      <h3>Exportar</h3>
+      <ol>
+        <li><code>⚙ Configurar</code> → aba <strong>Importar</strong> → <code>💾 Exportar JSON</code></li>
+        <li>Baixa um arquivo <code>nome-do-evento-data.json</code></li>
+        <li>Se os logos somarem mais de 500KB, o sistema pergunta se quer incluir (pode gerar sem pra ficar mais leve)</li>
+      </ol>
+      <h3>Importar</h3>
+      <ol>
+        <li>Mesma aba → <code>📂 Importar JSON</code></li>
+        <li>Seleciona o arquivo <code>.json</code> salvo</li>
+        <li>Sistema confirma se vai substituir o evento atual</li>
+      </ol>
+      <p class="cfg-hint">Funciona pra mover entre máquinas, fazer backup antes de mudanças grandes, ou compartilhar com outra pessoa.</p>
+    </div>
+
+    <div class="cfg-pane ajuda-pane" id="ajudaPaneReset" style="display:none">
+      <h3>Apagar evento atual</h3>
+      <p>Em <code>⚙ Configurar</code> → aba <strong>Importar</strong> → botão vermelho <strong>Apagar evento</strong>. Limpa só o evento ativo, mantém os outros eventos salvos.</p>
+      <h3>Reset completo</h3>
+      <p>Apaga <strong>todos os eventos salvos</strong>, preferências e cache do navegador. Use só se quiser começar 100% do zero ou se algo bugar e quiser limpar tudo.</p>
+      <p class="cfg-hint" style="color:#C66"><strong>Não tem volta.</strong> Se tiver eventos importantes, exporte JSON antes (aba Backup).</p>
+      <button class="btn-clear-all" style="background:#3A1A1A;color:#C66;border:1px solid #4A2A2A;border-radius:var(--radius);padding:10px;width:100%;font-weight:700" onclick="resetCompleto()">⚠ Apagar tudo do navegador</button>
     </div>
   </div>
 </div>
