@@ -25,6 +25,9 @@ class Movimento(TypedDict, total=False):
     label: str
     chegada: bool       # marca a linha de chegada/finish (For Time)
     separador: str      # marca um "then..." entre blocos
+    paralelo: bool      # executado simultaneamente com o próximo movimento
+                        # (ex: SkiErg ‖ Double-Unders no Simple Dimension)
+    reps_por_round: list[Union[int, str]]   # progressão de reps (ex: [10,12,14,16,'MAX'])
 
 
 class Formula(TypedDict, total=False):
@@ -50,11 +53,18 @@ class Workout(TypedDict, total=False):
     data: str
     n_rounds: int                 # calculado para AMRAP
     # For Load
-    tentativas: int               # nº de tentativas (default 3)
+    tentativas: int               # nº de tentativas (default 3) — POR ATLETA em team
     unidade: str                  # 'kg' | 'lb' (herda do evento)
     barra_masculina: float        # peso da barra M (default 20kg / 45lb)
     barra_feminina: float         # peso da barra F (default 15kg / 35lb)
     anilhas: list[float]          # pesos disponíveis (ordenados grande→pequeno)
+    n_atletas_time: int           # override do default de modalidade (3 trio, 4 quarteto)
+    # Relay / EMOM / Tiebreak
+    rounds_per_atleta: int        # For Time relay (N rounds = N atletas em sequência)
+    emom_janela: str              # ex '2:30' — janela de cada round EMOM
+    emom_rounds: int              # nº de rounds EMOM
+    tiebreak_por_round: bool      # mostra campo de tiebreak em cada round
+    paralelo: bool                # quando movimento é executado simultaneamente
 
 
 class Evento(TypedDict, total=False):

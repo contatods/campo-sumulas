@@ -60,23 +60,60 @@ def _truncar_descricao_em_notas(lines: list[str]) -> list[str]:
     return out
 
 
+# Palavras que indicam FRASE EXPLICATIVA (não-movimento). Linhas que começam
+# com número seguido dessas palavras NÃO devem virar movimento. Cobre português
+# e inglês — listas de "regras" e "divisão de funções" típicas em prescrições
+# de eventos sofisticados (trios, duplas, etc).
+_FRASE_NAO_MOVIMENTO_RE = re.compile(
+    r'\b(?:atletas?|nadar(?:ão|emos|á|em)|executar(?:á|emos|ão|em)|'
+    r'iniciar(?:á|emos|ão|em)|completar(?:á|emos|ão|em)|trocar(?:á|emos|ão|em)|'
+    r'ser(?:á|ão|emos|ia)?|times?|equipes?|teams?|round\s+seguinte|'
+    r'definid[ao]s?|alterad[ao]s?|escolher[áa]?|cada\s+\w+\s+executar|'
+    r'minute[s]?\s*,?\s*for\s+\d+\s+rounds?|'
+    r'rounds?\s+per\s+athletes?|rounds?\s+por\s+atleta|'
+    r'sets?\s+per\s+athletes?|sets?\s+por\s+atleta)\b',
+    re.IGNORECASE,
+)
+
+
 # ── Texto livre de workout ──────────────────────────────────────────────────────
 def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     """Extrai (reps, nome_upper) de uma linha de movimento.
-    O número inicial é SEMPRE tratado como reps — metros, calorias, etc.
-    Ex: '20-metres Dumbbell Lunges' → reps=20, nome='20-METRES DUMBBELL LUNGES'
-    Ex: '20 Pull-Ups'              → reps=20, nome='PULL-UPS'
+
+    Suporta 3 formatos do número inicial:
+      `20 Pull-Ups`            → reps=20, nome='PULL-UPS'
+      `20-metres DB Lunges`    → reps=20, nome='20-METRES DB LUNGES'  (hífen)
+      `900m Ski Erg`           → reps=900, nome='900M SKI ERG'        (unidade colada)
+      `5km Run`                → reps=5, nome='5KM RUN'
+
+    Rejeita linhas que parecem frase explicativa (`2 atletas nadarão...`)
+    pra evitar que virem movimentos.
     """
-    m = re.match(r'^(\d{1,4})([-\s])(.+)$', line.strip())
-    if not m: return None
-    num_s, sep, rest = m.group(1), m.group(2), m.group(3).strip()
+    s = line.strip()
+    # 4 formatos: NUM/NUM resto (gendered), NUM+unit+ESP, NUM-resto, NUM ESP resto
+    m = re.match(r'^(\d{1,4})/(\d{1,4})\s+(.+)$', s)            # 30/24 cal Row
+    if m:
+        num_s, num_f, rest = m.group(1), m.group(2), m.group(3).strip()
+        nome = f"{num_s}/{num_f} {rest}".upper()
+    else:
+        m = re.match(r'^(\d{1,4})([a-z]+)\s+(.+)$', s, re.I)    # 900m Ski Erg
+        if m:
+            num_s, unit, rest = m.group(1), m.group(2), m.group(3).strip()
+            nome = f"{num_s}{unit} {rest}".upper()
+        else:
+            m = re.match(r'^(\d{1,4})([-\s])(.+)$', s)
+            if not m: return None
+            num_s, sep, rest = m.group(1), m.group(2), m.group(3).strip()
+            if sep == '-':
+                nome = f"{num_s}-{rest}".upper()
+            else:
+                nome = rest.upper()
     try: num = int(num_s)
     except ValueError: return None
     if num >= 1000: return None  # evita anos
-    if sep == '-':
-        nome = f"{num_s}-{rest}".upper()
-    else:
-        nome = rest.upper()
+    # Rejeita frases explicativas (`2 atletas nadarão`, `5 times escolherão`, etc)
+    if _FRASE_NAO_MOVIMENTO_RE.search(nome):
+        return None
     return (num, nome)
 
 
@@ -119,12 +156,41 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     elif 'amrap' in full or 'as many reps' in full:
         wkt["tipo"] = "amrap"
 
+    # Detecta relay 'N round(s) per athlete' (For Time típico em trios).
+    # Marca wkt['rounds_per_atleta'] pra que o renderer gere sub-blocos.
+    m_relay = re.search(r'(\d+)\s+rounds?\s+per\s+athletes?', full, re.I) \
+              or re.search(r'(\d+)\s+rounds?\s+por\s+atleta', full, re.I)
+    if m_relay:
+        try: wkt["rounds_per_atleta"] = int(m_relay.group(1))
+        except ValueError: pass
+
+    # Detecta EMOM (`every X minutes, for Y rounds`) e marca como AMRAP-rounds.
+    m_emom = re.search(r'every\s+(\d+(?::\d+)?)\s*minutes?\s*,?\s*for\s+(\d+)\s+rounds?', full, re.I)
+    if m_emom:
+        wkt["tipo"] = "amrap"   # ainda usa scorecard AMRAP
+        wkt["emom_janela"] = m_emom.group(1)
+        try: wkt["emom_rounds"] = int(m_emom.group(2))
+        except ValueError: pass
+
+    # Detecta tie-break por round (`Tiebreak: tempo no final de cada N`)
+    if re.search(r'tiebreak\s*[:\-]?\s*tempo\s+no\s+(?:final|fim)\s+de\s+cada', full, re.I) \
+       or re.search(r'tiebreak\s*[:\-]?\s*time\s+at\s+(?:the\s+)?end\s+of\s+each', full, re.I):
+        wkt["tiebreak_por_round"] = True
+
     # Movimentos, separadores, time cap
     movs: list[Movimento] = []
     block = 1
     has_seps = any(re.match(r'^then\.+$', l, re.I) for l in lines)
     skip_prefixes = ('for time', 'por tempo', 'amrap', 'as many reps', 'rest',
                      'atenção', 'atencao', 'obs', 'note', '"', '“')
+    # 'Simultaneous buy-in:' marca início de bloco paralelo (vários movimentos
+    # executados ao mesmo tempo por atletas diferentes). 'After both' / 'then...'
+    # encerram o bloco paralelo.
+    in_paralelo = False
+    paralelo_re = re.compile(r'^\s*(?:simultaneous(?:ly)?|paralelo|simultaneamente|'
+                              r'simultane[oa])\b.*:\s*$', re.I)
+    fim_paralelo_re = re.compile(r'^\s*(?:after\s+both|after\s+all|then|ap[óo]s\s+(?:os\s+)?'
+                                  r'(?:dois|todos|ambos))\b', re.I)
 
     for line in lines:
         ll = line.lower()
@@ -132,7 +198,17 @@ def parse_workout_text(text: str, numero: int) -> Workout:
         if tc: wkt["time_cap"] = f"{tc.group(1)} min"; continue
         if re.match(r'^then[\.\s]*$', line, re.I):
             if movs: movs.append({"separador": "then..."})
-            block += 1; continue
+            block += 1
+            in_paralelo = False
+            continue
+        # Inicio de bloco paralelo: marca movs seguintes como paralelo
+        if paralelo_re.match(line):
+            in_paralelo = True
+            continue
+        # Fim de paralelo (mas mantém na lista de movs — só sai do modo)
+        if fim_paralelo_re.match(line):
+            in_paralelo = False
+            # Não consome a linha — pode ter movimento depois "After both: 21 Pull-Ups"
         if any(ll.startswith(p) for p in skip_prefixes): continue
         parsed = _parse_mov_line(line)
         if parsed:
@@ -140,6 +216,7 @@ def parse_workout_text(text: str, numero: int) -> Workout:
             mov: Movimento = {"nome": nome}
             if reps is not None: mov["reps"] = reps
             if has_seps and block in BLOCK_LABELS: mov["label"] = BLOCK_LABELS[block]
+            if in_paralelo: mov["paralelo"] = True
             movs.append(mov)
 
     if wkt["tipo"] == "for_time" and movs:

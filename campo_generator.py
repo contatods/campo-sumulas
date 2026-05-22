@@ -441,6 +441,48 @@ body{
   color:rgba(255,255,255,.85);letter-spacing:.22em;text-transform:uppercase;
 }
 
+/* Movimentos em paralelo — chave visual à esquerda do nome */
+.mov-row-paralelo .mr-name{position:relative}
+.mr-paralelo-mark{
+  font-size:11pt;font-weight:900;color:var(--accent,#d8232a);
+  line-height:1;flex-shrink:0;margin-right:.5mm;
+}
+.mov-row-paralelo + .mov-row-paralelo .mr-paralelo-mark::before{
+  content:''; /* keep alignment, sem alterar */
+}
+
+/* Relay — N sub-blocos (1 por atleta) */
+.mov-relay{display:flex;flex-direction:column;gap:1.5mm}
+.mov-relay-hdr{
+  background:var(--panel);color:rgba(255,255,255,.85);
+  padding:1.2mm 2.5mm;font-size:7pt;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;
+  display:flex;align-items:center;justify-content:space-between;
+  border:2px solid var(--ink);border-bottom:0;
+}
+.mov-relay-meta{
+  font-size:6pt;font-weight:400;color:rgba(255,255,255,.55);
+  letter-spacing:.06em;text-transform:none;
+}
+.mov-relay-bloco{display:flex;flex-direction:column}
+.mov-relay-atleta{
+  display:flex;align-items:center;gap:2mm;
+  padding:1mm 2mm;background:var(--field);
+  border:1px solid var(--rule);border-bottom:0;
+  font-size:6.5pt;
+}
+.mra-pos{
+  font-weight:900;color:var(--ink);
+  letter-spacing:.08em;text-transform:uppercase;flex-shrink:0;
+  background:var(--w);padding:.5mm 1.5mm;border:1px solid var(--rule);
+}
+.mra-nome-line{flex:1;border-bottom:1px solid var(--mid);height:3mm}
+.mra-tempo-lbl{
+  font-size:5.5pt;font-weight:700;color:var(--ghost);
+  letter-spacing:.1em;text-transform:uppercase;flex-shrink:0;
+}
+.mra-tempo-line{width:18mm;border-bottom:1px solid var(--mid);height:3mm;flex-shrink:0}
+
 /* ══════════════════════════════════════════════════════
    SCORE BOX — dominant post-workout element
    Orange top border announces: "fill this now".
@@ -583,8 +625,19 @@ body{
 }
 .ar-ref-sb{font-size:6.5pt;font-weight:700;color:rgba(255,255,255,.55)}
 .ar-ref-sb-lbl{font-size:5pt;color:rgba(255,255,255,.45);display:block;line-height:1.2}
+.ar-tb-cell{
+  flex-shrink:0;display:flex;align-items:stretch;
+  background:var(--field)!important;
+  border-left:1px solid var(--rule);
+}
+.ar-tb-inner{
+  width:100%;display:flex;align-items:flex-start;justify-content:flex-start;
+  padding:1.25mm;
+}
+.ar-tb-ref{font-size:6.5pt;font-weight:400;color:var(--ghost)}
 .ah-n{flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10pt;font-weight:900;color:rgba(255,255,255,.12)}
 .ah-title{flex:1;font-size:7pt;font-weight:700;color:rgba(255,255,255,.7);padding-left:3mm;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;border-left:1px solid rgba(255,255,255,.07)}
+.ah-x{margin:0 .8mm;color:rgba(255,255,255,.45);font-weight:400}
 .ah-ref{font-size:7pt;font-weight:300;color:rgba(255,255,255,.60);display:flex;align-items:center;padding-right:3mm}
 .ash{display:flex;align-items:center;justify-content:center;font-size:4.5pt;font-weight:700;color:var(--mid);letter-spacing:.05em;text-transform:uppercase;text-align:center;white-space:normal;line-height:1.25;padding:0.8mm 1mm}
 .ash-cum{background:var(--dk)!important;border-left:none;color:rgba(255,255,255,.75)!important}
@@ -829,9 +882,10 @@ MOV_TABLE_MACRO = r"""
       </div>
     {% else %}
       {% set ns.cum = ns.cum + (mov.reps | default(0)) %}
-      <div class="mov-row">
+      <div class="mov-row{% if mov.paralelo %} mov-row-paralelo{% endif %}">
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
+          {% if mov.paralelo %}<span class="mr-paralelo-mark" title="Executado em paralelo">‖</span>{% endif %}
           <span class="mr-reps-inline">({{ mov.reps }})</span>{{ mov.nome }}
         </div>
         <div class="mr-reps">{{ mov.reps }}</div>
@@ -841,17 +895,48 @@ MOV_TABLE_MACRO = r"""
   {% endfor %}
 </div>
 {% endmacro %}
+
+{# Macro relay: renderiza N sub-blocos (1 por atleta) cada com a mesma tabela
+   de movimentos. Usado quando wkt.rounds_per_atleta está setado em workout
+   For Time de modalidade team (dupla/trio/quarteto). #}
+{% macro mov_table_relay(movimentos, num, n_atletas, rounds_por_atleta) %}
+<div class="mov-relay">
+  <div class="mov-relay-hdr">
+    Relay · {{ rounds_por_atleta }} Round{% if rounds_por_atleta != 1 %}s{% endif %} por Atleta
+    <span class="mov-relay-meta">({{ n_atletas }} atletas em sequência)</span>
+  </div>
+  {% for pos in range(1, n_atletas + 1) %}
+    <div class="mov-relay-bloco">
+      <div class="mov-relay-atleta">
+        <span class="mra-pos">Atleta {{ pos }}</span>
+        <div class="mra-nome-line"></div>
+        <span class="mra-tempo-lbl">Tempo</span>
+        <div class="mra-tempo-line"></div>
+      </div>
+      {{ mov_table(movimentos, num) }}
+    </div>
+  {% endfor %}
+</div>
+{% endmacro %}
 """
 
 AMRAP_TABLE_MACRO = r"""
-{% macro amrap_table(movimentos, num, n_rounds) %}
+{% macro amrap_table(movimentos, num, n_rounds, wkt=none) %}
 {% set data_movs = movimentos | rejectattr('separador','defined') | rejectattr('chegada','defined') | list %}
 {% set reps_round = data_movs | map(attribute='reps') | list | sum %}
-{% set rnd_w='14mm' %}{% set reps_w='21mm' %}{% set cum_w='14mm' %}
+{% set is_emom = wkt is not none and wkt.emom_janela %}
+{% set has_tb = wkt is not none and wkt.tiebreak_por_round %}
+{% set _n_rounds = wkt.emom_rounds if is_emom else n_rounds %}
+{% set show_rplus = not is_emom %}
+{% set rnd_w='14mm' %}{% set reps_w='21mm' %}{% set cum_w='14mm' %}{% set tb_w='16mm' %}
 <div class="amrap-wrap">
   <div class="amrap-hdr">
     <div class="ah-n" style="width:{{rnd_w}}">{{ num }}</div>
-    <div class="ah-title">Scorecard AMRAP</div>
+    {% if is_emom %}
+      <div class="ah-title">EMOM {{ wkt.emom_janela }} <span class="ah-x">×</span> {{ wkt.emom_rounds }} rounds</div>
+    {% else %}
+      <div class="ah-title">Scorecard AMRAP</div>
+    {% endif %}
     <div class="ah-ref">{{ reps_round }} reps / round</div>
   </div>
   <div class="amrap-subhdr">
@@ -861,11 +946,13 @@ AMRAP_TABLE_MACRO = r"""
       <div class="ash" style="flex:1;border-left:1px solid var(--rule)">{{ nc }}<br>({{ m.reps }})</div>
     {% endfor %}
     <div class="ash" style="width:{{reps_w}};border-left:1px solid var(--rule)">Reps/Rd</div>
+    {% if has_tb %}<div class="ash" style="width:{{tb_w}};border-left:1px solid var(--rule)">Tie-break<br>(m:s)</div>{% endif %}
     <div class="ash ash-cum" style="width:{{cum_w}}">Acumulado</div>
   </div>
   {% set ns = namespace(cum=0) %}
-  {% for ri in range(n_rounds + 1) %}
-    {% set ip = (ri == n_rounds) %}
+  {% set total_rows = _n_rounds + (1 if show_rplus else 0) %}
+  {% for ri in range(total_rows) %}
+    {% set ip = (show_rplus and ri == _n_rounds) %}
     {% set rl = 'R+' if ip else (ri+1)|string %}
     <div class="amrap-row {% if ip %}rplus-row{% endif %}">
       <div class="ar-round" style="width:{{rnd_w}};border-right:1px solid var(--rule)">
@@ -887,6 +974,13 @@ AMRAP_TABLE_MACRO = r"""
           </div>
         </div>
       </div>
+      {% if has_tb %}
+      <div class="ar-tb-cell" style="width:{{tb_w}}">
+        <div class="ar-tb-inner">
+          {% if not ip %}<span class="ar-ref ar-tb-ref"><span class="ar-ref-lbl">m:s</span></span>{% endif %}
+        </div>
+      </div>
+      {% endif %}
       {% if not ip %}{% set ns.cum = ns.cum + reps_round %}{% endif %}
       <div class="ar-cum-cell" style="width:{{cum_w}}">
         <div class="ar-cum-inner">
@@ -1333,7 +1427,7 @@ PAGE_TMPL_STR = r"""<div class="page">
 
 {% elif tipo == 'amrap' %}
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
-  {{ amrap_table(wkt.movimentos, wkt.numero, wkt.n_rounds|default(3)) }}
+  {{ amrap_table(wkt.movimentos, wkt.numero, wkt.n_rounds|default(3), wkt) }}
 
 {% elif tipo == 'for_load' %}
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
@@ -1341,7 +1435,12 @@ PAGE_TMPL_STR = r"""<div class="page">
 
 {% else %}
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
-  {{ mov_table(wkt.movimentos, wkt.numero) }}
+  {% set _n_relay = wkt.n_atletas_time or ({'dupla':2,'trio':3,'quarteto':4,'time':3}).get(wkt.modalidade, 0) %}
+  {% if wkt.rounds_per_atleta and _n_relay > 0 %}
+    {{ mov_table_relay(wkt.movimentos, wkt.numero, _n_relay, wkt.rounds_per_atleta) }}
+  {% else %}
+    {{ mov_table(wkt.movimentos, wkt.numero) }}
+  {% endif %}
 {% endif %}
 
 {# ── SCORE BOX ── #}

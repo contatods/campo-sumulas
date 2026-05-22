@@ -194,6 +194,85 @@ def test_render_for_load_team_summary_lista_atletas_e_soma(fonts_empty):
     assert "RESUMO DO TIME" in html.upper()
 
 
+def test_render_for_time_relay_renderiza_n_sub_blocos(fonts_empty):
+    """For Time com `rounds_per_atleta` + modalidade team gera N sub-blocos."""
+    import re
+    ev = {"nome": "EVT", "categoria": "Trio Rx", "data": "2026"}
+    wkt = {
+        "numero": 1, "nome": "SPIN", "tipo": "for_time", "modalidade": "trio",
+        "time_cap": "12 min", "rounds_per_atleta": 1,
+        "movimentos": [
+            {"nome": "ROPE CLIMBS", "reps": 3},
+            {"nome": "30/24 CAL ROW", "reps": 30},
+            {"chegada": True},
+        ],
+    }
+    html = render_workout(ev, wkt, fonts_empty, "", "")
+    n_blocos = len(re.findall(r'class="mov-relay-bloco"', html))
+    assert n_blocos == 3, f"trio com 1 round/atleta esperava 3 sub-blocos, got {n_blocos}"
+    # Cabeçalho indica relay
+    assert "Relay" in html and "por Atleta" in html
+    # Cada atleta tem campo de tempo
+    n_tempo = len(re.findall(r'class="mra-tempo-line"', html))
+    assert n_tempo == 3
+    # Movimentos aparecem em cada sub-bloco
+    assert html.count("30/24 CAL ROW") >= 3
+
+
+def test_render_for_time_paralelo_marca_movimentos(fonts_empty):
+    """Movimentos com `paralelo: True` ganham classe mov-row-paralelo."""
+    ev = {"nome": "EVT", "categoria": "Trio Rx", "data": "2026"}
+    wkt = {
+        "numero": 1, "nome": "SIMPLE", "tipo": "for_time", "modalidade": "trio",
+        "time_cap": "12 min",
+        "movimentos": [
+            {"nome": "900M SKI ERG", "reps": 900, "paralelo": True},
+            {"nome": "DOUBLE-UNDERS", "reps": 150, "paralelo": True},
+            {"nome": "PULL-UPS", "reps": 21},  # sem paralelo
+            {"chegada": True},
+        ],
+    }
+    html = render_workout(ev, wkt, fonts_empty, "", "")
+    # Classe presente nos paralelos
+    assert 'class="mov-row mov-row-paralelo"' in html
+    # Mark visual presente
+    assert "mr-paralelo-mark" in html
+
+
+def test_render_amrap_emom_mostra_header_correto(fonts_empty):
+    """AMRAP com emom_janela + emom_rounds mostra 'EMOM X × Y rounds'."""
+    ev = {"nome": "EVT", "categoria": "Trio Rx", "data": "2026"}
+    wkt = {
+        "numero": 1, "nome": "RECAP", "tipo": "amrap", "modalidade": "trio",
+        "emom_janela": "2:30", "emom_rounds": 5,
+        "movimentos": [
+            {"nome": "SWIM", "reps": 50},
+            {"nome": "THRUSTERS", "reps": 10},
+        ],
+    }
+    html = render_workout(ev, wkt, fonts_empty, "", "")
+    assert "EMOM 2:30" in html
+    assert "5 rounds" in html
+    # EMOM não emite linha R+ (apenas N rounds fixos)
+    assert "amrap-row rplus-row" not in html
+    assert ">R+<" not in html
+
+
+def test_render_amrap_tiebreak_por_round_adiciona_coluna(fonts_empty):
+    """AMRAP com tiebreak_por_round adiciona coluna de tiebreak no scorecard."""
+    import re
+    ev = {"nome": "EVT", "categoria": "Trio Rx", "data": "2026"}
+    wkt = {
+        "numero": 1, "nome": "RECAP", "tipo": "amrap", "modalidade": "trio",
+        "emom_janela": "2:30", "emom_rounds": 5, "tiebreak_por_round": True,
+        "movimentos": [{"nome": "SWIM", "reps": 50}],
+    }
+    html = render_workout(ev, wkt, fonts_empty, "", "")
+    n_tb = len(re.findall(r'class="ar-tb-cell"', html))
+    assert n_tb == 5, f"esperava 5 células tiebreak (1/round), got {n_tb}"
+    assert "Tie-break" in html
+
+
 def test_render_escapa_html_de_input_do_usuario(fonts_empty):
     """Garante que dados externos (nome, box, etc) são escapados — sem XSS."""
     ev = {"nome": "<script>alert(1)</script>", "categoria": "A & B", "data": "2026"}

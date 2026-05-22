@@ -349,3 +349,64 @@ def test_filtrar_alocacoes_remove_numero_invalido_ou_vazio():
     keep, drop = _filtrar_alocacoes_por_faixa(alocs, (900, 999))
     assert len(keep) == 1 and keep[0]["nome"] == "Foo"
     assert len(drop) == 3
+
+
+def test_parse_workout_text_detecta_simultaneous_buyin_marca_paralelos():
+    """Simple Dimension: SkiErg + DUs em paralelo no buy-in."""
+    texto = (
+        "For Time\n"
+        "Simultaneous buy-in:\n"
+        "900m Ski Erg (1 athlete to completion)\n"
+        "150 Double-Unders (1 athlete to completion)\n"
+        "After both buy-ins are completed:\n"
+        "21 Sync. Pull-Ups (2 athletes)"
+    )
+    wkt = parse_workout_text(texto, numero=1)
+    movs = [m for m in wkt["movimentos"] if m.get("nome")]
+    paralelos = [m for m in movs if m.get("paralelo")]
+    assert len(paralelos) == 2, f"esperava 2 paralelos, got {len(paralelos)}"
+    assert any("SKI ERG" in m["nome"] for m in paralelos)
+    assert any("DOUBLE-UNDERS" in m["nome"] for m in paralelos)
+    # Mov após "After both" NÃO é paralelo
+    pullups = next(m for m in movs if "PULL-UPS" in m.get("nome", ""))
+    assert not pullups.get("paralelo")
+
+
+def test_parse_workout_text_detecta_relay_1_round_per_athlete():
+    """Spin: 1 round per athlete vira rounds_per_atleta no wkt."""
+    texto = (
+        "For Time\n"
+        "1 round per athlete:\n"
+        "3 Legless Rope Climbs\n"
+        "30 Wall-Ball Shots"
+    )
+    wkt = parse_workout_text(texto, numero=1)
+    assert wkt.get("rounds_per_atleta") == 1
+    # E a frase NÃO virou movimento
+    nomes = [m.get("nome") for m in wkt["movimentos"] if m.get("nome")]
+    assert not any("ATHLETE" in (n or "") and "PER" in (n or "") for n in nomes)
+
+
+def test_parse_workout_text_detecta_emom_e_tiebreak_por_round():
+    """Monstar Recap: EMOM 2:30 × 5 + tie-break por round."""
+    texto = (
+        "Every 2:30 minutes, for 5 rounds:\n"
+        "50-metres Swim (2 athletes)\n"
+        "10 Dumbbell Thrusters\n"
+        "Tiebreak: Tempo no Final de Cada Round"
+    )
+    wkt = parse_workout_text(texto, numero=1)
+    assert wkt.get("tipo") == "amrap"
+    assert wkt.get("emom_janela") == "2:30"
+    assert wkt.get("emom_rounds") == 5
+    assert wkt.get("tiebreak_por_round") is True
+
+
+def test_parse_mov_line_aceita_reps_gendered():
+    """30/24 cal Row — formato gendered (M/F) deve virar movimento."""
+    from parsers import _parse_mov_line
+    result = _parse_mov_line("30/24 cal Row")
+    assert result is not None
+    reps, nome = result
+    assert reps == 30
+    assert "30/24" in nome and "CAL ROW" in nome
