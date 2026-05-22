@@ -77,6 +77,55 @@ def test_render_for_load_categoria_mista_usa_barra_masculina(fonts_empty):
     assert "15 kg" not in html, "MISTO não deve renderizar barra feminina"
 
 
+def test_render_for_load_team_dupla_trio_quarteto(fonts_empty):
+    """For Load em modalidade dupla/trio/quarteto gera sub-blocos por atleta
+    com soma do time no fim. Quarteto entra em layout super-compacto."""
+    import re
+    ev = {"nome": "EVT", "categoria": "Trio Rx Misto", "data": "2026", "unidade_default": "kg"}
+    atl = {"nome": "TIME X", "box": "CF", "raia": "1", "numero": "1", "bateria": "1"}
+    for modalidade, n_atletas_esperado, super_compact_esperado in [
+        ("individual", 0, False),  # sem sub-blocos
+        ("dupla", 2, False),
+        ("trio", 3, False),
+        ("quarteto", 4, True),     # super-compact pra caber em A4
+    ]:
+        wkt = {"numero": 1, "nome": "MAX", "tipo": "for_load",
+               "modalidade": modalidade, "tentativas": 3}
+        html = render_workout(ev, wkt, fonts_empty, "", "", atl)
+        n_blocos = len(re.findall(r'class="fl-atleta-bloco"', html))
+        n_tents = len(re.findall(r'>T\d+<', html))
+        assert n_blocos == n_atletas_esperado, (
+            f"{modalidade}: esperava {n_atletas_esperado} sub-blocos, got {n_blocos}"
+        )
+        # Tentativas totais = N atletas × 3 (em team) ou 3 (em individual)
+        esperado_tents = (n_atletas_esperado or 1) * 3
+        assert n_tents == esperado_tents, (
+            f"{modalidade}: esperava {esperado_tents} tentativas, got {n_tents}"
+        )
+        m = re.search(r'<div class="fl-zone[^"]*"', html)
+        super_c = "fl-zone-super-compact" in m.group()
+        assert super_c == super_compact_esperado, (
+            f"{modalidade}: super-compact esperado {super_compact_esperado}, got {super_c}"
+        )
+        # Team tem 'Soma do Time' no fim
+        if n_atletas_esperado > 0:
+            assert "Soma do Time" in html
+
+
+def test_render_for_load_team_pre_workout_modalidade(fonts_empty):
+    """Sub-bloco por atleta exibe 'Atleta 1', 'Atleta 2', etc — label de
+    'Melhor Atleta N' também."""
+    import re
+    ev = {"nome": "EVT", "categoria": "Trio", "data": "2026"}
+    atl = {"nome": "T", "box": "C", "raia": "1", "numero": "1", "bateria": "1"}
+    wkt = {"numero": 1, "nome": "MAX", "tipo": "for_load",
+           "modalidade": "trio", "tentativas": 3}
+    html = render_workout(ev, wkt, fonts_empty, "", "", atl)
+    for pos in (1, 2, 3):
+        assert f"Atleta {pos}" in html
+        assert f"Melhor Atleta {pos}" in html
+
+
 def test_render_for_load_compact_para_tentativas_altas(fonts_empty):
     """Pra 5+ tentativas, layout compacto é aplicado (cabe em A4).
     Pra 4 ou menos, layout expandido (2 linhas por tentativa)."""

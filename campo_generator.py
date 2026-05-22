@@ -720,6 +720,54 @@ body{
 /* Mesmo no expandido, 8+ anilhas reduzem pra evitar overflow */
 .fl-zone-muitas-anilhas:not(.fl-zone-compact) .fl-anilha{width:6.5mm;height:6.5mm}
 .fl-zone-muitas-anilhas:not(.fl-zone-compact) .fl-anilha span{font-size:7.5pt}
+
+/* ── For Load TEAM (dupla/trio/quarteto/time) — sub-blocos por atleta ── */
+.fl-zone-team .fl-atleta-bloco{border-top:2px solid var(--ink);padding:1.5mm 2mm 1mm}
+.fl-zone-team .fl-atleta-bloco:first-of-type{border-top:1px solid var(--rule)}
+.fl-zone-team .fl-atleta-hdr{display:flex;align-items:center;gap:3mm;
+  margin-bottom:1.5mm;padding:0 1mm}
+.fl-zone-team .fl-atleta-pos{font-weight:900;font-size:10pt;color:var(--ink);
+  background:var(--paper);padding:0.5mm 3mm;border-radius:2px;flex-shrink:0;
+  letter-spacing:.04em;text-transform:uppercase}
+.fl-zone-team .fl-atleta-nome-line{flex:1;border-bottom:1.5px solid var(--ink);
+  min-height:5.5mm}
+.fl-zone-team .fl-atleta-melhor{display:flex;align-items:center;gap:2mm;
+  margin-top:1mm;padding:0 1mm}
+.fl-zone-team .fl-atleta-melhor-lbl{font-size:8.5pt;font-weight:700;
+  color:var(--ink);text-transform:uppercase;letter-spacing:.04em}
+.fl-zone-team .fl-atleta-melhor-line{flex:1;min-height:5.5mm;
+  border:1.5px solid var(--ink);background:var(--field);border-radius:1.5px}
+.fl-zone-team .fl-atleta-melhor-unidade{font-size:9pt;font-weight:900}
+.fl-zone-team .fl-soma-time{background:var(--ink);color:var(--w);
+  border-top:3px double var(--w);padding:3mm}
+.fl-zone-team .fl-soma-time .fl-melhor-line{background:transparent;
+  border-bottom:2px solid var(--w);min-height:7mm}
+
+/* SUPER-COMPACT (quarteto: 4 atletas × 3 tents = 12 linhas em A4) */
+.fl-zone-super-compact .fl-atleta-bloco{padding:1mm 2mm 0.5mm}
+.fl-zone-super-compact .fl-atleta-hdr{margin-bottom:0.5mm}
+.fl-zone-super-compact .fl-atleta-pos{font-size:8.5pt;padding:0.5mm 2mm}
+.fl-zone-super-compact .fl-atleta-nome-line{min-height:4mm}
+.fl-zone-super-compact .fl-atleta-melhor{margin-top:0.5mm}
+.fl-zone-super-compact .fl-atleta-melhor-line{min-height:4mm}
+.fl-zone-super-compact .fl-atleta-melhor-lbl{font-size:7.5pt}
+.fl-zone-super-compact .fl-row{padding:0.5mm 2mm}
+.fl-zone-super-compact .fl-anilha{width:5mm;height:5mm}
+.fl-zone-super-compact .fl-anilha span{font-size:6pt}
+.fl-zone-super-compact .fl-row-hdr{width:7mm;font-size:8.5pt;padding:0}
+.fl-zone-super-compact .fl-barra{min-width:11mm;height:5mm;font-size:6.5pt}
+.fl-zone-super-compact .fl-carga{min-width:28mm}
+.fl-zone-super-compact .fl-carga-lbl{font-size:7pt}
+.fl-zone-super-compact .fl-carga-line{min-height:4.5mm}
+.fl-zone-super-compact .fl-val-box{width:4.5mm;height:4.5mm}
+.fl-zone-super-compact .fl-val-lbl{font-size:6.5pt}
+.fl-zone-super-compact .fl-val{gap:2mm}
+.fl-zone-super-compact .fl-zone-hdr{min-height:5.5mm;padding:0.5mm 3mm}
+.fl-zone-super-compact .fl-zone-t{font-size:10pt}
+.fl-zone-super-compact .fl-zone-meta{font-size:7.5pt}
+.fl-zone-super-compact .fl-soma-time{padding:1.5mm 3mm}
+.fl-zone-super-compact .fl-melhor-lbl{font-size:8.5pt}
+.fl-zone-super-compact .fl-melhor-line{min-height:5mm}
 .fl-zone-compact .fl-carga{min-width:34mm}
 .fl-zone-compact .fl-carga-lbl{font-size:8pt}
 .fl-zone-compact .fl-carga-line{min-height:5.5mm}
@@ -1072,7 +1120,27 @@ FOR_LOAD_TABLE_MACRO = r"""
 </div>
 {% endmacro %}
 
-{# Macro principal: header + instrução + N tentativas + linha 'MELHOR CARGA' #}
+{# Sub-bloco For Load por atleta (usado em dupla/trio/quarteto/time) #}
+{% macro for_load_atleta_bloco(pos, anilhas, barra, unidade, tentativas) %}
+<div class="fl-atleta-bloco">
+  <div class="fl-atleta-hdr">
+    <span class="fl-atleta-pos">Atleta {{ pos }}</span>
+    <div class="fl-atleta-nome-line"></div>
+  </div>
+  {% for i in range(1, tentativas + 1) %}
+    {{ for_load_tentativa(i, anilhas, barra, unidade) }}
+  {% endfor %}
+  <div class="fl-atleta-melhor">
+    <span class="fl-atleta-melhor-lbl">Melhor Atleta {{ pos }}</span>
+    <div class="fl-atleta-melhor-line"></div>
+    <span class="fl-atleta-melhor-unidade">{{ unidade }}</span>
+  </div>
+</div>
+{% endmacro %}
+
+{# Macro principal: header + N tentativas/atleta. Branch por modalidade —
+   individual usa layout linear, team (dupla/trio/quarteto/time) usa
+   sub-blocos por atleta com soma final. #}
 {% macro for_load_table(wkt, atleta) %}
 {% set unidade  = wkt.unidade | default('kg') %}
 {% set genero   = wkt._genero | default('M') %}
@@ -1081,32 +1149,51 @@ FOR_LOAD_TABLE_MACRO = r"""
 {% set barra_label = 'Feminina' if genero == 'F' else 'Masculina' %}
 {% set tentativas = wkt.tentativas | default(3) %}
 {% set anilhas  = wkt.anilhas | default([25, 20, 15, 10, 5, 2.5, 1.25]) %}
-{# Layout compacto pra muitas tentativas (>=5): 1 linha por tentativa em vez
-   de 2, sem instrução nem coluna Obs. Cabe em A4 até 8+ tentativas.
-   Quando >7 anilhas (típico libras), reduz caixinhas pra caber horizontal. #}
-{% set is_compact = tentativas >= 5 %}
+{% set modalidade = wkt.modalidade | default('individual') %}
+{% set n_atletas = wkt.n_atletas_time | default(wkt._n_atletas_time | default(1)) %}
+{% set is_team = n_atletas > 1 %}
+{# Layout compacto:
+     - individual (n=1): compacto quando tentativas >=5
+     - team (n>=2): sempre super-compacto (4 atletas × 3 tents = 12 linhas,
+       sem instrução nem Obs, caixinhas reduzidas).
+   Muitas anilhas (libras): reduz caixinhas pra evitar overflow horizontal. #}
+{% set is_compact = is_team or tentativas >= 5 %}
+{% set is_super_compact = n_atletas >= 4 %}
 {% set muitas_anilhas = anilhas|length > 7 %}
-<div class="fl-zone{% if is_compact %} fl-zone-compact{% endif %}{% if muitas_anilhas %} fl-zone-muitas-anilhas{% endif %}">
+<div class="fl-zone{% if is_compact %} fl-zone-compact{% endif %}{% if is_super_compact %} fl-zone-super-compact{% endif %}{% if muitas_anilhas %} fl-zone-muitas-anilhas{% endif %}{% if is_team %} fl-zone-team{% endif %}">
   <div class="fl-zone-hdr">
-    <span class="fl-zone-t">For Load · {{ tentativas }} Tentativa{% if tentativas != 1 %}s{% endif %}</span>
+    <span class="fl-zone-t">For Load{% if is_team %} · {{ n_atletas }} Atletas × {{ tentativas }} Tentativa{% if tentativas != 1 %}s{% endif %}{% else %} · {{ tentativas }} Tentativa{% if tentativas != 1 %}s{% endif %}{% endif %}</span>
     <span class="fl-zone-meta">Barra {{ barra_label }} {{ barra }} {{ unidade }}</span>
   </div>
+  {% if not is_team %}
   <div class="fl-instrucao">
     Marque (✗) cada anilha usada em cada lado da barra, anote a carga total
     e marque <strong>Válida</strong> ou <strong>No-Rep</strong> após cada tentativa.
   </div>
-  {% for i in range(1, tentativas + 1) %}
-    {{ for_load_tentativa(i, anilhas, barra, unidade) }}
-  {% endfor %}
-  <div class="fl-melhor">
-    <span class="fl-melhor-lbl">Melhor Carga</span>
-    <div class="fl-melhor-line"></div>
-    <span class="fl-melhor-unidade">{{ unidade }}</span>
-    <div class="fl-melhor-ref">
-      <span>Ref. T</span>
-      <div class="fl-melhor-ref-box"></div>
+  {% endif %}
+  {% if is_team %}
+    {% for pos in range(1, n_atletas + 1) %}
+      {{ for_load_atleta_bloco(pos, anilhas, barra, unidade, tentativas) }}
+    {% endfor %}
+    <div class="fl-melhor fl-soma-time">
+      <span class="fl-melhor-lbl">Soma do Time</span>
+      <div class="fl-melhor-line"></div>
+      <span class="fl-melhor-unidade">{{ unidade }}</span>
     </div>
-  </div>
+  {% else %}
+    {% for i in range(1, tentativas + 1) %}
+      {{ for_load_tentativa(i, anilhas, barra, unidade) }}
+    {% endfor %}
+    <div class="fl-melhor">
+      <span class="fl-melhor-lbl">Melhor Carga</span>
+      <div class="fl-melhor-line"></div>
+      <span class="fl-melhor-unidade">{{ unidade }}</span>
+      <div class="fl-melhor-ref">
+        <span>Ref. T</span>
+        <div class="fl-melhor-ref-box"></div>
+      </div>
+    </div>
+  {% endif %}
 </div>
 {% endmacro %}
 """
@@ -1290,7 +1377,8 @@ def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
     # XSS quando a súmula HTML é aberta no browser.
     # For Load precisa saber o gênero da categoria pra escolher barra M/F.
     if wkt.get('tipo') == 'for_load' and not wkt.get('_genero'):
-        from types_ds import detectar_genero_categoria, anilhas_default, barra_default
+        from types_ds import (detectar_genero_categoria, anilhas_default,
+                              barra_default, n_atletas_da_modalidade)
         wkt = dict(wkt)
         wkt['_genero']  = detectar_genero_categoria(ev.get('categoria', ''))
         wkt.setdefault('unidade', ev.get('unidade_default', 'kg'))
@@ -1298,6 +1386,17 @@ def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
         wkt.setdefault('anilhas', anilhas_default(wkt['unidade']))
         wkt.setdefault('barra_masculina', barra_default('M', wkt['unidade']))
         wkt.setdefault('barra_feminina',  barra_default('F', wkt['unidade']))
+        # Inferência de quantos atletas/time baseado em modalidade.
+        # Permite override por wkt.n_atletas_time (config explícita).
+        modalidade = wkt.get('modalidade', 'individual')
+        wkt['_n_atletas_time'] = wkt.get('n_atletas_time') or n_atletas_da_modalidade(modalidade)
+    # Trunca descrição em separadores (NOTAS, Observações, etc) — regulamento
+    # não deve aparecer na súmula impressa, só prescrição core. Salvaguarda
+    # caso a descrição venha cheia do parser ou da edição manual no front.
+    if wkt.get('descricao'):
+        from parsers import _truncar_descricao_em_notas
+        wkt = dict(wkt)
+        wkt['descricao'] = _truncar_descricao_em_notas(wkt['descricao'])
 
     tmpl = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + SCORE_BOX_MACRO
                     + FOR_LOAD_TABLE_MACRO + PAGE_TMPL_STR,

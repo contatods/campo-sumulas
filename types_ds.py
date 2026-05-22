@@ -103,3 +103,19 @@ def detectar_genero_categoria(nome_categoria: str) -> str:
     if 'masculin' in s or 'male' in s or "men" in s:
         return 'M'
     return 'M'   # default conservador
+
+
+def n_atletas_da_modalidade(modalidade: str) -> int:
+    """Quantos atletas individuais cada 'time' tem nessa modalidade.
+
+    Em For Load com modalidade dupla/trio/quarteto, cada atleta do time
+    tem suas próprias tentativas (sub-blocos na súmula). Em 'time' genérico,
+    default 3 (organizador pode sobrescrever via wkt.n_atletas_time).
+    """
+    return {
+        'individual': 1,
+        'dupla':      2,
+        'trio':       3,
+        'quarteto':   4,
+        'time':       3,    # default — sobrescrevível por wkt.n_atletas_time
+    }.get((modalidade or 'individual').lower(), 1)

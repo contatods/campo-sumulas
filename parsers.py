@@ -35,6 +35,31 @@ except ImportError:
 BLOCK_LABELS = {1: "1º BLOCO", 2: "2º BLOCO", 3: "3º BLOCO", 4: "4º BLOCO", 5: "5º BLOCO"}
 
 
+# Separadores que marcam fim da prescrição "core" e início de
+# regras/observações/regulamento que NÃO devem aparecer na súmula impressa.
+# A súmula deve conter só o essencial pro atleta executar; o resto é regulamento
+# e atleta/árbitro consultam à parte.
+_DESC_CUT_RE = re.compile(
+    r'^\s*(?:─+\s*)?(?:notas?|observa[çc][õo]es?|pontua[çc][ãa]o|tiebreak|regras?|regulamento|crit[ée]rios?)'
+    r'\s*(?:─+\s*)?\s*:?\s*$',
+    re.IGNORECASE,
+)
+
+
+def _truncar_descricao_em_notas(lines: list[str]) -> list[str]:
+    """Corta a lista de linhas no primeiro separador tipo `NOTAS`, `Observações`,
+    `Pontuação`, etc. Tudo abaixo é regulamento e fica fora da súmula impressa.
+
+    Mantém comportamento original quando não há separadores (lista intacta).
+    """
+    out: list[str] = []
+    for line in lines:
+        if _DESC_CUT_RE.match(line):
+            break
+        out.append(line)
+    return out
+
+
 # ── Texto livre de workout ──────────────────────────────────────────────────────
 def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     """Extrai (reps, nome_upper) de uma linha de movimento.
@@ -83,8 +108,10 @@ def parse_workout_text(text: str, numero: int) -> Workout:
         if m_tent:
             try: wkt["tentativas"] = int(m_tent.group(1))
             except ValueError: pass
-        # Texto livre fica em descricao; movimentos não fazem sentido pra For Load
-        wkt["descricao"] = lines
+        # Texto livre fica em descricao; movimentos não fazem sentido pra For Load.
+        # Trunca em separadores tipo NOTAS pra não bagunçar a súmula com
+        # regulamento que estoura A4.
+        wkt["descricao"] = _truncar_descricao_em_notas(lines)
         wkt["movimentos"] = []
         return wkt
     if 'for time' in full or 'por tempo' in full:

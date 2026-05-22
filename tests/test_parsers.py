@@ -216,6 +216,41 @@ def test_validate_for_load_aceita_workout_bem_formado():
     _validate_workout_tipos(wkts)   # não deve levantar
 
 
+def test_truncar_descricao_em_notas():
+    """Descrição corta no primeiro separador NOTAS/Observações/Pontuação."""
+    from parsers import _truncar_descricao_em_notas
+    # Caso típico Toll Gate
+    lines = [
+        'For load (relay format)',
+        'Athlete 1 (0:00-4:00)',
+        '  10-cal Air Bike',
+        'Time cap: 14 minutes',
+        '─── NOTAS ───',
+        'Ponto de partida',
+        'A ordem dos 3 atletas é definida',
+    ]
+    out = _truncar_descricao_em_notas(lines)
+    assert len(out) == 4   # corta no NOTAS
+    assert 'Time cap' in out[3]
+    # Outros separadores
+    assert _truncar_descricao_em_notas(['ok', 'Observações', 'cortou']) == ['ok']
+    assert _truncar_descricao_em_notas(['ok', 'Pontuação', 'cortou']) == ['ok']
+    assert _truncar_descricao_em_notas(['ok', 'Tiebreak', 'cortou']) == ['ok']
+    # Sem separador, intacto
+    assert _truncar_descricao_em_notas(['a', 'b', 'c']) == ['a', 'b', 'c']
+
+
+def test_n_atletas_da_modalidade():
+    """N atletas inferido pela modalidade."""
+    from types_ds import n_atletas_da_modalidade
+    assert n_atletas_da_modalidade('individual') == 1
+    assert n_atletas_da_modalidade('dupla')      == 2
+    assert n_atletas_da_modalidade('trio')       == 3
+    assert n_atletas_da_modalidade('quarteto')   == 4
+    assert n_atletas_da_modalidade('time')       == 3   # default
+    assert n_atletas_da_modalidade('')           == 1
+
+
 def test_validate_for_load_rejeita_anilhas_acima_do_cap():
     """Mais de 12 anilhas estoura A4 horizontalmente — backend deve rejeitar."""
     import pytest
