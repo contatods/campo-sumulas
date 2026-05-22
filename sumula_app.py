@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.14.1'
+VERSION = '1.14.2'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -116,21 +116,28 @@ def _validate_workout_tipos(workouts):
 
 
 def _validate_for_load(wkt: dict, idx: int) -> None:
-    """Valida campos específicos de For Load. Levanta BadRequest se ruim."""
+    """Valida campos específicos de For Load. Levanta BadRequest se ruim.
+
+    Campos ausentes são tolerados — defaults são aplicados no render (3 tentativas,
+    anilhas default kg/lb, barras 20/15 kg). Só rejeita valores explicitamente
+    inválidos (string, negativo, fora do range).
+    """
     tent = wkt.get('tentativas')
-    if not isinstance(tent, int) or not (FOR_LOAD_TENTATIVAS_MIN <= tent <= FOR_LOAD_TENTATIVAS_MAX):
-        raise BadRequest(
-            f"workouts[{idx}].tentativas inválido ({tent!r}); "
-            f"use inteiro entre {FOR_LOAD_TENTATIVAS_MIN} e {FOR_LOAD_TENTATIVAS_MAX}"
-        )
-    anilhas = wkt.get('anilhas')
-    if not isinstance(anilhas, list) or not anilhas:
-        raise BadRequest(f"workouts[{idx}].anilhas vazio ou inválido")
-    for j, a in enumerate(anilhas):
-        if not isinstance(a, (int, float)) or a <= 0:
+    if tent is not None:
+        if not isinstance(tent, int) or not (FOR_LOAD_TENTATIVAS_MIN <= tent <= FOR_LOAD_TENTATIVAS_MAX):
             raise BadRequest(
-                f"workouts[{idx}].anilhas[{j}] inválido ({a!r}); use número positivo"
+                f"workouts[{idx}].tentativas inválido ({tent!r}); "
+                f"use inteiro entre {FOR_LOAD_TENTATIVAS_MIN} e {FOR_LOAD_TENTATIVAS_MAX}"
             )
+    anilhas = wkt.get('anilhas')
+    if anilhas is not None:
+        if not isinstance(anilhas, list) or not anilhas:
+            raise BadRequest(f"workouts[{idx}].anilhas vazio ou inválido")
+        for j, a in enumerate(anilhas):
+            if not isinstance(a, (int, float)) or a <= 0:
+                raise BadRequest(
+                    f"workouts[{idx}].anilhas[{j}] inválido ({a!r}); use número positivo"
+                )
     for campo in ('barra_masculina', 'barra_feminina'):
         v = wkt.get(campo)
         if v is None:
