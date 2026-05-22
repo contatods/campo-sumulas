@@ -638,46 +638,65 @@ body{
 /* ── FOR LOAD ── régua de anilhas + barra desenhada + carga + validade ── */
 .fl-zone{border:2px solid var(--ink);margin-bottom:0}
 .fl-zone-hdr{display:flex;align-items:center;justify-content:space-between;
-  background:var(--panel);color:var(--w);padding:1mm 3mm;height:6mm}
-.fl-zone-t{font-weight:900;font-size:10pt;letter-spacing:.08em;text-transform:uppercase}
-.fl-zone-meta{font-size:9pt;font-weight:400;color:#CCC}
-.fl-row{display:flex;align-items:stretch;border-top:1px solid var(--rule);
-  min-height:11mm;background:var(--w)}
-/* Zebra striping — classe manual em vez de :nth-child(odd of ...) (sintaxe
-   moderna sem suporte universal). Aplicada pelo template em índice par. */
+  background:var(--panel);color:var(--w);padding:1.5mm 3mm;min-height:8mm;gap:3mm}
+.fl-zone-t{font-weight:900;font-size:13pt;letter-spacing:.06em;text-transform:uppercase}
+.fl-zone-meta{font-size:9.5pt;font-weight:600;color:#DDD;text-align:right}
+.fl-instrucao{padding:1.5mm 3mm;background:var(--paper);font-size:8.5pt;
+  color:var(--mid);font-style:italic;border-bottom:1px solid var(--rule);line-height:1.4}
+/* Cada tentativa = 2 linhas: top (régua + barra + régua) + bottom (carga + validade + obs) */
+.fl-row{display:flex;flex-direction:column;border-top:1px solid var(--rule);
+  background:var(--w);padding:1.5mm 0}
 .fl-row-alt{background:var(--paper)}
+.fl-row-top{display:flex;align-items:center;padding:0 2mm;gap:0}
+.fl-row-bottom{display:flex;align-items:center;padding:1.5mm 2mm 0 2mm;gap:4mm}
 .fl-row-hdr{width:9mm;display:flex;align-items:center;justify-content:center;
-  font-weight:900;font-size:11pt;color:var(--ink);background:var(--dk);color:var(--w);
-  border-right:1px solid var(--rule)}
-.fl-anilhas{display:flex;align-items:center;padding:1mm 0}
-.fl-anilha{width:6mm;height:6mm;border:1px solid var(--ink);
+  font-weight:900;font-size:12pt;color:var(--w);background:var(--dk);
+  border-radius:2px;padding:1mm 0;align-self:stretch}
+.fl-anilhas{display:flex;align-items:center}
+.fl-anilha{width:7.5mm;height:7.5mm;border:1px solid var(--ink);
   display:flex;align-items:center;justify-content:center;background:var(--w);
   border-right:none}
 .fl-anilha:last-child{border-right:1px solid var(--ink)}
-.fl-anilha span{font-size:6.5pt;font-weight:700;color:var(--mid);
-  pointer-events:none}
-.fl-barra{display:flex;flex-direction:column;align-items:center;justify-content:center;
-  min-width:18mm;padding:0 1mm}
-.fl-barra-traco{width:100%;height:2mm;background:var(--ink);border-radius:1mm}
-.fl-barra-lbl{font-size:7pt;font-weight:700;color:var(--ink);margin-top:0.5mm}
-.fl-carga{flex:1;display:flex;flex-direction:column;justify-content:center;
-  padding:0 2mm;min-width:25mm}
-.fl-carga-lbl{font-size:7pt;font-weight:700;color:var(--ghost);
-  text-transform:uppercase;letter-spacing:.06em}
-.fl-carga-line{border-bottom:1.5px solid var(--ink);min-height:5mm;
-  background:var(--field)}
-.fl-val{display:flex;align-items:center;gap:1.5mm;padding:0 2mm;
-  border-left:1px solid var(--rule)}
-.fl-val-circle{width:6.5mm;height:6.5mm;border:1.5px solid var(--ink);
-  border-radius:50%;display:flex;align-items:center;justify-content:center;
-  font-size:10pt;font-weight:900;color:var(--ink);background:var(--w)}
-.fl-melhor{display:flex;align-items:center;border-top:2px solid var(--ink);
-  background:var(--dk);color:var(--w);padding:2mm 3mm;gap:3mm}
-.fl-melhor-lbl{font-size:9pt;font-weight:900;letter-spacing:.06em;
+.fl-anilha span{font-size:8pt;font-weight:700;color:var(--ink);pointer-events:none;
+  line-height:1}
+/* Barra desenhada: caixa preta com peso em branco — mais marcante que traço fino.
+   Comunica "barra" como objeto, não como divisor. */
+.fl-barra{display:flex;align-items:center;justify-content:center;
+  min-width:18mm;height:7.5mm;background:var(--ink);color:var(--w);
+  font-size:9pt;font-weight:900;letter-spacing:.02em;margin:0 0.5mm;
+  border-radius:1.5mm}
+/* Carga + unidade inline */
+.fl-carga{display:flex;align-items:center;gap:2mm;flex:1;min-width:42mm}
+.fl-carga-lbl{font-size:9pt;font-weight:700;color:var(--ink);
+  text-transform:uppercase;letter-spacing:.04em;flex-shrink:0}
+.fl-carga-line{flex:1;min-height:7mm;border:1.5px solid var(--ink);
+  background:var(--w);border-radius:1.5px}
+.fl-carga-unidade{font-size:10pt;font-weight:900;color:var(--ink);flex-shrink:0}
+/* Validade: caixas com label VÁLIDA / NO-REP — claro pro árbitro */
+.fl-val{display:flex;align-items:center;gap:4mm;flex-shrink:0}
+.fl-val-opt{display:flex;align-items:center;gap:1.5mm}
+.fl-val-box{width:7mm;height:7mm;border:1.8px solid var(--ink);
+  background:var(--w);border-radius:1px;flex-shrink:0}
+.fl-val-lbl{font-size:8.5pt;font-weight:800;color:var(--ink);letter-spacing:.04em;
   text-transform:uppercase}
-.fl-melhor-line{flex:1;min-height:6mm;background:var(--w);
+.fl-val-lbl.nr{color:#A03020}
+/* Observações curtas por tentativa (opcional) */
+.fl-obs{display:flex;align-items:center;gap:2mm;flex:1;min-width:50mm}
+.fl-obs-lbl{font-size:7.5pt;font-weight:700;color:var(--ghost);
+  text-transform:uppercase;letter-spacing:.04em;flex-shrink:0}
+.fl-obs-line{flex:1;border-bottom:1px solid var(--rule);min-height:5mm}
+/* MELHOR CARGA com referência à tentativa */
+.fl-melhor{display:flex;align-items:center;border-top:2px solid var(--ink);
+  background:var(--dk);color:var(--w);padding:2.5mm 3mm;gap:3mm}
+.fl-melhor-lbl{font-size:10pt;font-weight:900;letter-spacing:.06em;
+  text-transform:uppercase}
+.fl-melhor-line{flex:1;min-height:7mm;background:transparent;
   border-bottom:1.5px solid var(--w)}
-.fl-melhor-unidade{font-size:9pt;font-weight:700}
+.fl-melhor-unidade{font-size:10pt;font-weight:700}
+.fl-melhor-ref{display:flex;align-items:center;gap:1.5mm;font-size:8.5pt;
+  font-weight:600;color:#DDD;letter-spacing:.04em}
+.fl-melhor-ref-box{width:8mm;height:6.5mm;border:1.5px solid var(--w);
+  background:transparent}
 .fl-team-atleta{display:flex;align-items:center;border-top:1px solid var(--rule);
   padding:3mm;gap:4mm;background:var(--w)}
 .fl-team-info{flex:1;display:flex;align-items:center;gap:3mm;min-width:0}
@@ -973,46 +992,66 @@ FOR_LOAD_TEAM_SUMMARY_TMPL = r"""<div class="page">
 
 
 FOR_LOAD_TABLE_MACRO = r"""
-{# Macro de tentativa única: régua esq + barra desenhada + régua dir + carga + ✓/✗ #}
+{# Macro de tentativa única: 2 linhas (régua/barra/régua) e (carga/validade/obs) #}
 {% macro for_load_tentativa(idx, anilhas_ordem_grande_pequeno, barra_peso, unidade) %}
 <div class="fl-row {% if idx is even %}fl-row-alt{% endif %}">
-  <div class="fl-row-hdr">T{{ idx }}</div>
-  {# Anilhas esq: maior colada na barra (interno) → mais leve na ponta (externo).
-     Lemos visualmente da extremidade pra barra: pequenas→grandes. #}
-  <div class="fl-anilhas fl-anilhas-esq">
-    {% for p in anilhas_ordem_grande_pequeno|reverse %}
-    <div class="fl-anilha"><span>{{ p }}</span></div>
-    {% endfor %}
+  <div class="fl-row-top">
+    <div class="fl-row-hdr">T{{ idx }}</div>
+    {# Anilhas esq: maior colada na barra → mais leve na ponta. Visual da
+       extremidade pra barra: pequenas→grandes. #}
+    <div class="fl-anilhas fl-anilhas-esq">
+      {% for p in anilhas_ordem_grande_pequeno|reverse %}
+      <div class="fl-anilha"><span>{{ p }}</span></div>
+      {% endfor %}
+    </div>
+    <div class="fl-barra">{{ barra_peso }} {{ unidade }}</div>
+    <div class="fl-anilhas fl-anilhas-dir">
+      {% for p in anilhas_ordem_grande_pequeno %}
+      <div class="fl-anilha"><span>{{ p }}</span></div>
+      {% endfor %}
+    </div>
   </div>
-  <div class="fl-barra">
-    <div class="fl-barra-traco"></div>
-    <div class="fl-barra-lbl">{{ barra_peso }} {{ unidade }}</div>
-  </div>
-  <div class="fl-anilhas fl-anilhas-dir">
-    {% for p in anilhas_ordem_grande_pequeno %}
-    <div class="fl-anilha"><span>{{ p }}</span></div>
-    {% endfor %}
-  </div>
-  <div class="fl-carga"><span class="fl-carga-lbl">Carga</span><div class="fl-carga-line"></div></div>
-  <div class="fl-val">
-    <div class="fl-val-circle">✓</div>
-    <div class="fl-val-circle">✗</div>
+  <div class="fl-row-bottom">
+    <div class="fl-carga">
+      <span class="fl-carga-lbl">Carga</span>
+      <div class="fl-carga-line"></div>
+      <span class="fl-carga-unidade">{{ unidade }}</span>
+    </div>
+    <div class="fl-val">
+      <div class="fl-val-opt">
+        <div class="fl-val-box"></div>
+        <span class="fl-val-lbl">Válida</span>
+      </div>
+      <div class="fl-val-opt">
+        <div class="fl-val-box"></div>
+        <span class="fl-val-lbl nr">No-Rep</span>
+      </div>
+    </div>
+    <div class="fl-obs">
+      <span class="fl-obs-lbl">Obs</span>
+      <div class="fl-obs-line"></div>
+    </div>
   </div>
 </div>
 {% endmacro %}
 
-{# Macro principal: header da modalidade + N tentativas + linha 'MELHOR CARGA' #}
+{# Macro principal: header + instrução + N tentativas + linha 'MELHOR CARGA' #}
 {% macro for_load_table(wkt, atleta) %}
 {% set unidade  = wkt.unidade | default('kg') %}
 {% set genero   = wkt._genero | default('M') %}
 {# Default conservador: só F usa barra feminina; M e MISTO usam masculina. #}
 {% set barra    = wkt.barra_feminina if genero == 'F' else wkt.barra_masculina %}
+{% set barra_label = 'Feminina' if genero == 'F' else 'Masculina' %}
 {% set tentativas = wkt.tentativas | default(3) %}
 {% set anilhas  = wkt.anilhas | default([25, 20, 15, 10, 5, 2.5, 1.25]) %}
 <div class="fl-zone">
   <div class="fl-zone-hdr">
-    <span class="fl-zone-t">For Load</span>
-    <span class="fl-zone-meta">Barra {{ barra }} {{ unidade }} · {{ tentativas }} tentativa{% if tentativas != 1 %}s{% endif %}</span>
+    <span class="fl-zone-t">For Load · {{ tentativas }} Tentativa{% if tentativas != 1 %}s{% endif %}</span>
+    <span class="fl-zone-meta">Barra {{ barra_label }} {{ barra }} {{ unidade }}</span>
+  </div>
+  <div class="fl-instrucao">
+    Marque (✗) cada anilha usada em cada lado da barra, anote a carga total
+    e marque <strong>Válida</strong> ou <strong>No-Rep</strong> após cada tentativa.
   </div>
   {% for i in range(1, tentativas + 1) %}
     {{ for_load_tentativa(i, anilhas, barra, unidade) }}
@@ -1021,6 +1060,10 @@ FOR_LOAD_TABLE_MACRO = r"""
     <span class="fl-melhor-lbl">Melhor Carga</span>
     <div class="fl-melhor-line"></div>
     <span class="fl-melhor-unidade">{{ unidade }}</span>
+    <div class="fl-melhor-ref">
+      <span>Ref. T</span>
+      <div class="fl-melhor-ref-box"></div>
+    </div>
   </div>
 </div>
 {% endmacro %}
