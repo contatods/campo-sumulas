@@ -216,6 +216,37 @@ def test_validate_for_load_aceita_workout_bem_formado():
     _validate_workout_tipos(wkts)   # não deve levantar
 
 
+def test_validate_for_load_rejeita_anilhas_acima_do_cap():
+    """Mais de 12 anilhas estoura A4 horizontalmente — backend deve rejeitar."""
+    import pytest
+    from sumula_app import _validate_workout_tipos, BadRequest
+    wkt = {"tipo": "for_load", "tentativas": 3, "anilhas": list(range(1, 14))}
+    with pytest.raises(BadRequest) as exc:
+        _validate_workout_tipos([wkt])
+    assert "máximo" in str(exc.value).lower() or "max" in str(exc.value).lower()
+
+
+def test_validate_for_load_normaliza_unidade_case():
+    """Unidade 'KG'/'LB' (caps) é tolerada e normalizada pra lowercase."""
+    from sumula_app import _validate_workout_tipos
+    for entrada, esperado in [("KG", "kg"), ("kg", "kg"), ("Lb", "lb"), ("LB", "lb")]:
+        wkt = {"tipo": "for_load", "tentativas": 3, "anilhas": [25], "unidade": entrada}
+        _validate_workout_tipos([wkt])
+        assert wkt["unidade"] == esperado, f"esperava {esperado}, got {wkt['unidade']}"
+
+
+def test_enriquecer_for_load_aplica_todos_defaults():
+    """For Load sem campos → enriquecer popula tentativas/unidade/anilhas/barras."""
+    from ai_rounds import enriquecer_workouts
+    wkt = {"tipo": "for_load", "nome": "MAX"}
+    enriquecer_workouts([wkt])
+    assert wkt["tentativas"] >= 1
+    assert wkt["unidade"] in ("kg", "lb")
+    assert isinstance(wkt["anilhas"], list) and len(wkt["anilhas"]) > 0
+    assert wkt["barra_masculina"] > 0
+    assert wkt["barra_feminina"] > 0
+
+
 def test_validate_for_load_rejeita_config_invalida():
     """For Load com tentativas/anilhas/barras inválidas → BadRequest."""
     import pytest

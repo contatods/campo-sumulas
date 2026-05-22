@@ -1041,11 +1041,12 @@ function editarWorkout(ci, wi) {
     setMovTableFromArray('f2', (w.formula2 || {}).movimentos || []);
     switchExpressTab('f1');
   } else if (w.tipo === 'for_load') {
+    const unidWkt = w.unidade || 'kg';
     document.getElementById('edFlTentativas').value = w.tentativas || 3;
-    document.getElementById('edFlUnidade').value    = w.unidade || 'kg';
-    document.getElementById('edFlBarraM').value     = w.barra_masculina || 20;
-    document.getElementById('edFlBarraF').value     = w.barra_feminina  || 15;
-    document.getElementById('edFlAnilhas').value    = (w.anilhas || _anilhasDefault(w.unidade || 'kg')).join(', ');
+    document.getElementById('edFlUnidade').value    = unidWkt;
+    document.getElementById('edFlBarraM').value     = w.barra_masculina || (unidWkt === 'lb' ? 45 : 20);
+    document.getElementById('edFlBarraF').value     = w.barra_feminina  || (unidWkt === 'lb' ? 35 : 15);
+    document.getElementById('edFlAnilhas').value    = (w.anilhas || _anilhasDefault(unidWkt)).join(', ');
   } else {
     setMovTableFromArray('main', w.movimentos || []);
   }
@@ -1090,6 +1091,27 @@ function _preencherDefaultsForLoad() {
   if (!barraM.value) barraM.value = unidade === 'lb' ? 45 : 20;
   const barraF = document.getElementById('edFlBarraF');
   if (!barraF.value) barraF.value = unidade === 'lb' ? 35 : 15;
+}
+
+// Trocar unidade kg↔lb sugere atualizar anilhas+barras pro default da unidade.
+// Pergunta antes de sobrescrever pra não perder customização do usuário.
+function onForLoadUnidadeChange() {
+  const unidade = document.getElementById('edFlUnidade').value || 'kg';
+  const anilhasInp = document.getElementById('edFlAnilhas');
+  const barraM = document.getElementById('edFlBarraM');
+  const barraF = document.getElementById('edFlBarraF');
+  const novoDefAnilhas = _anilhasDefault(unidade).join(', ');
+  const novoBarraM = unidade === 'lb' ? 45 : 20;
+  const novoBarraF = unidade === 'lb' ? 35 : 15;
+  // Só ofere troca se valores atuais estão nos defaults da outra unidade
+  // (heurística: usuário não personalizou, é só troca de unidade).
+  const outraUnidade = unidade === 'lb' ? 'kg' : 'lb';
+  const defOutra = _anilhasDefault(outraUnidade).join(', ');
+  const barraOutraM = outraUnidade === 'lb' ? 45 : 20;
+  const barraOutraF = outraUnidade === 'lb' ? 35 : 15;
+  if (anilhasInp.value.trim() === defOutra) anilhasInp.value = novoDefAnilhas;
+  if (parseFloat(barraM.value) === barraOutraM) barraM.value = novoBarraM;
+  if (parseFloat(barraF.value) === barraOutraF) barraF.value = novoBarraF;
 }
 
 function switchExpressTab(tab) {

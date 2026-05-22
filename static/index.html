@@ -145,12 +145,12 @@
         <div class="mov-section-hdr">Configuração For Load</div>
         <div class="field-row">
           <div class="field w80">
-            <label>Tentativas</label>
-            <input id="edFlTentativas" type="number" min="1" max="10" value="3">
+            <label>Tentativas <span class="field-help" style="font-weight:400;text-transform:none;letter-spacing:0">(máx 8)</span></label>
+            <input id="edFlTentativas" type="number" min="1" max="8" value="3">
           </div>
           <div class="field w80">
             <label>Unidade</label>
-            <select id="edFlUnidade">
+            <select id="edFlUnidade" onchange="onForLoadUnidadeChange()">
               <option value="kg">kg</option>
               <option value="lb">lb</option>
             </select>
@@ -165,7 +165,7 @@
           </div>
         </div>
         <div class="field">
-          <label>Anilhas disponíveis (separadas por vírgula, do maior pro menor)</label>
+          <label>Anilhas disponíveis <span class="field-help" style="font-weight:400;text-transform:none;letter-spacing:0">(separadas por vírgula, do maior pro menor — máx 12)</span></label>
           <input id="edFlAnilhas" type="text" placeholder="25, 20, 15, 10, 5, 2.5, 1.25">
           <span class="field-help">Default kg: 25, 20, 15, 10, 5, 2.5, 1.25. Default lb: 55, 45, 35, 25, 15, 10, 5, 2.5.</span>
         </div>

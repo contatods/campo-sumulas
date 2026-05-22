@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.17.0'
+VERSION = '1.17.1'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -96,6 +96,7 @@ def _to_int_or_max(v) -> int:
 
 FOR_LOAD_TENTATIVAS_MIN = 1
 FOR_LOAD_TENTATIVAS_MAX = 8   # cap pra não estourar A4 — estudo mostra ~5-6 cabem
+FOR_LOAD_ANILHAS_MAX = 12     # cap horizontal pra régua não estourar A4 (~190mm)
 
 
 def _validate_workout_tipos(workouts):
@@ -133,6 +134,11 @@ def _validate_for_load(wkt: dict, idx: int) -> None:
     if anilhas is not None:
         if not isinstance(anilhas, list) or not anilhas:
             raise BadRequest(f"workouts[{idx}].anilhas vazio ou inválido")
+        if len(anilhas) > FOR_LOAD_ANILHAS_MAX:
+            raise BadRequest(
+                f"workouts[{idx}].anilhas tem {len(anilhas)} pesos; "
+                f"máximo {FOR_LOAD_ANILHAS_MAX} (limite horizontal A4)"
+            )
         for j, a in enumerate(anilhas):
             if not isinstance(a, (int, float)) or a <= 0:
                 raise BadRequest(
@@ -147,10 +153,15 @@ def _validate_for_load(wkt: dict, idx: int) -> None:
                 f"workouts[{idx}].{campo} inválido ({v!r}); use número positivo"
             )
     unidade = wkt.get('unidade')
-    if unidade is not None and unidade not in ('kg', 'lb'):
-        raise BadRequest(
-            f"workouts[{idx}].unidade inválido ({unidade!r}); use 'kg' ou 'lb'"
-        )
+    if unidade is not None:
+        # Tolera case ('KG', 'Kg' etc) — normaliza in-place pra render usar lower
+        if isinstance(unidade, str):
+            wkt['unidade'] = unidade.strip().lower()
+            unidade = wkt['unidade']
+        if unidade not in ('kg', 'lb'):
+            raise BadRequest(
+                f"workouts[{idx}].unidade inválido ({unidade!r}); use 'kg' ou 'lb'"
+            )
 
 def _resolve_logo(value):
     """Retorna uma data-URL de logo.

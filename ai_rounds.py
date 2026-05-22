@@ -128,21 +128,38 @@ def enriquecer_workouts(workouts: list[Workout]) -> list[Workout]:
     """Calcula campos derivados antes de renderizar.
     - AMRAP: adiciona 'n_rounds' (estimado por IA ou algoritmo)
     - Express F1 (que é AMRAP): idem na formula1
-    - For Load: garante 'tentativas' (estima se não veio do Excel)
+    - For Load: garante tentativas + anilhas + barras + unidade com defaults
+      consistentes (evita ver None em export JSON, chat AI, validar_evento)
     Modifica a lista in-place e retorna ela.
     """
+    # Import local pra evitar dependência circular caro
+    from types_ds import anilhas_default, barra_default
+
     for wkt in workouts:
-        if wkt.get('tipo') == 'amrap':
+        tipo = wkt.get('tipo')
+        if tipo == 'amrap':
             duracao = wkt.get('time_cap', '') or ''
             if 'n_rounds' not in wkt:
                 wkt['n_rounds'] = _estimar_rounds_ia(wkt.get('movimentos', []), duracao)
-        elif wkt.get('tipo') == 'express':
+        elif tipo == 'express':
             f1 = wkt.get('formula1', {})
             if f1 and 'n_rounds' not in f1:
                 f1['n_rounds'] = _estimar_rounds_ia(f1.get('movimentos', []), f1.get('janela', ''))
-        elif wkt.get('tipo') == 'for_load':
+        elif tipo == 'for_load':
+            # tentativas: heurística (IA-like) se faltar
             if not wkt.get('tentativas'):
                 wkt['tentativas'] = estimar_tentativas_for_load(wkt)
+            # unidade default 'kg' (caller pode sobrescrever via ev.unidade_default
+            # antes de chamar enriquecer)
+            unidade = (wkt.get('unidade') or 'kg').lower()
+            wkt['unidade'] = unidade
+            # anilhas, barras: aplica defaults da unidade
+            if not wkt.get('anilhas'):
+                wkt['anilhas'] = anilhas_default(unidade)
+            if not wkt.get('barra_masculina'):
+                wkt['barra_masculina'] = barra_default('M', unidade)
+            if not wkt.get('barra_feminina'):
+                wkt['barra_feminina'] = barra_default('F', unidade)
     return workouts
 
 

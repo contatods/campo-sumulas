@@ -711,6 +711,15 @@ body{
 .fl-zone-compact .fl-anilha{width:6mm;height:6mm}
 .fl-zone-compact .fl-anilha span{font-size:7pt}
 .fl-zone-compact .fl-barra{min-width:14mm;height:6mm;font-size:7.5pt}
+/* Quando há muitas anilhas (libras tem 8), reduz pra caber em A4 sem overflow */
+.fl-zone-compact.fl-zone-muitas-anilhas .fl-anilha{width:5mm;height:5.5mm}
+.fl-zone-compact.fl-zone-muitas-anilhas .fl-anilha span{font-size:6.5pt}
+.fl-zone-compact.fl-zone-muitas-anilhas .fl-barra{min-width:12mm;height:5.5mm;font-size:7pt}
+.fl-zone-compact.fl-zone-muitas-anilhas .fl-carga{min-width:30mm}
+.fl-zone-compact.fl-zone-muitas-anilhas .fl-val{gap:2mm}
+/* Mesmo no expandido, 8+ anilhas reduzem pra evitar overflow */
+.fl-zone-muitas-anilhas:not(.fl-zone-compact) .fl-anilha{width:6.5mm;height:6.5mm}
+.fl-zone-muitas-anilhas:not(.fl-zone-compact) .fl-anilha span{font-size:7.5pt}
 .fl-zone-compact .fl-carga{min-width:34mm}
 .fl-zone-compact .fl-carga-lbl{font-size:8pt}
 .fl-zone-compact .fl-carga-line{min-height:5.5mm}
@@ -1073,9 +1082,11 @@ FOR_LOAD_TABLE_MACRO = r"""
 {% set tentativas = wkt.tentativas | default(3) %}
 {% set anilhas  = wkt.anilhas | default([25, 20, 15, 10, 5, 2.5, 1.25]) %}
 {# Layout compacto pra muitas tentativas (>=5): 1 linha por tentativa em vez
-   de 2, sem instrução nem coluna Obs. Cabe em A4 até 8+ tentativas. #}
+   de 2, sem instrução nem coluna Obs. Cabe em A4 até 8+ tentativas.
+   Quando >7 anilhas (típico libras), reduz caixinhas pra caber horizontal. #}
 {% set is_compact = tentativas >= 5 %}
-<div class="fl-zone{% if is_compact %} fl-zone-compact{% endif %}">
+{% set muitas_anilhas = anilhas|length > 7 %}
+<div class="fl-zone{% if is_compact %} fl-zone-compact{% endif %}{% if muitas_anilhas %} fl-zone-muitas-anilhas{% endif %}">
   <div class="fl-zone-hdr">
     <span class="fl-zone-t">For Load · {{ tentativas }} Tentativa{% if tentativas != 1 %}s{% endif %}</span>
     <span class="fl-zone-meta">Barra {{ barra_label }} {{ barra }} {{ unidade }}</span>
