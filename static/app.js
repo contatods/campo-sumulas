@@ -249,11 +249,74 @@ function limparTudoModal() {
 // Banner pós-import
 function dispensarBanner() {
   document.getElementById('postImportBanner').style.display = 'none';
+  document.getElementById('pibAIBox').style.display = 'none';
+  document.getElementById('pibAIBtn').style.display = 'none';
 }
 function mostrarBannerPosImport(msg) {
   const banner = document.getElementById('postImportBanner');
   document.getElementById('pibMsg').textContent = msg;
   banner.style.display = '';
+}
+
+// Avisos do último import (preenchido em aplicarImport). Usado pela IA pra
+// explicar o que aconteceu.
+let _ultimosAvisos = [];
+let _ultimosStats = null;
+
+function explicarComIA() {
+  if (!chatAIAtiva) {
+    toast('IA inativa — configure ANTHROPIC_API_KEY no servidor', 'err');
+    return;
+  }
+  if (!_ultimosAvisos.length) {
+    toast('Sem avisos pra explicar', 'info');
+    return;
+  }
+  // Cache: hash simples do JSON dos avisos pra evitar pagar 2× pelo mesmo
+  const chave = 'ai_avisos:' + _hashStr(JSON.stringify({s: _ultimosStats, a: _ultimosAvisos}));
+  const cached = sessionStorage.getItem(chave);
+  if (cached) {
+    _renderExplicacaoIA(cached);
+    return;
+  }
+  const btn = document.getElementById('pibAIBtn');
+  const box = document.getElementById('pibAIBox');
+  btn.disabled = true;
+  btn.textContent = '🤖 Pensando…';
+  fetch('/api/ai/explicar-avisos', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ stats: _ultimosStats, avisos: _ultimosAvisos }),
+  }).then(r => r.json()).then(res => {
+    btn.disabled = false;
+    btn.textContent = '🤖 Explicar com IA';
+    if (res.error) {
+      box.textContent = 'Erro: ' + res.error;
+      box.style.display = '';
+      return;
+    }
+    const texto = res.texto || '(sem resposta)';
+    try { sessionStorage.setItem(chave, texto); } catch (e) {}
+    _renderExplicacaoIA(texto);
+  }).catch(e => {
+    btn.disabled = false;
+    btn.textContent = '🤖 Explicar com IA';
+    box.textContent = 'Erro: ' + e.message;
+    box.style.display = '';
+  });
+}
+
+function _renderExplicacaoIA(texto) {
+  const box = document.getElementById('pibAIBox');
+  // texto vem com quebras de linha — preserva via white-space pre-wrap
+  box.textContent = texto;
+  box.style.display = '';
+}
+
+function _hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return h.toString(36);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1525,11 +1588,29 @@ function aplicarImport(result) {
   atualizarBannerPosImport();  // busca resumo formatado
   toast(`${result.dias.length} dia(s), ${totalCats} categoria(s) importadas`, 'ok');
 
-  // Avisos do parser (ex: atletas descartados por número fora da faixa)
+  // Avisos do parser (ex: atletas descartados por número fora da faixa) +
+  // avisos do validar_evento. IA pode explicar tudo num parágrafo só se o
+  // usuário pedir (botão "Explicar com IA" no banner — opt-in pra economizar).
   const avisos = result.avisos_import || [];
+  _ultimosAvisos = avisos.slice();
+  _ultimosStats = {
+    dias: result.dias.length,
+    categorias: totalCats,
+    workouts: result.dias.reduce((s, d) =>
+      s + (d.categorias || []).reduce((s2, c) => s2 + (c.workouts || []).length, 0), 0),
+    atletas: result.dias.reduce((s, d) =>
+      s + (d.categorias || []).reduce((s2, c) =>
+        s2 + (c.baterias || []).reduce((s3, b) => s3 + (b.alocacoes || []).length, 0), 0), 0),
+    roster: (result.roster || []).length,
+  };
+  const aiBtn = document.getElementById('pibAIBtn');
+  if (aiBtn) aiBtn.style.display = (avisos.length && chatAIAtiva) ? '' : 'none';
   if (avisos.length) {
     console.warn(`Import com ${avisos.length} aviso(s):`, avisos);
-    toast(`Importado com ${avisos.length} aviso(s) — veja console (F12) ou rode Validar`, 'warn');
+    const msgToast = chatAIAtiva
+      ? `${avisos.length} aviso(s) — clique "🤖 Explicar com IA" pra detalhes`
+      : `${avisos.length} aviso(s) — veja console (F12) ou rode Validar`;
+    toast(msgToast, 'warn');
   }
 }
 

@@ -297,11 +297,15 @@
 
     <!-- Banner discreto pós-import (some quando dispensado) -->
     <div class="post-import-banner" id="postImportBanner" style="display:none">
-      <span class="pib-icon">✓</span>
-      <span class="pib-msg" id="pibMsg">Importado.</span>
-      <button class="pib-cta" onclick="abrirConfig('dias')">Configurar datas</button>
-      <button class="pib-cta secondary" onclick="abrirValidacao()" title="Verificar problemas no evento">Validar</button>
-      <button class="pib-close" onclick="dispensarBanner()" title="Fechar">×</button>
+      <div class="pib-row">
+        <span class="pib-icon">✓</span>
+        <span class="pib-msg" id="pibMsg">Importado.</span>
+        <button class="pib-cta" onclick="abrirConfig('dias')">Configurar datas</button>
+        <button class="pib-cta secondary" onclick="abrirValidacao()" title="Verificar problemas no evento">Validar</button>
+        <button class="pib-cta secondary" id="pibAIBtn" onclick="explicarComIA()" style="display:none" title="Pedir pra IA explicar os avisos do import">🤖 Explicar com IA</button>
+        <button class="pib-close" onclick="dispensarBanner()" title="Fechar">×</button>
+      </div>
+      <div id="pibAIBox" style="display:none"></div>
     </div>
 
     <!-- Painel de validação (modal sobreposto) -->

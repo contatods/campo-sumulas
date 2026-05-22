@@ -489,6 +489,57 @@ def chat_evento(mensagens: list[dict], config: dict) -> str:
     return resp.content[0].text or ""
 
 
+# ── Explicar avisos do import em linguagem humanizada ────────────────────────
+def explicar_avisos_import(stats: dict, avisos: list[dict]) -> str:
+    """Recebe estatísticas do evento + lista de avisos (do parser e do
+    validar_evento) e retorna texto em PT-BR explicando o que aconteceu,
+    voltado pra organizador de evento (não-técnico).
+
+    Levanta RuntimeError quando IA não está ativa (caller deve fazer fallback
+    pra mostrar avisos crus).
+    """
+    if not AI_ATIVO:
+        raise RuntimeError('IA inativa — defina ANTHROPIC_API_KEY pra usar análise.')
+    if not avisos:
+        return ""   # sem avisos, sem necessidade de IA
+
+    import json as _json
+    # Trunca lista de avisos pra não estourar tokens — ~50 avisos é mais que
+    # suficiente, organizador não vai ler 100 explicações.
+    avisos_truncados = avisos[:50]
+    contexto = _json.dumps({'stats': stats, 'avisos': avisos_truncados}, ensure_ascii=False)
+
+    system = (
+        "Você é assistente de organização de eventos de CrossFit ajudando quem "
+        "acabou de importar um Excel pro sistema de súmulas. Seu papel é "
+        "EXPLICAR os avisos do sistema em linguagem natural, voltada pra "
+        "organizador (não-técnico). Regras:\n\n"
+        "1. Comece com 1 frase de resumo do evento (use os stats fornecidos).\n"
+        "2. Pra cada GRUPO de avisos relacionados, escreva 1 parágrafo curto "
+        "   (2-3 frases) explicando o que aconteceu e o que fazer.\n"
+        "3. Agrupe avisos similares (ex: várias baterias órfãs da mesma "
+        "   categoria → 1 parágrafo só).\n"
+        "4. Tom: direto, prático, sem jargão técnico (evite palavras como "
+        "   'normalização', 'parser', 'chave'). Use 'cronograma', 'sorteio', "
+        "   'alocação', 'inscritos', 'heat' que organizadores entendem.\n"
+        "5. Sempre que possível, sugira CORREÇÃO concreta no Excel.\n"
+        "6. Limite total: 300 palavras. Sem markdown elaborado, só texto "
+        "   corrido com quebras de linha entre parágrafos.\n\n"
+        f"Dados do import:\n{contexto}"
+    )
+
+    client = anthropic.Anthropic(api_key=AI_KEY, timeout=20.0)
+    resp = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=600,
+        system=system,
+        messages=[{"role": "user", "content": "Explique o que aconteceu no import desse evento."}],
+    )
+    if not resp.content:
+        return ""
+    return resp.content[0].text or ""
+
+
 # ── Resumo natural do evento (curto, conciso) ───────────────────────────────
 def resumo_evento(config: dict) -> str:
     """Retorna 1-2 frases descrevendo o evento importado.
