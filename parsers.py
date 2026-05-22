@@ -399,7 +399,14 @@ def _parse_excel_grade(wb, sname: str) -> dict[str, Any]:
             if cat_idx >= len(row) or row[cat_idx] is None: continue
             cell_text = str(row[cat_idx]).strip()
             if not cell_text: continue
-            wkt = parse_workout_text(cell_text, row_num)
+            # Extrai 'Arena: <nome>' antes de parsear pra evitar que vire o nome
+            # do workout. parse_workout_text pega a primeira linha como nome —
+            # se a 1ª linha for 'Arena: HeleFitness', sem essa extração o nome
+            # vira 'ARENA: HELEFITNESS' em vez do nome real (próxima linha).
+            arena, texto_limpo = _extrair_arena(cell_text)
+            wkt = parse_workout_text(texto_limpo, row_num)
+            if arena:
+                wkt['arena'] = arena
             workouts.append(wkt)
         if workouts:
             por_categoria[cat_nome] = workouts
@@ -1378,6 +1385,10 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             )
 
         cats_resultado: list[dict[str, Any]] = []
+        # Tracker de chaves da montagem que foram consumidas via cronograma.
+        # As que sobrarem são promovidas a baterias extras no fim do loop —
+        # cobre Heat órfão (cronograma incompleto mas montagem com alocação).
+        chaves_consumidas: set[tuple] = set()
         for cat_grade, workouts in grade_por_categoria.items():
             cat_grade_norm = _normalizar_categoria(cat_grade)
             cat_grade_relax = cats_grade_relaxadas[cat_grade]
@@ -1406,39 +1417,42 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                 #             — pra eventos multi-arena onde cronograma usa bateria
                 #             local por arena e montagem usa bateria global. Só vale
                 #             quando há único candidato pra essa categoria+código.
+                # Cada candidato carrega a chave completa (cod, cat, bat) pra
+                # poder marcar como consumida no tracker.
                 candidatos_estrito: list[tuple] = []
                 candidatos_relaxado: list[tuple] = []
                 candidatos_sem_bat: list[tuple] = []
-                for (chave_cod, chave_cat, chave_bat), alocs in montagem.items():
-                    # Match de categoria (estrito ou relaxado)
+                for chave, alocs in montagem.items():
+                    chave_cod, chave_cat, chave_bat = chave
                     cat_bate = _bateria_casa_categoria(
                         chave_cat, cat_grade_norm, cat_grade_relax, permite_relax,
                     )
                     if not cat_bate:
                         continue
-                    # Sub-categoria exata (com sufixo de Heat preservado) — pra
-                    # desambiguar quando há múltiplas baterias da mesma categoria
-                    # base. Comparação raw lower/strip (sem cortar (Heat N)).
                     cat_exata_bate = (
                         chave_cat.strip().lower() == bat_cat_exata.strip().lower()
                     )
                     if chave_bat == b['numero']:
-                        candidatos_relaxado.append((chave_cod, alocs))
+                        candidatos_relaxado.append((chave, alocs))
                         if codigos_b:
                             codigos_chave = set(_split_codigo_evento(chave_cod))
                             if codigos_b & codigos_chave:
-                                candidatos_estrito.append((chave_cod, alocs))
+                                candidatos_estrito.append((chave, alocs))
                     elif cat_exata_bate and codigos_b:
-                        # bat diverge mas categoria exata + codigo bate
                         codigos_chave = set(_split_codigo_evento(chave_cod))
                         if codigos_b & codigos_chave:
-                            candidatos_sem_bat.append((chave_cod, alocs))
+                            candidatos_sem_bat.append((chave, alocs))
                 escolhido = (
                     candidatos_estrito[0] if candidatos_estrito
                     else (candidatos_relaxado[0] if len(candidatos_relaxado) == 1
                           else (candidatos_sem_bat[0] if len(candidatos_sem_bat) == 1 else None))
                 )
-                codigo_montagem, aloc = escolhido if escolhido else ("", [])
+                if escolhido:
+                    chave_escolhida, aloc = escolhido
+                    codigo_montagem = chave_escolhida[0]
+                    chaves_consumidas.add(chave_escolhida)
+                else:
+                    codigo_montagem, aloc = "", []
 
                 # Bateria mista (`X & Y`): a Montagem traz atletas das duas
                 # categorias juntos. Se temos faixa de número da categoria
@@ -1492,6 +1506,61 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                 'nome':      cat_grade,
                 'workouts':  workouts,
                 'baterias':  baterias_full,
+            })
+
+        # Promoção de baterias órfãs: chaves da montagem que ficaram sem match
+        # via cronograma (ex: organizador esqueceu de adicionar Heat 2 no
+        # cronograma mas registrou as alocações na Montagem). Cada chave órfã
+        # vira bateria extra na categoria correspondente da grade.
+        for chave, alocs in montagem.items():
+            if chave in chaves_consumidas:
+                continue
+            chave_cod, chave_cat, chave_bat = chave
+            partes = _quebrar_categoria_composta(chave_cat)
+            # Acha categoria da grade que case com alguma parte dessa chave.
+            cat_correspondente = None
+            for cat_grade in grade_por_categoria:
+                cat_grade_norm = _normalizar_categoria(cat_grade)
+                if cat_grade_norm in partes:
+                    cat_correspondente = cat_grade
+                    break
+            if not cat_correspondente:
+                continue
+            # Pega ou cria a entrada de categoria no resultado
+            cat_entry = next((c for c in cats_resultado if c['nome'] == cat_correspondente), None)
+            if cat_entry is None:
+                cat_entry = {
+                    'nome':      cat_correspondente,
+                    'workouts':  grade_por_categoria[cat_correspondente],
+                    'baterias':  [],
+                }
+                cats_resultado.append(cat_entry)
+            # Filtra alocações se bateria mista + faixa Inscritos disponível
+            aloc_final = alocs
+            if len(partes) > 1:
+                cat_norm = _normalizar_categoria(cat_correspondente)
+                faixa = inscritos_faixas.get(cat_norm) or inscritos_faixas.get(
+                    _normalizar_categoria_relaxada(cat_correspondente)
+                )
+                if faixa:
+                    aloc_final, _ = _filtrar_alocacoes_por_faixa(alocs, faixa)
+            codigos_finais = _split_codigo_evento(chave_cod) or ([chave_cod] if chave_cod else [])
+            workouts_que_rodam = [
+                n for n in (_workout_numero_de_codigo(c) for c in codigos_finais) if n is not None
+            ]
+            cat_entry['baterias'].append({
+                'numero':              chave_bat,
+                'codigo_evento':       chave_cod,
+                'categoria':           chave_cat,
+                'horario_aquecimento': '',
+                'horario_fila':        '',
+                'workouts_que_rodam':  workouts_que_rodam,
+                'alocacoes':           aloc_final,
+            })
+            avisos_import.append({
+                'nivel': 'aviso',
+                'msg':   f'Bateria {chave_bat} ({chave_cat}) tem alocações na Montagem mas não está no cronograma — promovida como bateria extra',
+                'onde':  f'{dia_label}/{cat_correspondente}',
             })
 
         dias_resultado.append({'label': dia_label, 'categorias': cats_resultado})
