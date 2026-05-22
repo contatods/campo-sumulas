@@ -179,6 +179,22 @@ def _parse_express(lines: list[str], wkt: Workout) -> Workout:
 
 
 # ── Excel import ────────────────────────────────────────────────────────────────
+def _inferir_modalidade(nome_categoria: str) -> str:
+    """Infere a modalidade ('individual'|'dupla'|'trio'|'quarteto'|'time') a
+    partir do nome da categoria. Usado pelo renderer pra escolher labels
+    ('Nome do Atleta' vs 'Nome do Trio' etc).
+
+    Heurística por palavra-chave em PT-BR e EN. Ordem importa — checa
+    palavras mais específicas antes (quarteto antes de time/equipe).
+    """
+    s = (nome_categoria or '').lower()
+    if 'quarteto' in s or 'quartet' in s:    return 'quarteto'
+    if 'trio' in s:                          return 'trio'
+    if 'dupla' in s or ' pair' in s or 'pairs' in s: return 'dupla'
+    if 'time' in s or 'team' in s or 'equipe' in s:  return 'time'
+    return 'individual'
+
+
 def _is_categoria_grid(ws) -> bool:
     """Detecta se a aba tem formato grade (colunas=categorias, linhas=workouts)."""
     rows = list(ws.iter_rows(min_row=1, max_row=3, values_only=True))
@@ -394,6 +410,7 @@ def _parse_excel_grade(wb, sname: str) -> dict[str, Any]:
 
     por_categoria: dict[str, list[Workout]] = {}
     for cat_idx, cat_nome in categorias:
+        modalidade = _inferir_modalidade(cat_nome)
         workouts: list[Workout] = []
         for row_num, row in enumerate(rows[1:], 1):
             if cat_idx >= len(row) or row[cat_idx] is None: continue
@@ -407,6 +424,7 @@ def _parse_excel_grade(wb, sname: str) -> dict[str, Any]:
             wkt = parse_workout_text(texto_limpo, row_num)
             if arena:
                 wkt['arena'] = arena
+            wkt['modalidade'] = modalidade   # inferido do nome da categoria
             workouts.append(wkt)
         if workouts:
             por_categoria[cat_nome] = workouts

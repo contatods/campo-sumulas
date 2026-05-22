@@ -237,6 +237,20 @@ def test_validate_for_load_rejeita_config_invalida():
         assert contem in str(exc.value), f"esperava '{contem}' em '{exc.value}'"
 
 
+def test_inferir_modalidade():
+    """Detecta modalidade a partir do nome da categoria."""
+    from parsers import _inferir_modalidade
+    assert _inferir_modalidade("Elite Masculino")    == "individual"
+    assert _inferir_modalidade("Rx Feminino")         == "individual"
+    assert _inferir_modalidade("Dupla Misto")         == "dupla"
+    assert _inferir_modalidade("Dupla Amador Masc")   == "dupla"
+    assert _inferir_modalidade("Trio Rx Misto")       == "trio"
+    assert _inferir_modalidade("Quarteto Amador")     == "quarteto"
+    assert _inferir_modalidade("Team Battle")         == "time"
+    assert _inferir_modalidade("Equipe Master")       == "time"
+    assert _inferir_modalidade("")                    == "individual"
+
+
 def test_parse_workout_text_detecta_for_load():
     """For Load: detecta tipo, tentativas e não cria movimentos."""
     texto = '"MAX CLEAN"\nFor Load — 5 tentativas\nEncontre a maior carga em 8 minutos.'

@@ -697,6 +697,34 @@ body{
   font-weight:600;color:#DDD;letter-spacing:.04em}
 .fl-melhor-ref-box{width:8mm;height:6.5mm;border:1.5px solid var(--w);
   background:transparent}
+
+/* ── For Load COMPACT — pra 5+ tentativas (cabe em A4 sem estourar) ──
+   Estratégia: 1 linha por tentativa (em vez de 2), padding/fonts
+   menores, esconde instrução e coluna Obs. Mantém anilhas + barra +
+   carga + validade — info essencial pro árbitro. */
+.fl-zone-compact .fl-instrucao{display:none}
+.fl-zone-compact .fl-row{flex-direction:row;align-items:center;padding:1mm 2mm;
+  gap:3mm;min-height:0}
+.fl-zone-compact .fl-row-top{padding:0;gap:0;flex:0 0 auto}
+.fl-zone-compact .fl-row-bottom{padding:0;gap:3mm;flex:1}
+.fl-zone-compact .fl-row-hdr{width:8mm;font-size:10pt;padding:0.5mm 0}
+.fl-zone-compact .fl-anilha{width:6mm;height:6mm}
+.fl-zone-compact .fl-anilha span{font-size:7pt}
+.fl-zone-compact .fl-barra{min-width:14mm;height:6mm;font-size:7.5pt}
+.fl-zone-compact .fl-carga{min-width:34mm}
+.fl-zone-compact .fl-carga-lbl{font-size:8pt}
+.fl-zone-compact .fl-carga-line{min-height:5.5mm}
+.fl-zone-compact .fl-carga-unidade{font-size:8.5pt}
+.fl-zone-compact .fl-val{gap:3mm}
+.fl-zone-compact .fl-val-box{width:5.5mm;height:5.5mm}
+.fl-zone-compact .fl-val-lbl{font-size:7.5pt}
+.fl-zone-compact .fl-obs{display:none}
+.fl-zone-compact .fl-zone-hdr{min-height:7mm;padding:1mm 3mm}
+.fl-zone-compact .fl-zone-t{font-size:11.5pt}
+.fl-zone-compact .fl-zone-meta{font-size:8.5pt}
+.fl-zone-compact .fl-melhor{padding:1.5mm 3mm}
+.fl-zone-compact .fl-melhor-lbl{font-size:9.5pt}
+.fl-zone-compact .fl-melhor-line{min-height:5.5mm}
 .fl-team-atleta{display:flex;align-items:center;border-top:1px solid var(--rule);
   padding:3mm;gap:4mm;background:var(--w)}
 .fl-team-info{flex:1;display:flex;align-items:center;gap:3mm;min-width:0}
@@ -1044,7 +1072,10 @@ FOR_LOAD_TABLE_MACRO = r"""
 {% set barra_label = 'Feminina' if genero == 'F' else 'Masculina' %}
 {% set tentativas = wkt.tentativas | default(3) %}
 {% set anilhas  = wkt.anilhas | default([25, 20, 15, 10, 5, 2.5, 1.25]) %}
-<div class="fl-zone">
+{# Layout compacto pra muitas tentativas (>=5): 1 linha por tentativa em vez
+   de 2, sem instrução nem coluna Obs. Cabe em A4 até 8+ tentativas. #}
+{% set is_compact = tentativas >= 5 %}
+<div class="fl-zone{% if is_compact %} fl-zone-compact{% endif %}">
   <div class="fl-zone-hdr">
     <span class="fl-zone-t">For Load · {{ tentativas }} Tentativa{% if tentativas != 1 %}s{% endif %}</span>
     <span class="fl-zone-meta">Barra {{ barra_label }} {{ barra }} {{ unidade }}</span>
@@ -1113,8 +1144,8 @@ PAGE_TMPL_STR = r"""<div class="page">
 {# ── PRÉ-WORKOUT ZONE ── #}
 {% set tipo = wkt.tipo|default('for_time') %}
 {% set modalidade = wkt.modalidade|default('individual') %}
-{% set lbl_nome = {'individual':'Nome do Atleta','dupla':'Nome da Dupla','time':'Nome do Time'}[modalidade]|default('Nome do Atleta') %}
-{% set lbl_sign = {'individual':'Assinatura do Atleta','dupla':'Assinatura do Capitão','time':'Assinatura do Capitão'}[modalidade]|default('Assinatura do Atleta') %}
+{% set lbl_nome = {'individual':'Nome do Atleta','dupla':'Nome da Dupla','trio':'Nome do Trio','quarteto':'Nome do Quarteto','time':'Nome do Time'}[modalidade]|default('Nome do Atleta') %}
+{% set lbl_sign = {'individual':'Assinatura do Atleta','dupla':'Assinatura do Capitão','trio':'Assinatura do Capitão','quarteto':'Assinatura do Capitão','time':'Assinatura do Capitão'}[modalidade]|default('Assinatura do Atleta') %}
 
 <div class="prekit">
   <div class="pk-header">

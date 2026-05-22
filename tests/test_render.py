@@ -77,6 +77,42 @@ def test_render_for_load_categoria_mista_usa_barra_masculina(fonts_empty):
     assert "15 kg" not in html, "MISTO não deve renderizar barra feminina"
 
 
+def test_render_for_load_compact_para_tentativas_altas(fonts_empty):
+    """Pra 5+ tentativas, layout compacto é aplicado (cabe em A4).
+    Pra 4 ou menos, layout expandido (2 linhas por tentativa)."""
+    import re
+    ev = {"nome": "EVT", "categoria": "Rx Masculino", "data": "2026", "unidade_default": "kg"}
+    atl = {"nome": "X", "box": "CF", "raia": "1", "numero": "101", "bateria": "1"}
+    for n, esperado_compact in [(3, False), (4, False), (5, True), (8, True)]:
+        wkt = {"numero": 1, "nome": "MAX", "tipo": "for_load",
+               "modalidade": "individual", "tentativas": n}
+        html = render_workout(ev, wkt, fonts_empty, "", "", atl)
+        m = re.search(r'<div class="fl-zone( fl-zone-compact)?"', html)
+        assert m, f"div fl-zone não encontrado pra {n} tentativas"
+        is_compact = bool(m.group(1))
+        assert is_compact == esperado_compact, (
+            f"{n} tentativas: esperado compact={esperado_compact}, got={is_compact}"
+        )
+
+
+def test_render_modalidades_aplica_label_correto(fonts_empty):
+    """Modalidade muda o label de 'Nome do X' no pré-workout."""
+    ev = {"nome": "EVT", "categoria": "Rx", "data": "2026"}
+    atl = {"nome": "X", "box": "CF", "raia": "1", "numero": "1", "bateria": "1"}
+    wkt_base = {"numero": 1, "nome": "WKT", "tipo": "for_time", "time_cap": "5 min",
+                "movimentos": [{"nome": "PULL-UPS", "reps": 10}, {"chegada": True}]}
+    for modalidade, label_esperado in [
+        ("individual", "Nome do Atleta"),
+        ("dupla", "Nome da Dupla"),
+        ("trio", "Nome do Trio"),
+        ("quarteto", "Nome do Quarteto"),
+        ("time", "Nome do Time"),
+    ]:
+        wkt = {**wkt_base, "modalidade": modalidade}
+        html = render_workout(ev, wkt, fonts_empty, "", "", atl)
+        assert label_esperado in html, f"modalidade {modalidade!r}: esperava {label_esperado!r}"
+
+
 def test_render_for_load_libras(fonts_empty):
     ev = {"nome": "EVT", "categoria": "Rx Masculino", "data": "2026", "unidade_default": "lb"}
     wkt = {
