@@ -156,6 +156,42 @@ def test_validar_evento_detecta_workout_sem_movimentos_e_competidor_duplicado():
 
 
 # ── #5: validar_evento detecta time cap ausente em For Time ───────────────────
+def test_parse_excel_multi_arena_separa_atletas_por_arena(xlsx_multi_arena_bytes):
+    """Excel multi-arena (estilo Monstar): cronograma e montagem com 2 blocos
+    paralelos. Atletas de cada arena devem ir pra categoria certa.
+    """
+    result = parse_excel(xlsx_multi_arena_bytes)
+    assert result["tipo"] == "evento_multidia"
+    # 2 dias: Sexta (com montagem) e Sábado (sem montagem)
+    labels = [d["label"] for d in result["dias"]]
+    assert "Sexta" in labels
+    assert "Sábado" in labels
+    # Sexta: 2 categorias (Elite Mas + Elite Fem), atletas separados
+    sexta = next(d for d in result["dias"] if d["label"] == "Sexta")
+    masculino = next((c for c in sexta["categorias"] if c["nome"] == "Elite Masculino"), None)
+    feminino  = next((c for c in sexta["categorias"] if c["nome"] == "Elite Feminino"), None)
+    assert masculino is not None and feminino is not None
+    nums_m = {a["numero"] for b in masculino["baterias"] for a in b["alocacoes"]}
+    nums_f = {a["numero"] for b in feminino["baterias"] for a in b["alocacoes"]}
+    # 4 atletas masculinos (101-104), 3 femininos (201-203), sem vazamento
+    assert nums_m == {"101", "102", "103", "104"}
+    assert nums_f == {"201", "202", "203"}
+    # Roster lido da aba 'Atletas' (sem prefixo)
+    assert len(result["roster"]) == 7
+
+
+def test_parse_excel_dia_sem_montagem_inclui_baterias_sem_atletas(xlsx_multi_arena_bytes):
+    """Dia que só tem cronograma (sem <Dia> - Montagem) é incluído pra gerar
+    súmulas em branco. Útil pra fase de planejamento antes do sorteio."""
+    result = parse_excel(xlsx_multi_arena_bytes)
+    sabado = next(d for d in result["dias"] if d["label"] == "Sábado")
+    masculino = next((c for c in sabado["categorias"] if c["nome"] == "Elite Masculino"), None)
+    assert masculino is not None
+    # Bateria existe mas sem alocações
+    assert len(masculino["baterias"]) == 1
+    assert masculino["baterias"][0]["alocacoes"] == []
+
+
 def test_validar_evento_detecta_for_time_sem_time_cap():
     config = {
         "dias": [{

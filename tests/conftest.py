@@ -160,3 +160,78 @@ def _build_xlsx_grades_e_dias():
 @pytest.fixture
 def xlsx_grades_e_dias_bytes():
     return _build_xlsx_grades_e_dias()
+
+
+def _build_xlsx_multi_arena():
+    """Constrói um xlsx com 2 arenas paralelas (estilo Monstar) — testa:
+       - cronograma com 2 blocos Categoria/Bateria lado a lado
+       - montagem com 2 blocos Raia/Número/Nome/Box lado a lado
+       - dias sem Montagem (planejamento — só cronograma)
+       - aba `Atletas` (sem prefixo)
+    """
+    import io
+    import openpyxl
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    # Inscritos
+    ws = wb.create_sheet("Inscritos")
+    ws.append(["Categorias cadastradas"])
+    ws.append(["Nome", "Max", "Pago", "Nº. Inicial", "Nº. Final", "Individual"])
+    ws.append(["Elite Masculino", 4, 4, 101, 199, "Sim"])
+    ws.append(["Elite Feminino",  3, 3, 201, 299, "Sim"])
+
+    # Workouts - Individuais (col A = dia, col B+ = categorias)
+    # `\n` na col A é exigência do detector _is_categoria_grid (espera 1ª col
+    # do header de workouts ser texto com quebra).
+    ws = wb.create_sheet("Workouts - Individuais")
+    ws.append([None, "Elite Masculino", "Elite Feminino"])
+    ws.append([
+        "Sexta\n21/05/2026",
+        'Arena: Quadra\n"WKT M"\nFor time:\n10 Pull-Ups\nTime cap: 5 min',
+        'Arena: Quadra\n"WKT F"\nFor time:\n10 Pull-Ups\nTime cap: 5 min',
+    ])
+
+    # Cronograma Sexta com 2 arenas paralelas
+    ws = wb.create_sheet("Sexta")
+    ws.append(["Arena 1", None, None, None, None, "Arena 2", None, None, None])
+    ws.append(["Eventos", "Categoria", "Bateria", "Aquecimento", "Fila",
+               "Eventos", "Categoria", "Bateria", "Aquecimento"])
+    ws.append(['#1', "Elite Masculino (Heat 1)", 1, "08:00", "08:20",
+               '#2', "Elite Feminino (Single Heat)", 1, "08:00"])
+
+    # Sexta - Montagem com 2 blocos paralelos (layout Sun: codigo + categoria)
+    ws = wb.create_sheet("Sexta - Montagem")
+    ws.append(["08:00", 1, None, None, None, "08:00", 2, None, None])         # L-2: horário, bateria
+    ws.append(['#1', "Elite Masculino (Heat 1)", None, None, None,
+               '#2', "Elite Feminino (Single Heat)", None, None])        # L-1: codigo, categoria
+    ws.append(["Raia", "Número", "Nome", "Box", None, "Raia", "Número", "Nome", "Box"])
+    ws.append([1, 101, "ATLETA M1", "BOX A", None, 1, 201, "ATLETA F1", "BOX C"])
+    ws.append([2, 102, "ATLETA M2", "BOX A", None, 2, 202, "ATLETA F2", "BOX D"])
+    ws.append([3, 103, "ATLETA M3", "BOX B", None, 3, 203, "ATLETA F3", "BOX D"])
+    ws.append([4, 104, "ATLETA M4", "BOX B", None, None, None, None, None])
+
+    # Dia sem Montagem (planejamento)
+    ws = wb.create_sheet("Sábado")
+    ws.append(["Arena 1"])
+    ws.append(["Eventos", "Categoria", "Bateria"])
+    ws.append(['"WKT2 M"', "Elite Masculino (Final Heat)", 1])
+
+    # Atletas (sem prefixo)
+    ws = wb.create_sheet("Atletas")
+    for n, name, box in [
+        (101, "ATLETA M1", "BOX A"), (102, "ATLETA M2", "BOX A"),
+        (103, "ATLETA M3", "BOX B"), (104, "ATLETA M4", "BOX B"),
+        (201, "ATLETA F1", "BOX C"), (202, "ATLETA F2", "BOX D"),
+        (203, "ATLETA F3", "BOX D"),
+    ]:
+        ws.append([n, name, box])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@pytest.fixture
+def xlsx_multi_arena_bytes():
+    return _build_xlsx_multi_arena()

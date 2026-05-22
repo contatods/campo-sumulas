@@ -659,8 +659,45 @@ def _parse_workouts_grade_multidia(ws) -> dict[str, dict[str, dict[str, Any]]]:
     return resultado
 
 
+def _detectar_blocos_cronograma(header_row: list[str]) -> list[dict[str, int | None]]:
+    """Procura TODAS as ocorrências de 'categoria' numa linha de header.
+
+    Cada ocorrência define um bloco (arena). Pra cada bloco, identifica colunas
+    auxiliares (eventos, bateria, aquecimento, fila) à esquerda e direita
+    delimitadas pela próxima 'categoria' (se houver).
+    """
+    cat_cols = [i for i, h in enumerate(header_row) if h == 'categoria']
+    if not cat_cols:
+        return []
+    blocos: list[dict[str, int | None]] = []
+    for k, col_cat in enumerate(cat_cols):
+        # Limites do bloco: do próximo 'categoria' anterior (ou 0) até o próximo (ou fim)
+        lo = cat_cols[k - 1] + 1 if k > 0 else 0
+        hi = cat_cols[k + 1] if k + 1 < len(cat_cols) else len(header_row)
+        # Procura colunas auxiliares dentro do range [lo, hi)
+        sub = header_row[lo:hi]
+
+        def _find_in_sub(*names: str) -> int | None:
+            for off, h in enumerate(sub):
+                if h in names:
+                    return lo + off
+            return None
+
+        blocos.append({
+            'eventos':     _find_in_sub('eventos'),
+            'categoria':   col_cat,
+            'bateria':     _find_in_sub('bateria'),
+            'aquecimento': _find_in_sub('aquecimento'),
+            'fila':        _find_in_sub('fila'),
+        })
+    return blocos
+
+
 def _parse_cronograma_dia(ws) -> list[dict[str, Any]]:
     """Lê uma aba de cronograma (`Sexta`, `Sábado`, `Domingo`).
+
+    Suporta N arenas em colunas paralelas no mesmo dia. Cada arena tem seu
+    próprio conjunto de colunas `Eventos | Categoria | Bateria | Aquecimento | Fila`.
 
     Retorna lista de baterias: cada uma com numero, codigo_evento (ex: '#1',
     '#2 & #3'), categoria, horario_aquecimento, horario_fila.
@@ -680,47 +717,43 @@ def _parse_cronograma_dia(ws) -> list[dict[str, Any]]:
         return []
 
     header = [str(c).strip().lower() if c else "" for c in rows[header_idx]]
-
-    def col(*opcoes: str) -> int | None:
-        for i, h in enumerate(header):
-            if h in opcoes:
-                return i
-        return None
-
-    col_eventos     = col('eventos')
-    col_categoria   = col('categoria')
-    col_bateria     = col('bateria')
-    col_aquecimento = col('aquecimento')
-    col_fila        = col('fila')
-
-    if col_categoria is None or col_bateria is None:
+    blocos = _detectar_blocos_cronograma(header)
+    if not blocos:
         return []
 
     baterias: list[dict[str, Any]] = []
-    codigo_atual = ""
+    # Cada bloco tem seu próprio 'codigo_atual' sticky (arenas não compartilham)
+    codigo_atual_por_bloco = [""] * len(blocos)
+
     for row in rows[header_idx + 1:]:
-        if not row or all(c is None for c in row):
+        if not row:
             continue
-        cat_val = row[col_categoria] if col_categoria < len(row) else None
-        if not cat_val:
-            continue
-        bat_val = row[col_bateria] if col_bateria < len(row) else None
-        if bat_val is None:
-            continue
+        for bidx, bloco in enumerate(blocos):
+            col_cat = bloco['categoria']
+            col_bat = bloco['bateria']
+            if col_cat is None or col_bat is None:
+                continue
+            cat_val = row[col_cat] if col_cat < len(row) else None
+            bat_val = row[col_bat] if col_bat < len(row) else None
+            if not cat_val or bat_val is None:
+                continue
 
-        # codigo_evento é "sticky" — vale até a próxima linha com algo na col Eventos
-        if col_eventos is not None and col_eventos < len(row):
-            ev_val = row[col_eventos]
-            if ev_val:
-                codigo_atual = str(ev_val).strip()
+            # codigo sticky por bloco
+            col_ev = bloco['eventos']
+            if col_ev is not None and col_ev < len(row):
+                ev_val = row[col_ev]
+                if ev_val:
+                    codigo_atual_por_bloco[bidx] = str(ev_val).strip()
 
-        baterias.append({
-            'numero': str(bat_val).strip(),
-            'codigo_evento': codigo_atual,
-            'categoria': str(cat_val).strip(),
-            'horario_aquecimento': _fmt_horario(row[col_aquecimento]) if col_aquecimento is not None and col_aquecimento < len(row) else "",
-            'horario_fila': _fmt_horario(row[col_fila]) if col_fila is not None and col_fila < len(row) else "",
-        })
+            col_aq = bloco['aquecimento']
+            col_fl = bloco['fila']
+            baterias.append({
+                'numero': str(bat_val).strip(),
+                'codigo_evento': codigo_atual_por_bloco[bidx],
+                'categoria': str(cat_val).strip(),
+                'horario_aquecimento': _fmt_horario(row[col_aq]) if col_aq is not None and col_aq < len(row) else "",
+                'horario_fila': _fmt_horario(row[col_fl]) if col_fl is not None and col_fl < len(row) else "",
+            })
     return baterias
 
 
@@ -741,14 +774,49 @@ def _fmt_horario(v: Any) -> str:
     return s
 
 
-def _parse_montagem_dia(ws) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
-    """Lê uma aba `<Dia> - Montagem`.
+def _detectar_blocos_montagem(valores_linha: list[str]) -> list[dict[str, int | None]]:
+    """Procura TODAS as ocorrências de 'raia' numa linha e identifica colunas
+    relacionadas (numero, nome, box) à direita de cada uma.
 
-    Estrutura repetida por bateria:
-        L1: [horário, nº_bateria, ...]
-        L2: [codigo_evento, categoria, ...]
-        L3: ["Raia", "Número", "Nome", "Box", ...]
-        L4..N: dados de raia
+    Suporta arenas paralelas (múltiplos blocos lado a lado na mesma aba).
+    Retorna lista de dicts {'raia', 'numero', 'nome', 'box'} com posições.
+    """
+    blocos: list[dict[str, int | None]] = []
+    n = len(valores_linha)
+    for col_raia, v in enumerate(valores_linha):
+        if v != 'raia':
+            continue
+        # 'nome' deve aparecer até 4 colunas à direita de 'raia'
+        col_nome = None
+        for off in range(1, min(5, n - col_raia)):
+            if valores_linha[col_raia + off] == 'nome':
+                col_nome = col_raia + off
+                break
+        if col_nome is None:
+            continue
+        col_numero = None
+        for off in range(1, col_nome - col_raia):
+            if valores_linha[col_raia + off] in ('número', 'numero'):
+                col_numero = col_raia + off
+                break
+        col_box = None
+        for off in range(1, min(4, n - col_nome)):
+            if valores_linha[col_nome + off] == 'box':
+                col_box = col_nome + off
+                break
+        blocos.append({'raia': col_raia, 'numero': col_numero,
+                       'nome': col_nome, 'box': col_box})
+    return blocos
+
+
+def _parse_montagem_dia(ws) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
+    """Lê uma aba `<Dia> - Montagem`. Suporta N arenas paralelas (blocos lado a lado).
+
+    Estrutura repetida por bateria (1+ blocos por linha):
+        L1: [horário, nº_bateria, ...]    L1: [horário_arena2, nº_bat2, ...]
+        L2: [codigo, categoria, ...]      L2: [codigo_arena2, categoria_arena2, ...]
+        L3: ["Raia", "Número", "Nome", "Box"]   L3: ["Raia", ..., "Box"]
+        L4..N: dados de raia              L4..N: dados de raia
 
     Retorna dict mapeando (codigo_evento, categoria, numero_bateria) → lista de
     alocações (raia, numero, nome, box). Raias com nome `#N/A` são puladas.
@@ -759,68 +827,92 @@ def _parse_montagem_dia(ws) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
     i = 0
     while i < len(rows):
         row = rows[i]
-        if not row or all(c is None for c in row):
+        if not row:
+            i += 1
+            continue
+        valores = [str(c).strip().lower() if c else "" for c in row]
+        blocos = _detectar_blocos_montagem(valores)
+        if not blocos:
             i += 1
             continue
 
-        # Procura "Raia" + "Número" + "Nome" como header de bateria
-        valores = [str(c).strip().lower() if c else "" for c in row]
-        if 'raia' in valores and 'nome' in valores:
-            # Encontrou um header. Volta 1-2 linhas pra pegar codigo+categoria.
-            codigo = ""
-            categoria = ""
-            if i >= 1:
-                prev = rows[i - 1]
-                if prev:
-                    codigo = str(prev[0]).strip() if prev[0] is not None else ""
-                    if len(prev) > 1 and prev[1] is not None:
-                        categoria = str(prev[1]).strip()
-            # Bateria: 2 linhas atrás, segunda coluna
-            numero_bat = ""
-            if i >= 2:
-                prev2 = rows[i - 2]
-                if prev2 and len(prev2) > 1 and prev2[1] is not None:
-                    numero_bat = str(prev2[1]).strip()
-            # Mapeia colunas via header
-            col_raia   = valores.index('raia')
-            col_numero = valores.index('número') if 'número' in valores else (valores.index('numero') if 'numero' in valores else None)
-            col_nome   = valores.index('nome')
-            col_box    = valores.index('box') if 'box' in valores else None
+        # Pra cada bloco detectado nessa linha, lê metadata 1-2 linhas acima
+        # e processa as alocações abaixo. Suporta 2 layouts:
+        #   Layout A (Sun Challenge):
+        #     L-2: [horário, nº_bateria]
+        #     L-1: [#N (código de evento), categoria]
+        #   Layout B (Monstar — sem código de evento, com arena+workout no topo):
+        #     L-3: [Arena: ...]
+        #     L-2: [horário, nome_workout]
+        #     L-1: [nº_bateria, categoria]
+        # Detecção: se L-1 col[col_raia] começa com '#' → Layout A.
+        for bloco in blocos:
+            col_raia = bloco['raia']
+            col_numero = bloco['numero']
+            col_nome = bloco['nome']
+            col_box = bloco['box']
+
+            def _cell(r, c):
+                return r[c] if (r is not None and c is not None and c < len(r)) else None
+
+            prev = rows[i - 1] if i >= 1 else None
+            prev2 = rows[i - 2] if i >= 2 else None
+            v_acima_0 = _cell(prev, col_raia)
+            v_acima_1 = _cell(prev, col_raia + 1)
+            v_acima2_0 = _cell(prev2, col_raia)
+            v_acima2_1 = _cell(prev2, col_raia + 1)
+
+            s_acima_0 = str(v_acima_0).strip() if v_acima_0 is not None else ""
+            eh_layout_sun = s_acima_0.startswith('#') or re.match(r'^(?:wkt|workout)\b', s_acima_0, re.I)
+
+            if eh_layout_sun:
+                # Sun: L-1 = (codigo, categoria), L-2 = (_, bateria)
+                codigo    = s_acima_0
+                categoria = str(v_acima_1).strip() if v_acima_1 is not None else ""
+                numero_bat = str(v_acima2_1).strip() if v_acima2_1 is not None else ""
+            else:
+                # Monstar: L-1 = (bateria, categoria), L-2 = (_, workout_name)
+                # Usa o nome do workout como 'codigo' (sem '#') pra fins de matching.
+                numero_bat = s_acima_0
+                categoria  = str(v_acima_1).strip() if v_acima_1 is not None else ""
+                codigo     = str(v_acima2_1).strip() if v_acima2_1 is not None else ""
 
             alocacoes: list[dict[str, Any]] = []
             j = i + 1
             while j < len(rows):
                 r = rows[j]
-                if not r or all(c is None for c in r):
-                    break  # bloco acaba em linha vazia
-                # Se a próxima linha for outro header de bateria, para
-                vals_j = [str(c).strip().lower() if c else "" for c in r]
-                if 'raia' in vals_j and 'nome' in vals_j:
+                if r is None:
                     break
-                raia_v = r[col_raia] if col_raia < len(r) else None
-                nome_v = r[col_nome] if col_nome is not None and col_nome < len(r) else None
-                if raia_v is None or nome_v is None:
+                raia_v = _cell(r, col_raia)
+                # Bloco acaba quando a coluna raia fica vazia nesse bloco
+                if raia_v is None:
+                    break
+                # Ou quando aparece novo header (raia/nome) nessa coluna
+                vals_j = [str(c).strip().lower() if c else "" for c in r]
+                if col_raia < len(vals_j) and vals_j[col_raia] == 'raia':
+                    break
+                nome_v = _cell(r, col_nome)
+                if nome_v is None:
                     j += 1
                     continue
                 nome_str = str(nome_v).strip()
-                # Pula raias vazias (#N/A)
                 if not nome_str or nome_str.upper() == '#N/A':
                     j += 1
                     continue
-                aloc = {
+                num_v = _cell(r, col_numero)
+                box_v = _cell(r, col_box)
+                alocacoes.append({
                     'raia':   str(raia_v).strip(),
-                    'numero': str(r[col_numero]).strip() if col_numero is not None and col_numero < len(r) and r[col_numero] is not None else "",
+                    'numero': str(num_v).strip() if num_v is not None else "",
                     'nome':   nome_str,
-                    'box':    str(r[col_box]).strip() if col_box is not None and col_box < len(r) and r[col_box] is not None else "",
-                }
-                alocacoes.append(aloc)
+                    'box':    str(box_v).strip() if box_v is not None else "",
+                })
                 j += 1
 
             if alocacoes:
                 resultado[(codigo, categoria, numero_bat)] = alocacoes
-            i = j
-        else:
-            i += 1
+
+        i += 1   # avança 1; loop natural pula linhas já processadas (col raia já não é 'raia')
 
     return resultado
 
@@ -1077,15 +1169,26 @@ def _propagar_codigos_da_montagem(
 
 
 def _roster_de_abas_atletas(wb) -> list[dict[str, str]]:
-    """Lê abas tipo `Atleta - X` / `Atletas - X` sem header.
+    """Lê abas com lista de atletas/duplas/trios.
 
-    Estrutura esperada: col A = número, col B = nome, col C = box.
-    Concatena tudo num único roster.
+    Aceita 3 padrões de nome:
+      - `Atletas` ou `Atleta` (puro)
+      - `Atleta - X` / `Atletas - X` (Sun Challenge style: separado por tipo)
+      - `Athletes` / `Athlete` (inglês)
+
+    Estrutura esperada: col A = número, col B = nome, col C = box. Sem header.
     """
     out: list[dict[str, str]] = []
     for sname in wb.sheetnames:
         sl = sname.lower().strip()
-        if not (sl.startswith('atleta - ') or sl.startswith('atletas - ')):
+        eh_atletas = (
+            sl in ('atleta', 'atletas', 'athlete', 'athletes')
+            or sl.startswith('atleta - ')
+            or sl.startswith('atletas - ')
+            or sl.startswith('athlete - ')
+            or sl.startswith('athletes - ')
+        )
+        if not eh_atletas:
             continue
         ws = wb[sname]
         for row in ws.iter_rows(values_only=True):
@@ -1213,26 +1316,53 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
     cats_ambiguas = {cat for cat, r in cats_grade_relaxadas.items()
                      if _contagem_relaxada[r] > 1}
 
-    # 2) Dias detectados a partir de `<Dia> - Montagem`
+    # 2) Dias detectados — em ordem de preferência:
+    #    (a) abas <Dia> que TÊM par <Dia> - Montagem (atletas alocados)
+    #    (b) abas <Dia> sozinhas (planejamento; gera súmulas em branco)
+    # Aceita dias da semana em PT-BR ou EN, ou qualquer nome de aba que não
+    # seja meta (Inscritos, Atletas, Heats, etc).
     nomes_lower = {s.lower(): s for s in wb.sheetnames}
-    dias_detectados: list[str] = []
+    META_SHEETS = {
+        'inscritos', 'categorias', 'atletas', 'atleta', 'athletes', 'athlete',
+        'heats', 'time caps', 'timecaps', 'equipamento', 'equipamentos',
+    }
+    dias_com_montagem: list[str] = []
     for sname in wb.sheetnames:
         sl = sname.lower()
         if sl.endswith(' - montagem'):
             dia_sl = sl[: -len(' - montagem')]
             if dia_sl in nomes_lower:
-                dias_detectados.append(nomes_lower[dia_sl])  # nome original (com acentos)
+                dias_com_montagem.append(nomes_lower[dia_sl])
+    # Dias sem montagem: qualquer aba que pareça ser um dia mas não tem par
+    dias_sem_montagem: list[str] = []
+    for sname in wb.sheetnames:
+        sl = sname.lower().strip()
+        if sl in META_SHEETS: continue
+        if sl.endswith(' - montagem'): continue
+        if any(p in sl for p in ('workouts', 'inscritos', 'roster')): continue
+        if nomes_lower.get(sname.lower()) in dias_com_montagem: continue
+        # Heurística: aba é dia se tem cronograma de baterias — header precisa
+        # ter tanto 'categoria' QUANTO 'bateria' nas primeiras linhas. Evita
+        # falso positivo com abas tipo 'Finalistas' (Categoria + Place + Number).
+        ws = wb[sname]
+        for ri, r in enumerate(ws.iter_rows(values_only=True)):
+            if ri >= 5: break
+            valores = [str(c).strip().lower() if c else "" for c in r]
+            if 'categoria' in valores and 'bateria' in valores:
+                dias_sem_montagem.append(sname)
+                break
+    dias_detectados = dias_com_montagem + dias_sem_montagem
     if not dias_detectados:
-        return {'tipo': 'erro', 'erro': 'Nenhum par <Dia> + <Dia> - Montagem encontrado'}
+        return {'tipo': 'erro', 'erro': 'Nenhum dia encontrado — esperava aba <Dia> com cronograma (coluna Categoria) ou par <Dia> + <Dia> - Montagem'}
 
     # 3-4) Pra cada dia, lê e agrupa categorias presentes
     dias_resultado: list[dict[str, Any]] = []
     avisos_import: list[dict[str, str]] = []
     for dia_label in dias_detectados:
         sname_dia = nomes_lower[dia_label.lower()]
-        sname_mont = nomes_lower[f"{dia_label.lower()} - montagem"]
+        sname_mont = nomes_lower.get(f"{dia_label.lower()} - montagem")
         cronograma = _parse_cronograma_dia(wb[sname_dia])
-        montagem   = _parse_montagem_dia(wb[sname_mont])
+        montagem   = _parse_montagem_dia(wb[sname_mont]) if sname_mont else {}
         _propagar_codigos_da_montagem(cronograma, montagem)
 
         # Conjunto de categorias (normalizadas) presentes neste dia — coleta as
@@ -1268,26 +1398,45 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             baterias_full: list[dict[str, Any]] = []
             for b in baterias_da_cat:
                 codigos_b = set(_split_codigo_evento(b.get('codigo_evento', '')))
+                bat_cat_exata = b.get('categoria', '')
                 # 1ª passada: match estrito (bat + cat + interseção de códigos).
                 # 2ª passada: match relaxado (só bat + cat) — só vale quando há um
-                # único candidato (sem ambiguidade). Cobre casos em que o código
-                # no cronograma e na montagem divergem, mas a categoria/bateria
-                # identificam unicamente a alocação.
+                #             único candidato (sem ambiguidade).
+                # 3ª passada: match por (codigo + categoria exata), ignorando bateria
+                #             — pra eventos multi-arena onde cronograma usa bateria
+                #             local por arena e montagem usa bateria global. Só vale
+                #             quando há único candidato pra essa categoria+código.
                 candidatos_estrito: list[tuple] = []
                 candidatos_relaxado: list[tuple] = []
+                candidatos_sem_bat: list[tuple] = []
                 for (chave_cod, chave_cat, chave_bat), alocs in montagem.items():
-                    if chave_bat != b['numero']:
+                    # Match de categoria (estrito ou relaxado)
+                    cat_bate = _bateria_casa_categoria(
+                        chave_cat, cat_grade_norm, cat_grade_relax, permite_relax,
+                    )
+                    if not cat_bate:
                         continue
-                    if not _bateria_casa_categoria(chave_cat, cat_grade_norm,
-                                                   cat_grade_relax, permite_relax):
-                        continue
-                    candidatos_relaxado.append((chave_cod, alocs))
-                    if codigos_b:
+                    # Sub-categoria exata (com sufixo de Heat preservado) — pra
+                    # desambiguar quando há múltiplas baterias da mesma categoria
+                    # base. Comparação raw lower/strip (sem cortar (Heat N)).
+                    cat_exata_bate = (
+                        chave_cat.strip().lower() == bat_cat_exata.strip().lower()
+                    )
+                    if chave_bat == b['numero']:
+                        candidatos_relaxado.append((chave_cod, alocs))
+                        if codigos_b:
+                            codigos_chave = set(_split_codigo_evento(chave_cod))
+                            if codigos_b & codigos_chave:
+                                candidatos_estrito.append((chave_cod, alocs))
+                    elif cat_exata_bate and codigos_b:
+                        # bat diverge mas categoria exata + codigo bate
                         codigos_chave = set(_split_codigo_evento(chave_cod))
                         if codigos_b & codigos_chave:
-                            candidatos_estrito.append((chave_cod, alocs))
-                escolhido = candidatos_estrito[0] if candidatos_estrito else (
-                    candidatos_relaxado[0] if len(candidatos_relaxado) == 1 else None
+                            candidatos_sem_bat.append((chave_cod, alocs))
+                escolhido = (
+                    candidatos_estrito[0] if candidatos_estrito
+                    else (candidatos_relaxado[0] if len(candidatos_relaxado) == 1
+                          else (candidatos_sem_bat[0] if len(candidatos_sem_bat) == 1 else None))
                 )
                 codigo_montagem, aloc = escolhido if escolhido else ("", [])
 
