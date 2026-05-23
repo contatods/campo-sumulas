@@ -365,6 +365,23 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     if m_prog:
         try: wkt["reps_delta_por_round"] = int(m_prog.group(1))
         except ValueError: pass
+    # Goal de For Time tipo Simple Dimension / Simple Mind:
+    #   'Goal: 75 Snatches + finishing rep (cross the line)'
+    #   'Objetivo: 75 Snatches + chegada'
+    # Atleta tem que atingir N reps totais de um movimento + chegada.
+    # Reps por bloco são livres — juiz precisa contar reps por part.
+    m_goal = (re.search(r'(?:goal|objetivo|alvo)\s*[:\-]?\s*(\d+)\s+([A-Za-zÀ-ú][\w\-/]*(?:\s+[A-Za-zÀ-ú][\w\-/]*){0,3}?)\s*(?:\+|\b(?:and|e)\b)\s*(?:\d+\s+)?(?:finishing\s+rep|chegada|cross\s+the\s+line|finish\s+line)',
+                       full, re.I)
+              or re.search(r'(?:goal|objetivo|alvo)\s*[:\-]?\s*(\d+)\s+([A-Za-zÀ-ú][\w\-/]*(?:\s+[A-Za-zÀ-ú][\w\-/]*){0,3}?)(?=[\s.,;]|$)',
+                          full, re.I))
+    if m_goal:
+        try: wkt["goal_reps"] = int(m_goal.group(1))
+        except (ValueError, IndexError): pass
+        nome_mov = m_goal.group(2).strip().upper()
+        # Remove sufixos comuns que entraram na captura
+        nome_mov = re.sub(r'\s*(?:\+|and|e)\s.*$', '', nome_mov, flags=re.I).strip()
+        wkt["goal_movimento"] = nome_mov
+
     # Diretriz adicional: último round vira MAX / AMRAP.
     # Ex: 'last round max', 'último round MAX', 'final round AMRAP', 'last MAX'.
     if re.search(r'(?:last|[úu]ltimo|final)\s+round\s+(?:is\s+)?(?:max|amrap)', full, re.I) \
@@ -405,6 +422,9 @@ def parse_workout_text(text: str, numero: int) -> Workout:
             in_paralelo = False
             # Não consome a linha — pode ter movimento depois "After both: 21 Pull-Ups"
         if any(ll.startswith(p) for p in skip_prefixes): continue
+        # Pula a linha-diretriz `Goal: N <mov> + finishing rep` (já capturada acima)
+        if re.match(r'^\s*(?:goal|objetivo|alvo)\s*[:\-]', line, re.I):
+            continue
         # Marca movimento progressivo. Aceita vários markers comuns:
         #   sufixo no fim:           '10 Burpees*'
         #   antes do (athletes):     '10 Burpees* (2 athletes)'
@@ -438,6 +458,17 @@ def parse_workout_text(text: str, numero: int) -> Workout:
             if in_paralelo: mov["paralelo"] = True
             if is_progressivo: mov["progressivo"] = True
             movs.append(mov)
+        elif wkt.get("goal_reps") and not re.match(r'^\d', line_clean.strip()):
+            # For Time com Goal (Simple Mind/Dimension): movimentos podem vir
+            # SEM reps líderes (só nome + carga). Atleta distribui reps livre.
+            nome_raw = line_clean.strip().upper()
+            nome_limpo, carga = _extrair_carga(nome_raw)
+            if nome_limpo and len(nome_limpo) >= 3 and not _FRASE_NAO_MOVIMENTO_RE.search(nome_limpo):
+                mov_flex: Movimento = {"nome": nome_limpo}
+                if carga: mov_flex["carga"] = carga
+                if has_seps and block in BLOCK_LABELS: mov_flex["label"] = BLOCK_LABELS[block]
+                if in_paralelo: mov_flex["paralelo"] = True
+                movs.append(mov_flex)
 
     if wkt["tipo"] == "for_time" and movs:
         movs.append({"chegada": True})

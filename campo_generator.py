@@ -456,6 +456,29 @@ body{
   content:''; /* keep alignment, sem alterar */
 }
 
+/* Banner Alvo no topo do mov_table — For Time com Goal (Simple Mind/Dim) */
+.goal-banner{
+  background:var(--ink);color:var(--w);
+  padding:2mm 3mm;border:1px solid var(--ink);border-bottom:0;
+  font-size:9pt;font-weight:900;letter-spacing:.08em;text-transform:uppercase;
+  display:flex;align-items:baseline;gap:3mm;
+}
+.goal-banner-sub{font-size:6pt;font-weight:400;letter-spacing:.04em;
+  text-transform:none;color:rgba(255,255,255,.65);margin-left:auto}
+
+/* Linha 'Reps no Bloco N' escrevível (For Time com Goal). Fundo branco. */
+.bloco-reps-row{
+  display:flex;align-items:center;gap:3mm;
+  padding:1.2mm 3mm;background:var(--paper);
+  border-top:1px solid var(--rule);
+}
+.bloco-reps-lbl{
+  font-size:7pt;font-weight:700;color:var(--ink);
+  letter-spacing:.08em;text-transform:uppercase;flex-shrink:0;
+}
+.bloco-reps-line{flex:1;min-height:6mm;border:1.5px solid var(--ink);
+  background:var(--w);border-radius:2px}
+
 /* Nota do formato relay no topo do mov_table (Spin etc).
    Mov_table renderiza N blocos (1 por atleta), reps cumulativos. */
 .relay-note{
@@ -943,8 +966,9 @@ body{
 
 
 MOV_TABLE_MACRO = r"""
-{% macro mov_table(movimentos, num) %}
+{% macro mov_table(movimentos, num, with_bloco_reps=false) %}
 {% set has_lbl = movimentos | selectattr('label','defined') | selectattr('label') | list | length > 0 %}
+{% set ns_bloco = namespace(idx=1) %}
 <div class="mov-wrap">
   <div class="mov-hdr">
     {% if has_lbl %}<div class="mh-lbl"></div>{% endif %}
@@ -960,8 +984,21 @@ MOV_TABLE_MACRO = r"""
         <div class="atleta-sep-nome"></div>
       </div>
     {% elif mov.separador is defined and mov.separador %}
+      {% if with_bloco_reps %}
+      <div class="bloco-reps-row">
+        <span class="bloco-reps-lbl">Reps no Bloco {{ ns_bloco.idx }}</span>
+        <div class="bloco-reps-line"></div>
+        {% set ns_bloco.idx = ns_bloco.idx + 1 %}
+      </div>
+      {% endif %}
       <div class="sep-row"><span class="sep-txt">{{ mov.separador | upper }}</span></div>
     {% elif mov.chegada is defined and mov.chegada %}
+      {% if with_bloco_reps %}
+      <div class="bloco-reps-row">
+        <span class="bloco-reps-lbl">Reps no Bloco {{ ns_bloco.idx }}</span>
+        <div class="bloco-reps-line"></div>
+      </div>
+      {% endif %}
       {% set ns.cum = ns.cum + 1 %}
       <div class="mov-row chegada-inline">
         {% if has_lbl %}<div class="mr-lbl">—</div>{% endif %}
@@ -977,10 +1014,10 @@ MOV_TABLE_MACRO = r"""
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
           {% if mov.paralelo %}<span class="mr-paralelo-mark" title="Executado em paralelo">‖</span>{% endif %}
-          <span class="mr-reps-inline">({{ mov.reps }})</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
+          {% if mov.reps is defined %}<span class="mr-reps-inline">({{ mov.reps }})</span>{% endif %}{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
         </div>
-        <div class="mr-reps">{{ mov.reps }}</div>
-        <div class="mr-cum">{{ ns.cum }}</div>
+        <div class="mr-reps">{{ mov.reps if mov.reps is defined else '—' }}</div>
+        <div class="mr-cum">{{ ns.cum if mov.reps is defined else '—' }}</div>
       </div>
     {% endif %}
   {% endfor %}
@@ -1611,6 +1648,14 @@ PAGE_TMPL_STR = r"""<div class="page">
 
 {% else %}
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
+  {# For Time tipo Simple Dimension/Mind — alvo de reps total declarado.
+     Atleta distribui reps livremente entre blocos; juiz conta por bloco. #}
+  {% if wkt.goal_reps %}
+    <div class="goal-banner">
+      Alvo · {{ wkt.goal_reps }} {{ wkt.goal_movimento or 'reps' }} + Chegada
+      <span class="goal-banner-sub">distribuído livremente · juiz conta reps por bloco</span>
+    </div>
+  {% endif %}
   {# Relay (rounds_per_atleta): workout único de tempo contínuo. A info do
      formato relay vai como nota acima da tabela; reps + tempo total ficam
      numa tabela só (não duplica por atleta — score é da equipe). #}
@@ -1627,7 +1672,7 @@ PAGE_TMPL_STR = r"""<div class="page">
     {% set ns_relay.out = ns_relay.out + [{'chegada': true}] %}
     {{ mov_table(ns_relay.out, wkt.numero) }}
   {% else %}
-    {{ mov_table(wkt.movimentos, wkt.numero) }}
+    {{ mov_table(wkt.movimentos, wkt.numero, with_bloco_reps=(wkt.goal_reps is defined and wkt.goal_reps)) }}
   {% endif %}
 {% endif %}
 
