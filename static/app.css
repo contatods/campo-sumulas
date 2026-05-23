@@ -3,8 +3,9 @@
   --bg:#0D0D0D;--surface:#111;--surface2:#161616;--surface3:#1C1C1C;
   --border:#1E1E1E;--border2:#252525;--border3:#2E2E2E;
   --text:#D8D8D8;--text2:#888;--text3:#555;--text4:#333;
-  --accent:#FFF;--green:#5A9;--red:#A55;--blue:#68A;
-  --orange:#E55D00;--orange-dim:rgba(229,93,0,.12);--orange-edge:rgba(229,93,0,.32);
+  /* Paleta neon sport — alta saturação, alto contraste sobre fundo escuro */
+  --accent:#FFF;--green:#00E676;--red:#FF3D5A;--blue:#00D4FF;
+  --orange:#FF6B00;--orange-dim:rgba(255,107,0,.14);--orange-edge:rgba(255,107,0,.42);
   --radius:3px;
 }
 body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
@@ -23,7 +24,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .hdr-save{font-size:10px;color:var(--text3);font-weight:500;letter-spacing:.02em;
   min-width:90px;text-align:right;transition:opacity .2s;user-select:none}
 .hdr-save.saving{color:var(--text4);font-style:italic}
-.hdr-save.saved{color:#7BB661}
+.hdr-save.saved{color:var(--green)}
 .hdr-save:empty{opacity:0}
 .hdr-brand{font-size:10px;color:var(--text4);letter-spacing:.05em}
 
@@ -80,7 +81,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   display:flex;align-items:center;justify-content:center;gap:8px;
   transition:border-color .2s,background .2s;
 }
-.logo-upload-wrap:hover{border-color:var(--orange-edge);background:rgba(229,93,0,.06)}
+.logo-upload-wrap:hover{border-color:var(--orange-edge);background:rgba(255,107,0,.06)}
 .logo-upload-wrap span{font-size:10px;color:var(--text3);pointer-events:none}
 
 /* ── Workout list ── */
@@ -99,9 +100,10 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .wkt-tags{display:flex;gap:5px;margin-top:3px;align-items:center}
 .tag{font-size:8px;font-weight:700;letter-spacing:.1em;padding:1px 5px;
   border-radius:2px;text-transform:uppercase;background:var(--surface3);color:var(--text3)}
-.tag.for_time{color:#7AB}
-.tag.amrap{color:#9A7}
-.tag.express{color:#BA7}
+.tag.for_time{color:var(--blue)}
+.tag.amrap{color:var(--green)}
+.tag.express{color:#FFD93D}
+.tag.for_load{color:var(--orange)}
 .wkt-actions{display:flex;gap:4px;flex-shrink:0}
 .icon-btn{background:none;border:none;color:var(--text4);cursor:pointer;padding:3px 5px;
   font-size:11px;border-radius:var(--radius);transition:color .12s,background .12s}
@@ -187,8 +189,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   cursor:pointer;font-size:14px;line-height:1;padding:0;flex-shrink:0;
   transition:color .12s,background .12s;font-family:inherit;display:flex;
   align-items:center;justify-content:center}
-.rs-btn:hover{color:var(--orange);background:rgba(229,93,0,.08)}
-.rs-btn:active{background:rgba(229,93,0,.16)}
+.rs-btn:hover{color:var(--orange);background:rgba(255,107,0,.08)}
+.rs-btn:active{background:rgba(255,107,0,.16)}
 .mi-reps-stepper .mi-reps{border:none!important;background:transparent!important;
   text-align:center;padding:0;font-size:11.5px;color:var(--text);outline:none;
   font-family:inherit;width:100%;flex:1;min-width:0}
@@ -513,7 +515,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   font-size:16px;line-height:1;font-family:inherit;
   transition:color .12s,background .12s,border-color .12s;flex-shrink:0}
 .hdr-add-dia.show{display:flex;align-items:center;justify-content:center}
-.hdr-add-dia:hover{color:var(--orange);border-color:var(--orange-edge);background:rgba(229,93,0,.08)}
+.hdr-add-dia:hover{color:var(--orange);border-color:var(--orange-edge);background:rgba(255,107,0,.08)}
 .hdr-cfg{background:none;border:1px solid var(--border3);color:var(--text2);
   font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;padding:4px 10px;border-radius:var(--radius);
@@ -527,7 +529,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   padding:12px 14px 8px;font-size:9px;font-weight:700;letter-spacing:.22em;
   text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)}
 .sb-section-hdr .icon-btn{font-size:14px;padding:0 8px;color:var(--text3)}
-.sb-section-hdr .icon-btn:hover{color:var(--orange);background:rgba(229,93,0,.08)}
+.sb-section-hdr .icon-btn:hover{color:var(--orange);background:rgba(255,107,0,.08)}
 
 /* Hover-only edit affordances (substitui editMode toggle) */
 .cat-card .icon-btn.danger,
@@ -627,7 +629,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .evt-nome{font-size:13px;font-weight:600;color:var(--text1);margin-bottom:3px;display:flex;align-items:center;gap:8px}
 .evt-meta{font-size:10.5px;color:var(--text3)}
 .evt-tag-ativo{font-size:8.5px;font-weight:700;color:var(--orange);letter-spacing:.1em;
-  background:rgba(229,93,0,.15);border:1px solid var(--orange-edge);
+  background:rgba(255,107,0,.15);border:1px solid var(--orange-edge);
   padding:1px 6px;border-radius:8px;text-transform:uppercase}
 .evt-actions{display:flex;gap:4px;flex-shrink:0}
 .evt-actions .btn-mov{padding:4px 10px;font-size:11px}
