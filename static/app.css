@@ -105,10 +105,11 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .tag.express{color:#FFD93D}
 .tag.for_load{color:var(--orange)}
 .wkt-actions{display:flex;gap:4px;flex-shrink:0}
-.icon-btn{background:none;border:none;color:var(--text4);cursor:pointer;padding:3px 5px;
-  font-size:11px;border-radius:var(--radius);transition:color .12s,background .12s}
-.icon-btn:hover{color:var(--text2);background:var(--surface3)}
-.icon-btn.danger:hover{color:var(--red)}
+.icon-btn{background:none;border:none;color:var(--text2);cursor:pointer;padding:3px 5px;
+  font-size:13px;border-radius:var(--radius);transition:color .12s,background .12s}
+.icon-btn:hover{color:var(--orange);background:var(--orange-dim)}
+.icon-btn.danger{color:var(--text3)}
+.icon-btn.danger:hover{color:var(--red);background:rgba(255,61,90,.1)}
 
 /* ── Import buttons ── */
 .import-btns{display:flex;gap:8px}
