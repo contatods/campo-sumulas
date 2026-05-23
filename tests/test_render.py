@@ -198,8 +198,10 @@ def test_render_for_load_team_summary_lista_atletas_e_soma(fonts_empty):
     assert "RESUMO DO TIME" in html.upper()
 
 
-def test_render_for_time_relay_renderiza_n_sub_blocos(fonts_empty):
-    """For Time com `rounds_per_atleta` + modalidade team gera N sub-blocos."""
+def test_render_for_time_relay_render_tabela_unica_com_nota(fonts_empty):
+    """For Time com `rounds_per_atleta` + modalidade team renderiza UMA tabela
+    de movimentos e UM campo de tempo (workout único, score do time). A info
+    do formato relay vira nota acima da tabela — NÃO duplica sub-blocos."""
     import re
     ev = {"nome": "EVT", "categoria": "Trio Rx", "data": "2026"}
     wkt = {
@@ -212,15 +214,15 @@ def test_render_for_time_relay_renderiza_n_sub_blocos(fonts_empty):
         ],
     }
     html = render_workout(ev, wkt, fonts_empty, "", "")
+    # Não tem sub-blocos por atleta
     n_blocos = len(re.findall(r'class="mov-relay-bloco"', html))
-    assert n_blocos == 3, f"trio com 1 round/atleta esperava 3 sub-blocos, got {n_blocos}"
-    # Cabeçalho indica relay
-    assert "Relay" in html and "por Atleta" in html
-    # Cada atleta tem campo de tempo
-    n_tempo = len(re.findall(r'class="mra-tempo-line"', html))
-    assert n_tempo == 3
-    # Movimentos aparecem em cada sub-bloco
-    assert html.count("30/24 CAL ROW") >= 3
+    assert n_blocos == 0
+    # Mas tem a nota indicando relay
+    assert "Formato Relay" in html
+    assert "1 Round por Atleta" in html
+    assert "3 atletas em sequência" in html
+    # Cada movimento aparece UMA vez (não duplicado por atleta)
+    assert html.count("30/24 CAL ROW") == 1
 
 
 def test_render_for_time_paralelo_marca_movimentos(fonts_empty):

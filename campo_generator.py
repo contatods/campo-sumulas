@@ -452,7 +452,17 @@ body{
   content:''; /* keep alignment, sem alterar */
 }
 
-/* Relay — N sub-blocos (1 por atleta) */
+/* Nota leve no topo da tabela For Time indicando relay (Spin etc).
+   Sub-blocos por atleta foram removidos — workout é UM tempo total. */
+.relay-note{
+  background:var(--field);border:1px solid var(--rule);
+  padding:1.5mm 3mm;margin-bottom:0;
+  font-size:7pt;font-weight:700;color:var(--ink);
+  letter-spacing:.1em;text-transform:uppercase;
+  border-bottom:0;
+}
+
+/* Relay — N sub-blocos (1 por atleta) [DEPRECATED — só pra compat] */
 .mov-relay{display:flex;flex-direction:column;gap:1.5mm}
 .mov-relay-hdr{
   background:var(--panel);color:rgba(255,255,255,.85);
@@ -1558,12 +1568,14 @@ PAGE_TMPL_STR = r"""<div class="page">
 
 {% else %}
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
+  {# Relay (rounds_per_atleta): workout único de tempo contínuo. A info do
+     formato relay vai como nota acima da tabela; reps + tempo total ficam
+     numa tabela só (não duplica por atleta — score é da equipe). #}
   {% set _n_relay = wkt.n_atletas_time or ({'dupla':2,'trio':3,'quarteto':4,'time':3}).get(wkt.modalidade, 0) %}
   {% if wkt.rounds_per_atleta and _n_relay > 0 %}
-    {{ mov_table_relay(wkt.movimentos, wkt.numero, _n_relay, wkt.rounds_per_atleta) }}
-  {% else %}
-    {{ mov_table(wkt.movimentos, wkt.numero) }}
+    <div class="relay-note">Formato Relay · {{ wkt.rounds_per_atleta }} Round{% if wkt.rounds_per_atleta != 1 %}s{% endif %} por Atleta ({{ _n_relay }} atletas em sequência)</div>
   {% endif %}
+  {{ mov_table(wkt.movimentos, wkt.numero) }}
 {% endif %}
 
 {# ── SCORE BOX ── #}
