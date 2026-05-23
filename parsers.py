@@ -392,6 +392,10 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     # Movimentos, separadores, time cap
     movs: list[Movimento] = []
     block = 1
+    # Trunca em marcador NOTAS / OBSERVAÇÕES / —— pra não pegar regulamento
+    # como movimento (especialmente em For Time com Goal: que aceita linhas
+    # sem reps líderes).
+    lines = _truncar_descricao_em_notas(lines)
     has_seps = any(re.match(r'^then\.+$', l, re.I) for l in lines)
     skip_prefixes = ('for time', 'por tempo', 'amrap', 'as many reps', 'rest',
                      'atenção', 'atencao', 'obs', 'note', '"', '“')
@@ -461,14 +465,25 @@ def parse_workout_text(text: str, numero: int) -> Workout:
         elif wkt.get("goal_reps") and not re.match(r'^\d', line_clean.strip()):
             # For Time com Goal (Simple Mind/Dimension): movimentos podem vir
             # SEM reps líderes (só nome + carga). Atleta distribui reps livre.
-            nome_raw = line_clean.strip().upper()
-            nome_limpo, carga = _extrair_carga(nome_raw)
-            if nome_limpo and len(nome_limpo) >= 3 and not _FRASE_NAO_MOVIMENTO_RE.search(nome_limpo):
-                mov_flex: Movimento = {"nome": nome_limpo}
-                if carga: mov_flex["carga"] = carga
-                if has_seps and block in BLOCK_LABELS: mov_flex["label"] = BLOCK_LABELS[block]
-                if in_paralelo: mov_flex["paralelo"] = True
-                movs.append(mov_flex)
+            # Filtro ESTRITO pra não pegar notas/regulamento como movimento:
+            #   - Linha curta (≤ 6 palavras)
+            #   - Sem ponto final (notas costumam ter)
+            #   - Sem palavras de frase explicativa
+            #   - Não termina com ':' (header tipo 'Notes:')
+            nome_raw = line_clean.strip()
+            palavras = nome_raw.split()
+            if (1 <= len(palavras) <= 6
+                and not nome_raw.endswith(('.', ':', '!', '?', ';'))
+                and not nome_raw.startswith(('-', '*', '•', '→'))
+                and not _FRASE_NAO_MOVIMENTO_RE.search(nome_raw)):
+                nome_raw_up = nome_raw.upper()
+                nome_limpo, carga = _extrair_carga(nome_raw_up)
+                if nome_limpo and len(nome_limpo) >= 3:
+                    mov_flex: Movimento = {"nome": nome_limpo}
+                    if carga: mov_flex["carga"] = carga
+                    if has_seps and block in BLOCK_LABELS: mov_flex["label"] = BLOCK_LABELS[block]
+                    if in_paralelo: mov_flex["paralelo"] = True
+                    movs.append(mov_flex)
 
     if wkt["tipo"] == "for_time" and movs:
         movs.append({"chegada": True})
