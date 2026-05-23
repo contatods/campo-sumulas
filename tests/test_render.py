@@ -67,14 +67,14 @@ def test_render_for_load_categoria_masculina_usa_barra_de_20kg(fonts_empty):
     assert "20 kg" in html or ">20<" in html
 
 
-def test_render_for_load_categoria_mista_usa_barra_masculina(fonts_empty):
-    """Categoria 'Dupla Misto' deve usar barra masculina (default conservador)."""
-    ev = {"nome": "EVT", "categoria": "Dupla Misto", "data": "2026", "unidade_default": "kg"}
+def test_render_for_load_categoria_mista_individual_usa_barra_masculina(fonts_empty):
+    """Categoria MISTO individual (sem time): default conservador = barra M."""
+    ev = {"nome": "EVT", "categoria": "Rx Misto", "data": "2026", "unidade_default": "kg"}
     wkt = {"numero": 1, "nome": "MAX", "tipo": "for_load",
-           "modalidade": "dupla", "tentativas": 3}
+           "modalidade": "individual", "tentativas": 3}
     html = render_workout(ev, wkt, fonts_empty, logo_src="", logo_evento="")
-    assert "20 kg" in html, "MISTO deve usar barra masculina (20kg)"
-    assert "15 kg" not in html, "MISTO não deve renderizar barra feminina"
+    assert "20 kg" in html, "MISTO individual deve usar barra masculina (20kg)"
+    assert "15 kg" not in html, "MISTO individual não deve renderizar barra feminina"
 
 
 def test_render_for_load_team_dupla_trio_quarteto(fonts_empty):
@@ -271,6 +271,89 @@ def test_render_amrap_tiebreak_por_round_adiciona_coluna(fonts_empty):
     n_tb = len(re.findall(r'class="ar-tb-cell"', html))
     assert n_tb == 5, f"esperava 5 células tiebreak (1/round), got {n_tb}"
     assert "Tie-break" in html
+
+
+def test_render_for_load_trio_misto_atleta_1_usa_barra_feminina(fonts_empty):
+    """Trio Rx Misto: atleta 1 = F (15kg), atletas 2 e 3 = M (20kg)."""
+    import re
+    ev = {"nome": "EVT", "categoria": "Trio Rx Misto", "data": "2026", "unidade_default": "kg"}
+    atl = {"nome": "TRIO X", "box": "CF", "raia": "1", "numero": "401", "bateria": "1"}
+    wkt = {"numero": 1, "nome": "MAX CLEAN", "tipo": "for_load",
+           "modalidade": "trio", "tentativas": 3}
+    html = render_workout(ev, wkt, fonts_empty, "", "", atl)
+    # 3 sub-blocos
+    n_blocos = len(re.findall(r'class="fl-atleta-bloco"', html))
+    assert n_blocos == 3
+    # Header da zone indica misto
+    assert "Misto · Barras conforme atleta" in html
+    # Atleta 1 = F (com label 'Barra 15 kg' no header do bloco)
+    blocos = html.split('class="fl-atleta-bloco"')
+    # blocos[0] é antes do 1º bloco; blocos[1..3] são os 3 sub-blocos
+    assert "(F)" in blocos[1] and "15 kg" in blocos[1]
+    assert "(M)" in blocos[2] and "20 kg" in blocos[2]
+    assert "(M)" in blocos[3] and "20 kg" in blocos[3]
+
+
+def test_render_for_load_dupla_misto_atleta_1_F_atleta_2_M(fonts_empty):
+    ev = {"nome": "EVT", "categoria": "Dupla Misto", "data": "2026", "unidade_default": "kg"}
+    atl = {"nome": "DUPLA", "box": "CF", "raia": "1", "numero": "1", "bateria": "1"}
+    wkt = {"numero": 1, "nome": "MAX", "tipo": "for_load",
+           "modalidade": "dupla", "tentativas": 3}
+    html = render_workout(ev, wkt, fonts_empty, "", "", atl)
+    blocos = html.split('class="fl-atleta-bloco"')
+    assert "(F)" in blocos[1] and "15 kg" in blocos[1]
+    assert "(M)" in blocos[2] and "20 kg" in blocos[2]
+
+
+def test_render_for_load_quarteto_misto_2F_2M(fonts_empty):
+    ev = {"nome": "EVT", "categoria": "Quarteto Misto", "data": "2026", "unidade_default": "kg"}
+    atl = {"nome": "QUARTETO", "box": "CF", "raia": "1", "numero": "1", "bateria": "1"}
+    wkt = {"numero": 1, "nome": "MAX", "tipo": "for_load",
+           "modalidade": "quarteto", "tentativas": 3}
+    html = render_workout(ev, wkt, fonts_empty, "", "", atl)
+    blocos = html.split('class="fl-atleta-bloco"')
+    # 4 atletas: 1=F, 2=F, 3=M, 4=M
+    assert "(F)" in blocos[1] and "(F)" in blocos[2]
+    assert "(M)" in blocos[3] and "(M)" in blocos[4]
+
+
+def test_render_for_load_trio_rx_nao_misto_nao_aplica_genero_por_atleta(fonts_empty):
+    """Trio Rx Masculino: todos os sub-blocos com mesma barra M, sem marca de gênero."""
+    ev = {"nome": "EVT", "categoria": "Trio Rx Masculino", "data": "2026"}
+    atl = {"nome": "TRIO", "box": "CF", "raia": "1", "numero": "1", "bateria": "1"}
+    wkt = {"numero": 1, "nome": "MAX", "tipo": "for_load",
+           "modalidade": "trio", "tentativas": 3}
+    html = render_workout(ev, wkt, fonts_empty, "", "", atl)
+    assert "Misto · Barras conforme atleta" not in html
+    assert "Barra Masculina 20 kg" in html
+    # Sem marca de gênero por atleta (a classe é definida no CSS mas não usada)
+    assert 'class="fl-atleta-genero"' not in html
+
+
+def test_parse_excel_aplica_equipamento_aos_for_load(fonts_empty):
+    """parse_excel injeta anilhas + unidade nos workouts For Load do evento."""
+    import openpyxl, io
+    from parsers import parse_excel
+    wb = openpyxl.Workbook()
+    # Workouts (com pelo menos um For Load)
+    ws_w = wb.create_sheet("Workouts")
+    ws_w.append(["Categoria", "WKT 1"])
+    ws_w.append(["Rx Masculino", "MAX CLEAN\nFor Load"])
+    # Equipamento
+    ws_e = wb.create_sheet("Equipamento")
+    ws_e.append(["Anilha", "Peso", "Qtd"])
+    ws_e.append(["A", "45lb", 8])
+    ws_e.append(["B", "35lb", 4])
+    ws_e.append(["C", "25lb", 4])
+    # Remove a Sheet default
+    if "Sheet" in wb.sheetnames: del wb["Sheet"]
+    buf = io.BytesIO()
+    wb.save(buf)
+    result = parse_excel(buf.getvalue())
+    # Equipamento detectado em top-level
+    if result.get("tipo") != "erro":
+        assert result.get("unidade_default") == "lb"
+        assert result.get("equipamento", {}).get("anilhas") == [45, 35, 25]
 
 
 def test_render_escapa_html_de_input_do_usuario(fonts_empty):

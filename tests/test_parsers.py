@@ -402,6 +402,44 @@ def test_parse_workout_text_detecta_emom_e_tiebreak_por_round():
     assert wkt.get("tiebreak_por_round") is True
 
 
+def test_parse_equipamento_le_anilhas_e_unidade_kg():
+    """Aba Equipamento (Anilha|Peso|Qtd) vira lista de pesos + unidade."""
+    import openpyxl
+    from parsers import _parse_equipamento
+    wb = openpyxl.Workbook()
+    ws = wb.create_sheet("Equipamento")
+    ws.append(["Anilha", "Peso", "Qtd"])
+    ws.append(["Vermelho", "25kg", 8])
+    ws.append(["Azul", "20 kg", 8])
+    ws.append(["Verde", "10kg", 4])
+    ws.append(["Mini", "2,5kg", 4])
+    r = _parse_equipamento(wb)
+    assert r is not None
+    assert r["unidade"] == "kg"
+    assert r["anilhas"] == [25, 20, 10, 2.5]  # ordenado desc
+
+
+def test_parse_equipamento_detecta_libras():
+    import openpyxl
+    from parsers import _parse_equipamento
+    wb = openpyxl.Workbook()
+    ws = wb.create_sheet("Equipamentos")
+    ws.append(["Anilha", "Peso", "Qtd"])
+    ws.append(["A", "45lb", 8])
+    ws.append(["B", "35 lb", 8])
+    r = _parse_equipamento(wb)
+    assert r["unidade"] == "lb"
+    assert r["anilhas"] == [45, 35]
+
+
+def test_parse_equipamento_aba_inexistente_retorna_none():
+    import openpyxl
+    from parsers import _parse_equipamento
+    wb = openpyxl.Workbook()
+    wb.create_sheet("Outra")
+    assert _parse_equipamento(wb) is None
+
+
 def test_parse_mov_line_aceita_reps_gendered():
     """30/24 cal Row — formato gendered (M/F) deve virar movimento."""
     from parsers import _parse_mov_line

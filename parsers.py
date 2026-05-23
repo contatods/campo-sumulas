@@ -117,6 +117,74 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     return (num, nome)
 
 
+_FOR_LOAD_IGNORE_RE = re.compile(
+    r'^(?:for\s+load|max\s+(?:lift|load)|carga\s+m[áa]xima|time\s+cap|tempo|'
+    r'\d+\s+tentativas?|notas?|observa[çc][ãa]o)\b',
+    re.IGNORECASE,
+)
+_FOR_LOAD_BUYIN_RE = re.compile(
+    r'^\s*(?:buy[\s-]?in|aquecimento|warm[\s-]?up)\s*[:\-]?\s*(.*)$',
+    re.IGNORECASE,
+)
+_FOR_LOAD_THEN_RE = re.compile(
+    r'^\s*(?:then|ent[ãa]o|depois|after|ap[óo]s)\b[:\s\-,.]*\s*(.*)$',
+    re.IGNORECASE,
+)
+_FOR_LOAD_COMBO_SPLIT_RE = re.compile(r'\s*\+\s*|\s+e\s+|\s+and\s+|\s*&\s*', re.IGNORECASE)
+
+
+def _extrair_sequencia_for_load(lines: list[str], nome: str) -> list[dict]:
+    """Extrai sequência de movimentos pro lembrete do árbitro em For Load.
+
+    Preserva reps ('1 Squat Clean') e marca itens de buy-in/warm-up. Aceita
+    combos com '+'/'e'/'and'/'&'. Cada item retornado é um dict
+    `{'nome': UPPER, 'buy_in': bool}`.
+
+    Estratégia: percorre linhas da descrição filtrando headers/tempo/notas;
+    quando encontra "Buy-in:" marca itens seguintes até "then"/início do
+    movimento principal. Fallback: infere do nome do workout (sem reps).
+    """
+    movs: list[dict] = []
+    is_buyin = False
+    for ln in lines:
+        s = ln.strip()
+        if not s: continue
+        if s.startswith('"') or s.startswith('“') or s.startswith('‘'): continue
+        if _FOR_LOAD_IGNORE_RE.match(s): continue
+        # Marca de transição: buy-in ativa, então (then) desativa
+        m_buyin = _FOR_LOAD_BUYIN_RE.match(s)
+        if m_buyin:
+            is_buyin = True
+            resto = m_buyin.group(1).strip()
+            if not resto: continue   # linha header só, próximas linhas são buy-in
+            s = resto                # buy-in com conteúdo inline
+        m_then = _FOR_LOAD_THEN_RE.match(s)
+        if m_then:
+            is_buyin = False
+            resto = m_then.group(1).strip()
+            if not resto: continue
+            s = resto
+        # Combo com separadores: explode em partes preservando reps
+        partes = _FOR_LOAD_COMBO_SPLIT_RE.split(s) if _FOR_LOAD_COMBO_SPLIT_RE.search(s) else [s]
+        for p in partes:
+            p = re.sub(r'[.,;:]+$', '', p).strip()
+            if len(p) < 3: continue
+            if _FOR_LOAD_IGNORE_RE.match(p): continue
+            nome_up = p.upper()
+            if not any(m['nome'] == nome_up and m['buy_in'] == is_buyin for m in movs):
+                movs.append({'nome': nome_up, 'buy_in': is_buyin})
+    if movs: return movs
+    # Fallback: extrai do nome do workout (sem reps)
+    if nome:
+        n = re.sub(r'^(?:max\s+|carga\s+m[áa]xima\s+(?:de\s+)?)', '', nome, flags=re.I).strip()
+        partes = _FOR_LOAD_COMBO_SPLIT_RE.split(n) if _FOR_LOAD_COMBO_SPLIT_RE.search(n) else [n]
+        for p in partes:
+            p = p.strip().upper()
+            if p and not any(m['nome'] == p for m in movs):
+                movs.append({'nome': p, 'buy_in': False})
+    return movs
+
+
 def parse_workout_text(text: str, numero: int) -> Workout:
     """Converte o texto livre de uma célula/seção num dict de workout."""
     lines = [l.strip() for l in str(text).split('\n') if l.strip()]
@@ -145,11 +213,14 @@ def parse_workout_text(text: str, numero: int) -> Workout:
         if m_tent:
             try: wkt["tentativas"] = int(m_tent.group(1))
             except ValueError: pass
-        # Texto livre fica em descricao; movimentos não fazem sentido pra For Load.
-        # Trunca em separadores tipo NOTAS pra não bagunçar a súmula com
-        # regulamento que estoura A4.
+        # Texto livre fica em descricao; trunca em separadores tipo NOTAS
+        # pra não bagunçar a súmula com regulamento que estoura A4.
         wkt["descricao"] = _truncar_descricao_em_notas(lines)
         wkt["movimentos"] = []
+        # Extrai sequência de movimentos pro árbitro (lembrete visual).
+        # Aceita combos com '+' ('1 Squat Clean + 1 Push Jerk + 1 Split Jerk'),
+        # listas linha a linha, ou movimento embutido no nome do workout.
+        wkt["sequencia_movimentos"] = _extrair_sequencia_for_load(lines, wkt.get("nome", ""))
         return wkt
     if 'for time' in full or 'por tempo' in full:
         wkt["tipo"] = "for_time"
@@ -316,6 +387,9 @@ def parse_excel(data: bytes) -> dict[str, Any]:
     Sempre retorna shape `evento_multidia`. Os formatos legados (categoria_grid
     e template) são detectados e convertidos por adapters internos pra que o
     resto do sistema trabalhe num modelo único.
+
+    Quando há aba `Equipamento(s)`/`Equipment`, aplica as anilhas + unidade
+    globais a todos os workouts For Load do evento.
     """
     if not HAS_EXCEL:
         raise RuntimeError("openpyxl não disponível — instale com: pip install openpyxl")
@@ -323,38 +397,59 @@ def parse_excel(data: bytes) -> dict[str, Any]:
 
     # Formato multi-dia: aba `Workouts` + abas `<Dia>` e `<Dia> - Montagem`
     if _is_evento_multidia(wb):
-        return parse_excel_multidia(wb)
+        result = parse_excel_multidia(wb)
+    elif _is_layout_grades_e_dias(wb):
+        # Grades-por-modalidade: 1+ abas grade (ex: Individuais, Duplas, Times)
+        # + abas <Dia> e <Dia> - Montagem (sem aba unificada Workouts)
+        result = parse_excel_grades_e_dias(wb)
+    else:
+        # Formato categoria_grid (modelo legado: 1 aba grade categoria × workout)
+        todas_categorias: dict[str, list[Workout]] = {}
+        evento_nome = ""
+        for sname in wb.sheetnames:
+            ws = wb[sname]
+            if _is_categoria_grid(ws):
+                resultado = _parse_excel_grade(wb, sname)
+                todas_categorias.update(resultado.get("por_categoria", {}))
+                if not evento_nome:
+                    evento_nome = resultado.get("evento_nome", "")
+        atletas_por_categoria = _parse_atletas(wb)
+        if todas_categorias:
+            result = _adaptar_categoria_grid_para_multidia(
+                evento_nome, todas_categorias, atletas_por_categoria,
+            )
+        else:
+            # Fallback final: formato template (1 evento, lista plana de workouts)
+            template_result = _parse_excel_template(wb)
+            if not template_result.get('workouts') and not template_result.get('evento', {}).get('nome'):
+                # Nenhum formato reconhecido: erro explícito é melhor que
+                # estrutura fantasma "Único / Geral" que confunde a UI.
+                return {'tipo': 'erro', 'erro': 'Excel sem dados reconhecíveis — esperava grade categoria×workout, formato multi-dia, ou template Evento+WKT.'}
+            result = _adaptar_template_para_multidia(template_result)
 
-    # Formato grades-por-modalidade: 1+ abas grade (ex: Individuais, Duplas, Times)
-    # + abas <Dia> e <Dia> - Montagem (sem aba unificada Workouts)
-    if _is_layout_grades_e_dias(wb):
-        return parse_excel_grades_e_dias(wb)
+    # Aba Equipamento: aplica anilhas + unidade globais a todos os For Load
+    equip = _parse_equipamento(wb)
+    if equip:
+        result['equipamento'] = equip
+        result['unidade_default'] = equip['unidade']
+        _aplicar_equipamento_a_for_load(result, equip)
+    return result
 
-    # Formato categoria_grid (modelo legado: 1 aba grade categoria × workout)
-    todas_categorias: dict[str, list[Workout]] = {}
-    evento_nome = ""
-    for sname in wb.sheetnames:
-        ws = wb[sname]
-        if _is_categoria_grid(ws):
-            resultado = _parse_excel_grade(wb, sname)
-            todas_categorias.update(resultado.get("por_categoria", {}))
-            if not evento_nome:
-                evento_nome = resultado.get("evento_nome", "")
 
-    atletas_por_categoria = _parse_atletas(wb)
+def _aplicar_equipamento_a_for_load(result: dict[str, Any], equip: dict[str, Any]) -> None:
+    """Itera dias→categorias→workouts e injeta anilhas + unidade nos For Load.
 
-    if todas_categorias:
-        return _adaptar_categoria_grid_para_multidia(
-            evento_nome, todas_categorias, atletas_por_categoria,
-        )
-
-    # Fallback final: formato template (1 evento, lista plana de workouts)
-    template_result = _parse_excel_template(wb)
-    if not template_result.get('workouts') and not template_result.get('evento', {}).get('nome'):
-        # Nenhum formato reconhecido: melhor erro explícito que estrutura
-        # fantasma com "Único / Geral" vazia, que confunde a UI.
-        return {'tipo': 'erro', 'erro': 'Excel sem dados reconhecíveis — esperava grade categoria×workout, formato multi-dia, ou template Evento+WKT.'}
-    return _adaptar_template_para_multidia(template_result)
+    Só seta se o workout ainda não tiver valor explícito — config manual
+    posterior (no front) sobrescreve.
+    """
+    anilhas = equip['anilhas']
+    unidade = equip['unidade']
+    for dia in result.get('dias', []) or []:
+        for cat in dia.get('categorias', []) or []:
+            for wkt in cat.get('workouts', []) or []:
+                if wkt.get('tipo') != 'for_load': continue
+                wkt.setdefault('anilhas', anilhas)
+                wkt.setdefault('unidade', unidade)
 
 
 def _adaptar_categoria_grid_para_multidia(
@@ -1330,6 +1425,66 @@ def _roster_de_abas_atletas(wb) -> list[dict[str, str]]:
                 continue
             out.append({'numero': numero, 'nome': nome, 'box': box})
     return out
+
+
+def _parse_equipamento(wb) -> Optional[dict[str, Any]]:
+    """Lê aba `Equipamento(s)` / `Equipment` (se houver) → dict com anilhas + unidade.
+
+    Estrutura esperada: header com `Anilha | Peso | Qtd` (ordem livre). Cada
+    linha lista um tipo de anilha disponível no evento. O peso pode vir como
+    número puro (assume kg) ou com unidade colada/separada (`25kg`, `25 kg`,
+    `45lb`, `45 lb`).
+
+    Retorna `{anilhas: [pesos únicos ordenados desc], unidade: 'kg'|'lb'}`
+    ou None se a aba não existe ou está vazia. Detecta unidade global do
+    evento: se qualquer célula tem 'lb', evento inteiro é lb (assume coerência).
+    """
+    sname = next((s for s in wb.sheetnames
+                  if s.strip().lower() in ('equipamento', 'equipamentos', 'equipment')),
+                 None)
+    if not sname:
+        return None
+    ws = wb[sname]
+    pesos: set[float] = set()
+    unidade = 'kg'
+    col_peso_idx: Optional[int] = None
+    # Procura header: a linha que tem 'peso' em alguma célula
+    header_row: Optional[int] = None
+    for ri, row in enumerate(ws.iter_rows(values_only=True)):
+        if ri > 10: break
+        for ci, c in enumerate(row):
+            if c and str(c).strip().lower() == 'peso':
+                col_peso_idx = ci
+                header_row = ri
+                break
+        if col_peso_idx is not None: break
+    if col_peso_idx is None:
+        # Fallback: assume Anilha=A, Peso=B, Qtd=C e tenta a partir da linha 2
+        col_peso_idx = 1
+        header_row = 0
+    # Lê valores da coluna Peso a partir da linha seguinte ao header
+    for ri, row in enumerate(ws.iter_rows(values_only=True)):
+        if ri <= header_row: continue
+        if col_peso_idx >= len(row): continue
+        cell = row[col_peso_idx]
+        if cell is None or cell == '': continue
+        s = str(cell).strip().lower()
+        if 'lb' in s: unidade = 'lb'
+        # Extrai número (aceita '25', '25kg', '25 kg', '2,5', '2.5kg')
+        m = re.match(r'^([\d]+(?:[\.,]\d+)?)', s)
+        if not m: continue
+        try:
+            peso = float(m.group(1).replace(',', '.'))
+        except ValueError:
+            continue
+        if peso > 0:
+            pesos.add(peso)
+    if not pesos:
+        return None
+    return {
+        'anilhas': sorted(pesos, reverse=True),
+        'unidade': unidade,
+    }
 
 
 def _parse_inscritos(wb) -> dict[str, tuple[int, int]]:
