@@ -22,11 +22,13 @@ class Atleta(TypedDict, total=False):
 class Movimento(TypedDict, total=False):
     nome: str
     reps: Union[int, str]
+    carga: str          # peso (ex: '50/35 LB', '20 KG', '135 #') — extraído do nome
     label: str
     chegada: bool       # marca a linha de chegada/finish (For Time)
     separador: str      # marca um "then..." entre blocos
     paralelo: bool      # executado simultaneamente com o próximo movimento
                         # (ex: SkiErg ‖ Double-Unders no Simple Dimension)
+    progressivo: bool   # reps progridem por round (sufixo '*' no Excel)
     reps_por_round: list[Union[int, str]]   # progressão de reps (ex: [10,12,14,16,'MAX'])
 
 

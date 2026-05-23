@@ -113,8 +113,9 @@ def test_render_for_load_team_dupla_trio_quarteto(fonts_empty):
 
 
 def test_render_for_load_team_pre_workout_modalidade(fonts_empty):
-    """Sub-bloco por atleta exibe 'Atleta 1', 'Atleta 2', etc — label de
-    'Melhor Atleta N' também."""
+    """Sub-bloco por atleta exibe 'Atleta 1', 'Atleta 2', etc — e label
+    'Melhor Carga' por atleta (não 'Melhor Atleta N' — esse termo confunde
+    semântica: o campo registra o peso lifted, não escolhe qual atleta)."""
     import re
     ev = {"nome": "EVT", "categoria": "Trio", "data": "2026"}
     atl = {"nome": "T", "box": "C", "raia": "1", "numero": "1", "bateria": "1"}
@@ -123,7 +124,10 @@ def test_render_for_load_team_pre_workout_modalidade(fonts_empty):
     html = render_workout(ev, wkt, fonts_empty, "", "", atl)
     for pos in (1, 2, 3):
         assert f"Atleta {pos}" in html
-        assert f"Melhor Atleta {pos}" in html
+    # 'Melhor Carga' rotula cada sub-bloco (3 atletas)
+    import re
+    n_label = len(re.findall(r'class="fl-atleta-melhor-lbl">Melhor Carga<', html))
+    assert n_label == 3
 
 
 def test_render_for_load_compact_para_tentativas_altas(fonts_empty):

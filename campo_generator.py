@@ -441,10 +441,11 @@ body{
   color:rgba(255,255,255,.85);letter-spacing:.22em;text-transform:uppercase;
 }
 
-/* Movimentos em paralelo — chave visual à esquerda do nome */
+/* Movimentos em paralelo — chave visual P&B safe (símbolo bold + fundo) */
+.mov-row-paralelo{background:var(--field)!important}
 .mov-row-paralelo .mr-name{position:relative}
 .mr-paralelo-mark{
-  font-size:11pt;font-weight:900;color:var(--accent,#d8232a);
+  font-size:11pt;font-weight:900;color:var(--ink);
   line-height:1;flex-shrink:0;margin-right:.5mm;
 }
 .mov-row-paralelo + .mov-row-paralelo .mr-paralelo-mark::before{
@@ -628,18 +629,44 @@ body{
 .ar-tb-cell{
   flex-shrink:0;display:flex;align-items:stretch;
   background:var(--field)!important;
-  border-left:1px solid var(--rule);
+  border-left:1.5px solid var(--ink);
 }
 .ar-tb-inner{
   width:100%;display:flex;align-items:flex-start;justify-content:flex-start;
   padding:1.25mm;
 }
 .ar-tb-ref{font-size:6.5pt;font-weight:400;color:var(--ghost)}
+/* Progressão de reps — destaques P&B safe (bold, fundo cinza, símbolos) */
+.ah-ref-prog{font-weight:700!important;color:rgba(255,255,255,.92)!important;
+  background:rgba(255,255,255,.12);padding:0.5mm 2mm;border-radius:2px;
+  border:1px solid rgba(255,255,255,.25)}
+.ash-prog{background:var(--field);border-top:1.5px solid var(--ink)!important;
+  border-bottom:1.5px solid var(--ink)!important}
+.ash-prog-mark{font-size:5pt;color:var(--ink);margin-left:.5mm;vertical-align:super;font-weight:900}
+.ash-prog-seq{font-size:6pt;font-weight:900;color:var(--ink);
+  letter-spacing:.06em;line-height:1.1;
+  text-decoration:underline;text-underline-offset:1.5px}
+.ar-ref-prog{color:var(--ink)!important;font-weight:900!important;
+  text-decoration:underline;text-underline-offset:1.5px}
+/* Última round MAX — destaque visual P&B safe (caixa borda dupla preta) */
+.ar-reps-cell-max{outline:1.5px solid var(--ink);outline-offset:-2px}
+.ar-ref-max{font-weight:900!important;font-size:7pt!important;
+  letter-spacing:.04em;text-transform:uppercase}
 .ah-n{flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10pt;font-weight:900;color:rgba(255,255,255,.12)}
 .ah-title{flex:1;font-size:7pt;font-weight:700;color:rgba(255,255,255,.7);padding-left:3mm;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;border-left:1px solid rgba(255,255,255,.07)}
 .ah-x{margin:0 .8mm;color:rgba(255,255,255,.45);font-weight:400}
+.ah-total{margin-left:2mm;color:rgba(255,255,255,.45);font-weight:400;
+  font-size:6.5pt;letter-spacing:.04em;text-transform:none}
 .ah-ref{font-size:7pt;font-weight:300;color:rgba(255,255,255,.60);display:flex;align-items:center;padding-right:3mm}
-.ash{display:flex;align-items:center;justify-content:center;font-size:4.5pt;font-weight:700;color:var(--mid);letter-spacing:.05em;text-transform:uppercase;text-align:center;white-space:normal;line-height:1.25;padding:0.8mm 1mm}
+.ash{display:flex;align-items:center;justify-content:center;
+  font-size:4.5pt;font-weight:700;color:var(--mid);letter-spacing:.05em;
+  text-transform:uppercase;text-align:center;white-space:normal;line-height:1.25;
+  padding:1mm 1.5mm}
+/* Nome do movimento — destaque (maior, mais escuro). Reps + carga inline. */
+.ash-nome{font-size:7pt;font-weight:900;color:var(--ink);letter-spacing:.03em;
+  line-height:1.2}
+.ash-reps{font-size:6.5pt;font-weight:700;color:var(--mid);margin-right:.3mm}
+.ash-carga{font-size:6pt;font-weight:700;color:var(--mid);letter-spacing:.04em}
 .ash-cum{background:var(--dk)!important;border-left:none;color:rgba(255,255,255,.75)!important}
 
 /* ══════════════════════════════════════════════════════
@@ -786,7 +813,7 @@ body{
   min-height:5mm;min-width:30mm}
 .fl-zone-team .fl-atleta-genero{font-size:7.5pt;font-weight:700;color:var(--mid);
   letter-spacing:.04em}
-/* Melhor Atleta inline no header — economiza 1 row por atleta */
+/* Melhor Carga inline no header — economiza 1 row por atleta */
 .fl-zone-team .fl-atleta-melhor-inline{display:flex;align-items:center;gap:2mm;
   flex:0 0 auto;min-width:62mm}
 .fl-zone-team .fl-atleta-melhor-lbl{font-size:7.5pt;font-weight:700;
@@ -803,23 +830,22 @@ body{
 /* Em team, esconde campo "Obs" por tentativa (juiz registra obs no fim, não por tents) */
 .fl-zone-team .fl-obs{display:none}
 
-/* Sequência de movimentos — lembrete pro árbitro */
-.fl-sequencia{display:flex;align-items:center;gap:3mm;
-  padding:1.2mm 3mm;background:var(--field);border-bottom:1px solid var(--rule)}
-.fl-sequencia-lbl{font-size:6.5pt;font-weight:700;color:var(--ghost);
-  letter-spacing:.14em;text-transform:uppercase;flex-shrink:0}
-.fl-sequencia-movs{flex:1;display:flex;align-items:center;flex-wrap:wrap;gap:1.5mm}
-.fl-sequencia-mov{font-size:8.5pt;font-weight:900;color:var(--ink);
-  letter-spacing:.02em;text-transform:uppercase}
-.fl-sequencia-buyin{font-size:5.5pt;font-weight:900;color:var(--w);
-  background:var(--mid);padding:.5mm 1.2mm;border-radius:2px;
-  letter-spacing:.1em;text-transform:uppercase;flex-shrink:0}
-.fl-sequencia-mov-buyin{color:var(--mid)!important}
-.fl-sequencia-sep{font-size:9pt;color:var(--mid);font-weight:700}
-.fl-zone-compact .fl-sequencia{padding:0.8mm 3mm}
-.fl-zone-compact .fl-sequencia-mov{font-size:7.5pt}
-.fl-zone-super-compact .fl-sequencia{padding:0.5mm 2.5mm}
-.fl-zone-super-compact .fl-sequencia-mov{font-size:7pt}
+/* Sequência — só buy-in (opcional) + complex. Lembrete pro árbitro. */
+.fl-sequencia{display:flex;flex-direction:column;gap:0.8mm;
+  padding:1.5mm 3mm;background:var(--field);border-bottom:1px solid var(--rule)}
+.fl-sequencia-item{display:flex;align-items:center;gap:2.5mm}
+.fl-sequencia-tag{font-size:6pt;font-weight:900;color:var(--w);
+  background:var(--ink);padding:.7mm 2mm;border-radius:2px;
+  letter-spacing:.12em;text-transform:uppercase;flex-shrink:0;min-width:14mm;
+  text-align:center}
+.fl-sequencia-tag-buyin{background:var(--mid)}
+.fl-sequencia-text{font-size:9pt;font-weight:900;color:var(--ink);
+  letter-spacing:.02em;text-transform:uppercase;line-height:1.2}
+.fl-sequencia-text-buyin{color:var(--mid)}
+.fl-zone-compact .fl-sequencia{padding:1mm 3mm}
+.fl-zone-compact .fl-sequencia-text{font-size:8pt}
+.fl-zone-super-compact .fl-sequencia{padding:0.7mm 2.5mm}
+.fl-zone-super-compact .fl-sequencia-text{font-size:7.5pt}
 
 /* SUPER-COMPACT (quarteto: 4 atletas × 3 tents = 12 linhas em A4) */
 .fl-zone-super-compact .fl-atleta-bloco{padding:0.8mm 2mm 0.3mm}
@@ -948,27 +974,52 @@ MOV_TABLE_MACRO = r"""
 AMRAP_TABLE_MACRO = r"""
 {% macro amrap_table(movimentos, num, n_rounds, wkt=none) %}
 {% set data_movs = movimentos | rejectattr('separador','defined') | rejectattr('chegada','defined') | list %}
-{% set reps_round = data_movs | map(attribute='reps') | list | sum %}
 {% set is_emom = wkt is not none and wkt.emom_janela %}
 {% set has_tb = wkt is not none and wkt.tiebreak_por_round %}
 {% set _n_rounds = wkt.emom_rounds if is_emom else n_rounds %}
 {% set show_rplus = not is_emom %}
+{% set has_progressao = data_movs | selectattr('reps_por_round','defined') | list | length > 0 %}
+{% set delta = (wkt.reps_delta_por_round if wkt is not none else 0) | default(0) %}
+{% set reps_round = data_movs | map(attribute='reps') | list | sum %}
+{# Calcula tempo total EMOM (ex: 2:30 × 5 = 12:30) — info útil pro juiz. #}
+{% set tempo_total = '' %}
+{% if is_emom and wkt.emom_janela %}
+  {% set partes = wkt.emom_janela.split(':') %}
+  {% if partes | length == 2 %}
+    {% set s_total = (partes[0]|int * 60 + partes[1]|int) * wkt.emom_rounds %}
+    {% set tempo_total = '%d:%02d' | format(s_total // 60, s_total % 60) %}
+  {% endif %}
+{% endif %}
 {% set rnd_w='14mm' %}{% set reps_w='21mm' %}{% set cum_w='14mm' %}{% set tb_w='16mm' %}
 <div class="amrap-wrap">
   <div class="amrap-hdr">
     <div class="ah-n" style="width:{{rnd_w}}">{{ num }}</div>
     {% if is_emom %}
-      <div class="ah-title">EMOM {{ wkt.emom_janela }} <span class="ah-x">×</span> {{ wkt.emom_rounds }} rounds</div>
+      <div class="ah-title">EMOM {{ wkt.emom_janela }} <span class="ah-x">×</span> {{ wkt.emom_rounds }} rounds{% if tempo_total %} <span class="ah-total">= {{ tempo_total }} total</span>{% endif %}</div>
     {% else %}
       <div class="ah-title">Scorecard AMRAP</div>
     {% endif %}
-    <div class="ah-ref">{{ reps_round }} reps / round</div>
+    {% if has_progressao %}
+      <div class="ah-ref ah-ref-prog">+{{ delta }} reps/round{% if wkt.ultimo_round_max %} · último MAX{% endif %}</div>
+    {% else %}
+      <div class="ah-ref">{{ reps_round }} reps / round</div>
+    {% endif %}
   </div>
   <div class="amrap-subhdr">
     <div class="ash" style="width:{{rnd_w}}">Round</div>
     {% for m in data_movs %}
+      {# Limpa o nome: remove parênteses com qty de atletas (ex: '(2 ATHLETES)') #}
       {% set nc = m.nome.split('(')[0].strip() %}
-      <div class="ash" style="flex:1;border-left:1px solid var(--rule)">{{ nc }}<br>({{ m.reps }})</div>
+      <div class="ash{% if m.reps_por_round %} ash-prog{% endif %}" style="flex:1;border-left:1px solid var(--rule)">
+        <span class="ash-nome">
+          {% if m.reps_por_round %}
+            <span class="ash-prog-seq" title="Reps progridem por round">({{ m.reps_por_round | join(' · ') }})</span>
+          {% else %}
+            <span class="ash-reps">({{ m.reps }})</span>
+          {% endif %}
+          {{ nc }}{% if m.carga %} <span class="ash-carga">({{ m.carga }})</span>{% endif %}
+        </span>
+      </div>
     {% endfor %}
     <div class="ash" style="width:{{reps_w}};border-left:1px solid var(--rule)">Reps/Rd</div>
     {% if has_tb %}<div class="ash" style="width:{{tb_w}};border-left:1px solid var(--rule)">Tie-break<br>(m:s)</div>{% endif %}
@@ -979,6 +1030,18 @@ AMRAP_TABLE_MACRO = r"""
   {% for ri in range(total_rows) %}
     {% set ip = (show_rplus and ri == _n_rounds) %}
     {% set rl = 'R+' if ip else (ri+1)|string %}
+    {# Reps por round (com progressão se houver) — usado pra ref e pra somar.
+       Quando algum mov tem 'MAX' no round, ref do total fica indeterminado. #}
+    {% set ns_rps = namespace(sum=0, vals=[], tem_max=false) %}
+    {% for m in data_movs %}
+      {% set r = m.reps_por_round[ri] if (m.reps_por_round and ri < m.reps_por_round|length) else m.reps %}
+      {% set ns_rps.vals = ns_rps.vals + [r] %}
+      {% if r is integer %}
+        {% set ns_rps.sum = ns_rps.sum + r %}
+      {% else %}
+        {% set ns_rps.tem_max = true %}
+      {% endif %}
+    {% endfor %}
     <div class="amrap-row {% if ip %}rplus-row{% endif %}">
       <div class="ar-round" style="width:{{rnd_w}};border-right:1px solid var(--rule)">
         <span style="font-weight:900;font-size:{% if ip %}7{% else %}9{% endif %}pt;color:{% if ip %}var(--ghost){% else %}var(--mid){% endif %}">{{ rl }}</span>
@@ -987,15 +1050,21 @@ AMRAP_TABLE_MACRO = r"""
         {% for m in data_movs %}
         <div class="ar-mov-cell">
           <div class="ar-write">
-            {% if not ip %}<span class="ar-ref"><span class="ar-ref-lbl">ref</span>{{ m.reps }}</span>{% endif %}
+            {% if not ip %}<span class="ar-ref{% if m.reps_por_round %} ar-ref-prog{% endif %}"><span class="ar-ref-lbl">ref</span>{{ ns_rps.vals[loop.index0] }}</span>{% endif %}
           </div>
         </div>
         {% endfor %}
       </div>
-      <div class="ar-reps-cell" style="width:{{reps_w}}">
+      <div class="ar-reps-cell{% if ns_rps.tem_max %} ar-reps-cell-max{% endif %}" style="width:{{reps_w}}">
         <div class="ar-reps-inner">
           <div class="ar-write-strong">
-            {% if not ip %}<span class="ar-ref"><span class="ar-ref-lbl">ref</span>{{ reps_round }}</span>{% endif %}
+            {% if not ip %}
+              {% if ns_rps.tem_max %}
+                <span class="ar-ref ar-ref-max"><span class="ar-ref-lbl">ref</span>{{ ns_rps.sum }} + MAX</span>
+              {% else %}
+                <span class="ar-ref"><span class="ar-ref-lbl">ref</span>{{ ns_rps.sum }}</span>
+              {% endif %}
+            {% endif %}
           </div>
         </div>
       </div>
@@ -1006,11 +1075,17 @@ AMRAP_TABLE_MACRO = r"""
         </div>
       </div>
       {% endif %}
-      {% if not ip %}{% set ns.cum = ns.cum + reps_round %}{% endif %}
+      {% if not ip and not ns_rps.tem_max %}{% set ns.cum = ns.cum + ns_rps.sum %}{% endif %}
       <div class="ar-cum-cell" style="width:{{cum_w}}">
         <div class="ar-cum-inner">
           <div class="ar-write-cum">
-            {% if not ip %}<span class="ar-ref-sb"><span class="ar-ref-sb-lbl">ref</span>{{ ns.cum }}</span>{% endif %}
+            {% if not ip %}
+              {% if ns_rps.tem_max %}
+                <span class="ar-ref-sb ar-ref-max"><span class="ar-ref-sb-lbl">ref</span>+ MAX</span>
+              {% else %}
+                <span class="ar-ref-sb"><span class="ar-ref-sb-lbl">ref</span>{{ ns.cum }}</span>
+              {% endif %}
+            {% endif %}
           </div>
         </div>
       </div>
@@ -1240,7 +1315,7 @@ FOR_LOAD_TABLE_MACRO = r"""
 {% endmacro %}
 
 {# Sub-bloco For Load por atleta (dupla/trio/quarteto/time).
-   Header em UMA linha: pos + gênero + nome + "Melhor Atleta N" inline.
+   Header em UMA linha: pos + gênero + nome + "Melhor Carga" inline.
    Economiza 1 row por atleta vs design anterior — garante 3 tentativas
    confortáveis em qualquer modalidade. #}
 {% macro for_load_atleta_bloco(pos, anilhas, barra, unidade, tentativas, genero='') %}
@@ -1249,7 +1324,7 @@ FOR_LOAD_TABLE_MACRO = r"""
     <span class="fl-atleta-pos">Atleta {{ pos }}{% if genero %} <span class="fl-atleta-genero">({{ 'F' if genero == 'F' else 'M' }})</span>{% endif %}</span>
     <div class="fl-atleta-nome-line"></div>
     <div class="fl-atleta-melhor-inline">
-      <span class="fl-atleta-melhor-lbl">Melhor Atleta {{ pos }}</span>
+      <span class="fl-atleta-melhor-lbl">Melhor Carga</span>
       <div class="fl-atleta-melhor-line"></div>
       <span class="fl-atleta-melhor-unidade">{{ unidade }}</span>
     </div>
@@ -1293,29 +1368,23 @@ FOR_LOAD_TABLE_MACRO = r"""
       <span class="fl-zone-meta">Barra {{ barra_label }} {{ barra }} {{ unidade }}</span>
     {% endif %}
   </div>
-  {# Lembrete visual ao árbitro: ordem exata dos movimentos do For Load
-     (com reps). Itens de buy-in/warm-up marcados com badge. #}
-  {% set seq = wkt.sequencia_movimentos | default([]) %}
-  {% if seq %}
+  {# Lembrete pro árbitro: só buy-in (opcional) + complex.
+     Strings preservadas como o organizador digitou. #}
+  {% set seq = wkt.sequencia_movimentos | default({}) %}
+  {% if seq.buy_in or seq.complex %}
   <div class="fl-sequencia">
-    <span class="fl-sequencia-lbl">Sequência</span>
-    <div class="fl-sequencia-movs">
-      {% for m in seq %}
-        {% if m.buy_in %}
-          <span class="fl-sequencia-buyin">Buy-in</span>
-        {% endif %}
-        <span class="fl-sequencia-mov{% if m.buy_in %} fl-sequencia-mov-buyin{% endif %}">{{ m.nome }}</span>
-        {% if not loop.last %}
-          {# Seta troca quando próximo item sai do buy-in pro main #}
-          {% set prox = seq[loop.index] %}
-          {% if m.buy_in and not prox.buy_in %}
-            <span class="fl-sequencia-sep">▶</span>
-          {% else %}
-            <span class="fl-sequencia-sep">→</span>
-          {% endif %}
-        {% endif %}
-      {% endfor %}
+    {% if seq.buy_in %}
+    <div class="fl-sequencia-item">
+      <span class="fl-sequencia-tag fl-sequencia-tag-buyin">Buy-in</span>
+      <span class="fl-sequencia-text fl-sequencia-text-buyin">{{ seq.buy_in }}</span>
     </div>
+    {% endif %}
+    {% if seq.complex %}
+    <div class="fl-sequencia-item">
+      <span class="fl-sequencia-tag">Complex</span>
+      <span class="fl-sequencia-text">{{ seq.complex }}</span>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
   {% if not is_team %}
@@ -1491,11 +1560,14 @@ PAGE_TMPL_STR = r"""<div class="page">
   {{ mov_table(f2.movimentos, wkt.numero) }}
 
 {% elif tipo == 'amrap' %}
-  {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
+  {# Em EMOM, descrição é redundante (rítmo, movs, progressão e tiebreak já
+     vão na tabela). Em AMRAP simples, descrição ajuda o juiz. #}
+  {% if wkt.descricao and not wkt.emom_janela %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
   {{ amrap_table(wkt.movimentos, wkt.numero, wkt.n_rounds|default(3), wkt) }}
 
 {% elif tipo == 'for_load' %}
-  {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
+  {# Descrição NÃO é exibida pra For Load: a banda 'Sequência' dentro da
+     tabela já é o lembrete oficial (buy-in + complex) e evita duplicação. #}
   {{ for_load_table(wkt, atleta) }}
 
 {% else %}

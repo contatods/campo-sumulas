@@ -76,6 +76,44 @@ _FRASE_NAO_MOVIMENTO_RE = re.compile(
 )
 
 
+# Extrai carga no fim do nome do movimento. Dois formatos:
+#   A) NUM UNIT (unidade obrigatória):  '50/35 lb', '20kg', '225/155 LB', '75#'
+#   B) @NUM (unit opcional):             '@135/95', '@40lb'
+# NÃO captura distâncias/calorias (cal, m, km) — esses ficam no nome
+# (ex: '900M SKI ERG' permanece intacto).
+_CARGA_END_RE = re.compile(
+    r'\s*\(?\s*'
+    r'(\d+(?:[\.,]\d+)?(?:/\d+(?:[\.,]\d+)?)?)\s*'   # número (ou par M/F)
+    r'(kg|lb|lbs|#|pood)'                            # unidade DE PESO obrigatória
+    r'\s*\)?\s*$',
+    re.IGNORECASE,
+)
+_CARGA_AT_END_RE = re.compile(
+    r'\s*\(?\s*@\s*'
+    r'(\d+(?:[\.,]\d+)?(?:/\d+(?:[\.,]\d+)?)?)\s*'   # número após @
+    r'(kg|lb|lbs|#|pood)?'                           # unidade opcional
+    r'\s*\)?\s*$',
+    re.IGNORECASE,
+)
+
+
+def _extrair_carga(nome: str) -> tuple[str, Optional[str]]:
+    """Separa o nome do movimento da carga ao final, se houver.
+
+    Retorna (nome_sem_carga, carga|None). Carga normalizada em uppercase
+    ('50/35 LB', '20 KG', '@135/95'). Sem unidade quando o input usa só `@`.
+    Genérico — usado em parser de qualquer tipo de workout.
+    """
+    m = _CARGA_END_RE.search(nome) or _CARGA_AT_END_RE.search(nome)
+    if not m: return (nome, None)
+    nome_limpo = nome[:m.start()].rstrip(' ,-()@').strip()
+    if not nome_limpo: return (nome, None)   # não destrói nomes só-carga
+    num = m.group(1)
+    unit = (m.group(2) or '').upper()
+    carga = f"{num} {unit}".strip() if unit else num
+    return (nome_limpo, carga)
+
+
 # ── Texto livre de workout ──────────────────────────────────────────────────────
 def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     """Extrai (reps, nome_upper) de uma linha de movimento.
@@ -119,7 +157,8 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
 
 _FOR_LOAD_IGNORE_RE = re.compile(
     r'^(?:for\s+load|max\s+(?:lift|load)|carga\s+m[áa]xima|time\s+cap|tempo|'
-    r'\d+\s+tentativas?|notas?|observa[çc][ãa]o)\b',
+    r'\d+\s+tentativas?|notas?|observa[çc][ãa]o|descanso|rest\b|entre\s+|'
+    r'cada\s+atleta|cada\s+tentativa|score|pontua)',
     re.IGNORECASE,
 )
 _FOR_LOAD_BUYIN_RE = re.compile(
@@ -127,62 +166,51 @@ _FOR_LOAD_BUYIN_RE = re.compile(
     re.IGNORECASE,
 )
 _FOR_LOAD_THEN_RE = re.compile(
-    r'^\s*(?:then|ent[ãa]o|depois|after|ap[óo]s)\b[:\s\-,.]*\s*(.*)$',
+    r'^\s*(?:then|ent[ãa]o|depois|after|ap[óo]s|complex)\b[:\s\-,.]*\s*(.*)$',
     re.IGNORECASE,
 )
-_FOR_LOAD_COMBO_SPLIT_RE = re.compile(r'\s*\+\s*|\s+e\s+|\s+and\s+|\s*&\s*', re.IGNORECASE)
 
 
-def _extrair_sequencia_for_load(lines: list[str], nome: str) -> list[dict]:
-    """Extrai sequência de movimentos pro lembrete do árbitro em For Load.
+def _extrair_sequencia_for_load(lines: list[str], nome: str) -> dict:
+    """Extrai sequência pro lembrete do árbitro em For Load.
 
-    Preserva reps ('1 Squat Clean') e marca itens de buy-in/warm-up. Aceita
-    combos com '+'/'e'/'and'/'&'. Cada item retornado é um dict
-    `{'nome': UPPER, 'buy_in': bool}`.
+    Retorna `{'buy_in': str|None, 'complex': str|None}` — duas strings
+    preservadas como digitadas pelo organizador (sem splitar combos).
+    Só o que importa pro árbitro: o que aquece (buy-in) e o que vale carga
+    (complex).
 
-    Estratégia: percorre linhas da descrição filtrando headers/tempo/notas;
-    quando encontra "Buy-in:" marca itens seguintes até "then"/início do
-    movimento principal. Fallback: infere do nome do workout (sem reps).
+    Marcadores: 'Buy-in:' ativa modo buy-in; 'Then:'/'Complex:' transiciona
+    pro complex. Sem marcadores, todo conteúdo vira complex. Fallback
+    final: usa o nome do workout como complex.
     """
-    movs: list[dict] = []
+    buy_in_parts: list[str] = []
+    complex_parts: list[str] = []
     is_buyin = False
     for ln in lines:
         s = ln.strip()
         if not s: continue
         if s.startswith('"') or s.startswith('“') or s.startswith('‘'): continue
         if _FOR_LOAD_IGNORE_RE.match(s): continue
-        # Marca de transição: buy-in ativa, então (then) desativa
         m_buyin = _FOR_LOAD_BUYIN_RE.match(s)
         if m_buyin:
             is_buyin = True
             resto = m_buyin.group(1).strip()
-            if not resto: continue   # linha header só, próximas linhas são buy-in
-            s = resto                # buy-in com conteúdo inline
+            if resto: buy_in_parts.append(resto)
+            continue
         m_then = _FOR_LOAD_THEN_RE.match(s)
         if m_then:
             is_buyin = False
             resto = m_then.group(1).strip()
-            if not resto: continue
-            s = resto
-        # Combo com separadores: explode em partes preservando reps
-        partes = _FOR_LOAD_COMBO_SPLIT_RE.split(s) if _FOR_LOAD_COMBO_SPLIT_RE.search(s) else [s]
-        for p in partes:
-            p = re.sub(r'[.,;:]+$', '', p).strip()
-            if len(p) < 3: continue
-            if _FOR_LOAD_IGNORE_RE.match(p): continue
-            nome_up = p.upper()
-            if not any(m['nome'] == nome_up and m['buy_in'] == is_buyin for m in movs):
-                movs.append({'nome': nome_up, 'buy_in': is_buyin})
-    if movs: return movs
-    # Fallback: extrai do nome do workout (sem reps)
-    if nome:
-        n = re.sub(r'^(?:max\s+|carga\s+m[áa]xima\s+(?:de\s+)?)', '', nome, flags=re.I).strip()
-        partes = _FOR_LOAD_COMBO_SPLIT_RE.split(n) if _FOR_LOAD_COMBO_SPLIT_RE.search(n) else [n]
-        for p in partes:
-            p = p.strip().upper()
-            if p and not any(m['nome'] == p for m in movs):
-                movs.append({'nome': p, 'buy_in': False})
-    return movs
+            if resto: complex_parts.append(resto)
+            continue
+        (buy_in_parts if is_buyin else complex_parts).append(s)
+    buy_in = ' '.join(buy_in_parts).strip().upper() or None
+    complex_ = ' '.join(complex_parts).strip().upper() or None
+    # Fallback do complex: nome do workout (limpo de 'MAX'/'CARGA MÁXIMA')
+    if not complex_ and nome:
+        complex_ = re.sub(r'^(?:max\s+|carga\s+m[áa]xima\s+(?:de\s+)?)',
+                          '', nome, flags=re.I).strip().upper() or None
+    return {'buy_in': buy_in, 'complex': complex_}
 
 
 def parse_workout_text(text: str, numero: int) -> Workout:
@@ -248,6 +276,22 @@ def parse_workout_text(text: str, numero: int) -> Workout:
        or re.search(r'tiebreak\s*[:\-]?\s*time\s+at\s+(?:the\s+)?end\s+of\s+each', full, re.I):
         wkt["tiebreak_por_round"] = True
 
+    # Detecta progressão de reps por round: '*Add N reps each round' /
+    # '*Acrescentar N reps a cada round' / '+N reps por round'.
+    # Movimentos marcados com '*' sufixo progridem; sem markers, aplica geral.
+    m_prog = (re.search(r'\*\s*(?:add|acrescent[ae]r?|adicione)\s+(\d+)\s+reps?\s+(?:each|a\s+cada|por)\s+round', full, re.I)
+              or re.search(r'\*\s*\+\s*(\d+)\s+reps?\s+(?:each|a\s+cada|por)\s+round', full, re.I)
+              or re.search(r'(?:add|acrescent[ae]r?|adicione)\s+(\d+)\s+reps?\s+(?:each|a\s+cada|por)\s+round', full, re.I))
+    if m_prog:
+        try: wkt["reps_delta_por_round"] = int(m_prog.group(1))
+        except ValueError: pass
+    # Diretriz adicional: último round vira MAX / AMRAP.
+    # Ex: 'last round max', 'último round MAX', 'final round AMRAP', 'last MAX'.
+    if re.search(r'(?:last|[úu]ltimo|final)\s+round\s+(?:is\s+)?(?:max|amrap)', full, re.I) \
+       or re.search(r'(?:last|[úu]ltimo|final)\s+(?:round\s+)?(?:max|amrap)\s+reps?', full, re.I) \
+       or re.search(r'(?:round|rd)\s*\d+\s*[:=]\s*(?:max|amrap)', full, re.I):
+        wkt["ultimo_round_max"] = True
+
     # Movimentos, separadores, time cap
     movs: list[Movimento] = []
     block = 1
@@ -281,18 +325,45 @@ def parse_workout_text(text: str, numero: int) -> Workout:
             in_paralelo = False
             # Não consome a linha — pode ter movimento depois "After both: 21 Pull-Ups"
         if any(ll.startswith(p) for p in skip_prefixes): continue
-        parsed = _parse_mov_line(line)
+        # Sufixo '*' marca movimento progressivo (reps aumentam por round).
+        # Não tirar do nome — só sinalizar e remover o '*' antes do _parse_mov_line.
+        is_progressivo = bool(re.search(r'\*\s*$', line.strip()))
+        line_clean = re.sub(r'\*\s*$', '', line).rstrip()
+        # Pula a linha-diretriz `*Add N reps each round` (já capturada acima)
+        if re.match(r'^\s*\*?\s*(?:add|acrescent[ae]r?|adicione|\+)\s+\d+\s+reps?\s+(?:each|a\s+cada|por)\s+round', line_clean, re.I):
+            continue
+        parsed = _parse_mov_line(line_clean)
         if parsed:
             reps, nome = parsed
-            mov: Movimento = {"nome": nome}
+            # Extrai carga (peso) se vier no fim do nome — aplica a qualquer tipo
+            nome_limpo, carga = _extrair_carga(nome)
+            mov: Movimento = {"nome": nome_limpo}
             if reps is not None: mov["reps"] = reps
+            if carga: mov["carga"] = carga
             if has_seps and block in BLOCK_LABELS: mov["label"] = BLOCK_LABELS[block]
             if in_paralelo: mov["paralelo"] = True
+            if is_progressivo: mov["progressivo"] = True
             movs.append(mov)
 
     if wkt["tipo"] == "for_time" and movs:
         movs.append({"chegada": True})
     wkt["movimentos"] = movs
+
+    # Aplica progressão de reps: gera mov.reps_por_round pra cada mov afetado.
+    # Se algum mov tem '*', só os marcados progridem; se nenhum tem '*', aplica geral.
+    delta = wkt.get("reps_delta_por_round", 0)
+    ultimo_max = wkt.get("ultimo_round_max", False)
+    if delta and movs:
+        algum_marcado = any(m.get("progressivo") for m in movs if not m.get("chegada") and not m.get("separador"))
+        n_rounds = wkt.get("emom_rounds") or wkt.get("n_rounds") or 5
+        for m in movs:
+            if m.get("chegada") or m.get("separador"): continue
+            if algum_marcado and not m.get("progressivo"): continue
+            base = m.get("reps")
+            if not isinstance(base, int): continue
+            seq: list = [base + i * delta for i in range(n_rounds)]
+            if ultimo_max and seq: seq[-1] = 'MAX'
+            m["reps_por_round"] = seq
     return wkt
 
 
