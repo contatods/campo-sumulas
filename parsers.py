@@ -40,8 +40,9 @@ BLOCK_LABELS = {1: "1º BLOCO", 2: "2º BLOCO", 3: "3º BLOCO", 4: "4º BLOCO", 
 # A súmula deve conter só o essencial pro atleta executar; o resto é regulamento
 # e atleta/árbitro consultam à parte.
 _DESC_CUT_RE = re.compile(
-    r'^\s*(?:─+\s*)?(?:notas?|observa[çc][õo]es?|pontua[çc][ãa]o|tiebreak|regras?|regulamento|crit[ée]rios?)'
-    r'\s*(?:─+\s*)?\s*:?\s*$',
+    r'^\s*(?:[─—–\-]+\s*)?'
+    r'(?:notas?|observa[çc][õo]es?|pontua[çc][ãa]o|tiebreak|regras?|regulamento|crit[ée]rios?|score|scoring)'
+    r'\s*(?:[─—–\-]+\s*)?\s*:?\s*$',
     re.IGNORECASE,
 )
 
@@ -175,14 +176,43 @@ def _extrair_sequencia_for_load(lines: list[str], nome: str) -> dict:
     """Extrai sequência pro lembrete do árbitro em For Load.
 
     Retorna `{'buy_in': str|None, 'complex': str|None}` — duas strings
-    preservadas como digitadas pelo organizador (sem splitar combos).
-    Só o que importa pro árbitro: o que aquece (buy-in) e o que vale carga
-    (complex).
+    enxutas. Só o que importa pro árbitro: o que aquece (buy-in) e o que
+    vale carga (complex).
 
-    Marcadores: 'Buy-in:' ativa modo buy-in; 'Then:'/'Complex:' transiciona
-    pro complex. Sem marcadores, todo conteúdo vira complex. Fallback
-    final: usa o nome do workout como complex.
+    Estratégia (ordem):
+      1. Trunca em NOTAS / OBSERVAÇÕES / ─── (regulamento fora do escopo).
+      2. Se houver marcador `COMPLEX:` em alguma linha, usa só o que vem
+         APÓS como complex; o que vem antes (cal/cal Air Bike, Row, etc)
+         vira buy-in.
+      3. Senão, busca marcadores 'Buy-in:' / 'Then:' explícitos.
+      4. Pula linhas duplicadas tipo 'ATHLETE 2 ... (MESMO PADRÃO)' — todos
+         atletas fazem a mesma sequência, descrita só uma vez.
     """
+    # 1) Trunca em NOTAS — regulamento fora do escopo da súmula impressa
+    lines = _truncar_descricao_em_notas(lines)
+
+    # 2) Procura linha com 'COMPLEX:' (1-RM Complex, Squat Complex, etc)
+    complex_re = re.compile(r'^(.*?)\b(?:1[-\s]?rep[-\s]?max\s+complex|complex)\s*:\s*(.+)$', re.I)
+    skip_re = re.compile(
+        r'mesmo\s+padr[ãa]o|same\s+as|mesma\s+sequ[êe]ncia|'
+        r'atleta\s*\d+\s*\(|athlete\s*\d+\s*\(',
+        re.I,
+    )
+    for ln in lines:
+        s = ln.strip()
+        if not s: continue
+        if _FOR_LOAD_IGNORE_RE.match(s): continue
+        m = complex_re.match(s)
+        if not m: continue
+        antes = m.group(1).strip()
+        depois = m.group(2).strip()
+        # buy-in = caloric/distance work antes do COMPLEX (12-cal Air Bike, 200m Row)
+        buy_in = _extrair_buyin_caloric(antes)
+        # complex = parte após 'COMPLEX:' — normaliza separadores
+        complex_ = _normalizar_complex(depois)
+        return {'buy_in': buy_in, 'complex': complex_}
+
+    # 3) Sem COMPLEX explícito: usa marcadores Buy-in / Then
     buy_in_parts: list[str] = []
     complex_parts: list[str] = []
     is_buyin = False
@@ -191,6 +221,7 @@ def _extrair_sequencia_for_load(lines: list[str], nome: str) -> dict:
         if not s: continue
         if s.startswith('"') or s.startswith('“') or s.startswith('‘'): continue
         if _FOR_LOAD_IGNORE_RE.match(s): continue
+        if skip_re.search(s): continue   # pula 'ATHLETE 2 (mesmo padrão)'
         m_buyin = _FOR_LOAD_BUYIN_RE.match(s)
         if m_buyin:
             is_buyin = True
@@ -206,11 +237,45 @@ def _extrair_sequencia_for_load(lines: list[str], nome: str) -> dict:
         (buy_in_parts if is_buyin else complex_parts).append(s)
     buy_in = ' '.join(buy_in_parts).strip().upper() or None
     complex_ = ' '.join(complex_parts).strip().upper() or None
-    # Fallback do complex: nome do workout (limpo de 'MAX'/'CARGA MÁXIMA')
+    # 4) Fallback: nome do workout (limpo de 'MAX' / 'CARGA MÁXIMA')
     if not complex_ and nome:
         complex_ = re.sub(r'^(?:max\s+|carga\s+m[áa]xima\s+(?:de\s+)?)',
                           '', nome, flags=re.I).strip().upper() or None
     return {'buy_in': buy_in, 'complex': complex_}
+
+
+def _extrair_buyin_caloric(texto: str) -> Optional[str]:
+    """Pega o trecho do tipo 'N-cal Air Bike', 'N cal Row', 'Nm Run' do início.
+
+    Usado pra capturar buy-in que vem antes de 'COMPLEX:' na mesma linha.
+    Strip prefixos tipo 'ATHLETE 1 (0:00-4:00)'.
+    """
+    s = texto.strip()
+    # Remove 'ATHLETE N (window)' do início
+    s = re.sub(r'^\s*(?:athlete|atleta)\s*\d+\s*\([^)]*\)\s*', '', s, flags=re.I).strip()
+    if not s: return None
+    m = re.search(
+        r'(\d+[-\s]?(?:cal|calorie|calorias?|m|metres?|metros?|km|mi)\b[^,.;:]*?'
+        r'(?:bike|row|ski|run|swim|jump|rope|ergometer|erg)?[^,.;:]*)',
+        s, re.I,
+    )
+    if not m: return s.upper() or None
+    return m.group(1).strip().upper()
+
+
+def _normalizar_complex(texto: str) -> str:
+    """Normaliza '1 X 1 Y 1 Z' → '1 X + 1 Y + 1 Z' (separador visual).
+
+    Preserva combos já com '+' / 'e' / 'and' / '&'. Limita tamanho da string.
+    """
+    s = texto.strip()
+    # Se já tem separador, só uppercase
+    if re.search(r'[+&]|\be\b|\band\b', s, re.I):
+        return s.upper()
+    # Inserir ' + ' entre partes 'N <palavras> N <palavras>'
+    s = re.sub(r'(\d+\s+[A-Za-zÀ-ú\-]+(?:\s+[A-Za-zÀ-ú\-]+){0,3})\s+(?=\d+\s+[A-Za-zÀ-ú])',
+               r'\1 + ', s)
+    return s.upper()
 
 
 def parse_workout_text(text: str, numero: int) -> Workout:
@@ -271,9 +336,16 @@ def parse_workout_text(text: str, numero: int) -> Workout:
         try: wkt["emom_rounds"] = int(m_emom.group(2))
         except ValueError: pass
 
-    # Detecta tie-break por round (`Tiebreak: tempo no final de cada N`)
-    if re.search(r'tiebreak\s*[:\-]?\s*tempo\s+no\s+(?:final|fim)\s+de\s+cada', full, re.I) \
-       or re.search(r'tiebreak\s*[:\-]?\s*time\s+at\s+(?:the\s+)?end\s+of\s+each', full, re.I):
+    # Detecta tie-break por round — phrasings comuns PT/EN:
+    #   'Tiebreak: tempo no final de cada round'
+    #   'Tie-break: tempo ao final de cada rodada'
+    #   'Tiebreak: time at the end of each round'
+    #   'TB por round', 'TB cada round', 'tie-break por round'
+    #   'desempate: tempo ao fim de cada round'
+    if re.search(r'(?:tie[\s-]?break|tb|desempate)[:\s-]*'
+                 r'(?:tempo|time)?[^.\n]{0,40}'
+                 r'(?:final|fim|end)\s+(?:de|of)?\s*(?:the\s+)?(?:cada|each)\s+(?:round|rodada)', full, re.I) \
+       or re.search(r'(?:tie[\s-]?break|tb|desempate)\s+(?:por|per|each|a\s+cada)\s+(?:round|rodada)', full, re.I):
         wkt["tiebreak_por_round"] = True
 
     # Detecta progressão de reps por round: '*Add N reps each round' /

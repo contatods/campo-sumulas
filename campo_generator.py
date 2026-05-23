@@ -990,7 +990,7 @@ AMRAP_TABLE_MACRO = r"""
     {% set tempo_total = '%d:%02d' | format(s_total // 60, s_total % 60) %}
   {% endif %}
 {% endif %}
-{% set rnd_w='14mm' %}{% set reps_w='21mm' %}{% set cum_w='14mm' %}{% set tb_w='16mm' %}
+{% set rnd_w='14mm' %}{% set cum_w='16mm' %}{% set tb_w='18mm' %}
 <div class="amrap-wrap">
   <div class="amrap-hdr">
     <div class="ah-n" style="width:{{rnd_w}}">{{ num }}</div>
@@ -1021,9 +1021,8 @@ AMRAP_TABLE_MACRO = r"""
         </span>
       </div>
     {% endfor %}
-    <div class="ash" style="width:{{reps_w}};border-left:1px solid var(--rule)">Reps/Rd</div>
-    {% if has_tb %}<div class="ash" style="width:{{tb_w}};border-left:1px solid var(--rule)">Tie-break<br>(m:s)</div>{% endif %}
-    <div class="ash ash-cum" style="width:{{cum_w}}">Acumulado</div>
+    <div class="ash ash-cum" style="width:{{cum_w}};border-left:1px solid var(--rule)">Acumulado</div>
+    {% if has_tb %}<div class="ash ash-tb" style="width:{{tb_w}};border-left:1px solid var(--rule)">Tie-break<br>(m:s)</div>{% endif %}
   </div>
   {% set ns = namespace(cum=0) %}
   {% set total_rows = _n_rounds + (1 if show_rplus else 0) %}
@@ -1055,28 +1054,8 @@ AMRAP_TABLE_MACRO = r"""
         </div>
         {% endfor %}
       </div>
-      <div class="ar-reps-cell{% if ns_rps.tem_max %} ar-reps-cell-max{% endif %}" style="width:{{reps_w}}">
-        <div class="ar-reps-inner">
-          <div class="ar-write-strong">
-            {% if not ip %}
-              {% if ns_rps.tem_max %}
-                <span class="ar-ref ar-ref-max"><span class="ar-ref-lbl">ref</span>{{ ns_rps.sum }} + MAX</span>
-              {% else %}
-                <span class="ar-ref"><span class="ar-ref-lbl">ref</span>{{ ns_rps.sum }}</span>
-              {% endif %}
-            {% endif %}
-          </div>
-        </div>
-      </div>
-      {% if has_tb %}
-      <div class="ar-tb-cell" style="width:{{tb_w}}">
-        <div class="ar-tb-inner">
-          {% if not ip %}<span class="ar-ref ar-tb-ref"><span class="ar-ref-lbl">m:s</span></span>{% endif %}
-        </div>
-      </div>
-      {% endif %}
       {% if not ip and not ns_rps.tem_max %}{% set ns.cum = ns.cum + ns_rps.sum %}{% endif %}
-      <div class="ar-cum-cell" style="width:{{cum_w}}">
+      <div class="ar-cum-cell{% if ns_rps.tem_max %} ar-cum-cell-max{% endif %}" style="width:{{cum_w}}">
         <div class="ar-cum-inner">
           <div class="ar-write-cum">
             {% if not ip %}
@@ -1089,6 +1068,13 @@ AMRAP_TABLE_MACRO = r"""
           </div>
         </div>
       </div>
+      {% if has_tb %}
+      <div class="ar-tb-cell" style="width:{{tb_w}}">
+        <div class="ar-tb-inner">
+          {% if not ip %}<span class="ar-ref ar-tb-ref"><span class="ar-ref-lbl">m:s</span></span>{% endif %}
+        </div>
+      </div>
+      {% endif %}
     </div>
   {% endfor %}
 </div>
