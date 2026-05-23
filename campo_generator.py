@@ -1641,6 +1641,18 @@ def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
             seq = _extrair_sequencia_for_load(lines, wkt.get('nome', ''))
             if seq:
                 wkt['sequencia_movimentos'] = seq
+    # Fallback For Time relay: se workout veio do front-end sem rounds_per_atleta
+    # mas a descricao tem 'N round per athlete' / 'N round por atleta', infere.
+    if wkt.get('tipo') == 'for_time' and not wkt.get('rounds_per_atleta'):
+        desc = ' '.join(wkt.get('descricao') or []) + ' ' + (wkt.get('nome') or '')
+        import re as _re
+        m = (_re.search(r'(\d+)\s+rounds?\s+per\s+athletes?', desc, _re.I)
+             or _re.search(r'(\d+)\s+rounds?\s+por\s+atleta', desc, _re.I))
+        if m:
+            wkt = dict(wkt)
+            try: wkt['rounds_per_atleta'] = int(m.group(1))
+            except ValueError: pass
+
     # Trunca descrição em separadores (NOTAS, Observações, etc) — regulamento
     # não deve aparecer na súmula impressa, só prescrição core. Salvaguarda
     # caso a descrição venha cheia do parser ou da edição manual no front.
