@@ -466,18 +466,18 @@ body{
 .goal-banner-sub{font-size:6pt;font-weight:400;letter-spacing:.04em;
   text-transform:none;color:rgba(255,255,255,.65);margin-left:auto}
 
-/* Linha 'Reps no Bloco N' escrevível (For Time com Goal). Fundo branco. */
-.bloco-reps-row{
-  display:flex;align-items:center;gap:3mm;
-  padding:1.2mm 3mm;background:var(--paper);
-  border-top:1px solid var(--rule);
+/* Movimento sem reps prescritas (max snatch etc): caixinhas brancas
+   escrevíveis no lugar do número de reps e do acumulado. */
+.mr-reps-empty{background:var(--dk)!important;padding:1mm}
+.mr-reps-empty-box{
+  width:100%;height:100%;background:var(--w);border:1.5px solid var(--w);
+  border-radius:1.5px;min-height:5mm;
 }
-.bloco-reps-lbl{
-  font-size:7pt;font-weight:700;color:var(--ink);
-  letter-spacing:.08em;text-transform:uppercase;flex-shrink:0;
+.mr-cum-empty{background:var(--field)!important;padding:1mm}
+.mr-cum-empty-box{
+  width:100%;height:100%;background:var(--w);border:1.5px solid var(--ink);
+  border-radius:1.5px;min-height:5mm;
 }
-.bloco-reps-line{flex:1;min-height:6mm;border:1.5px solid var(--ink);
-  background:var(--w);border-radius:2px}
 
 /* Nota do formato relay no topo do mov_table (Spin etc).
    Mov_table renderiza N blocos (1 por atleta), reps cumulativos. */
@@ -966,9 +966,8 @@ body{
 
 
 MOV_TABLE_MACRO = r"""
-{% macro mov_table(movimentos, num, with_bloco_reps=false) %}
+{% macro mov_table(movimentos, num, goal_reps=0) %}
 {% set has_lbl = movimentos | selectattr('label','defined') | selectattr('label') | list | length > 0 %}
-{% set ns_bloco = namespace(idx=1) %}
 <div class="mov-wrap">
   <div class="mov-hdr">
     {% if has_lbl %}<div class="mh-lbl"></div>{% endif %}
@@ -984,22 +983,11 @@ MOV_TABLE_MACRO = r"""
         <div class="atleta-sep-nome"></div>
       </div>
     {% elif mov.separador is defined and mov.separador %}
-      {% if with_bloco_reps %}
-      <div class="bloco-reps-row">
-        <span class="bloco-reps-lbl">Reps no Bloco {{ ns_bloco.idx }}</span>
-        <div class="bloco-reps-line"></div>
-        {% set ns_bloco.idx = ns_bloco.idx + 1 %}
-      </div>
-      {% endif %}
       <div class="sep-row"><span class="sep-txt">{{ mov.separador | upper }}</span></div>
     {% elif mov.chegada is defined and mov.chegada %}
-      {% if with_bloco_reps %}
-      <div class="bloco-reps-row">
-        <span class="bloco-reps-lbl">Reps no Bloco {{ ns_bloco.idx }}</span>
-        <div class="bloco-reps-line"></div>
-      </div>
-      {% endif %}
-      {% set ns.cum = ns.cum + 1 %}
+      {# Se workout tem goal_reps (Simple Mind/Dim), soma as reps do alvo
+         no acumulado final: cum = cum_prescritos + goal_reps + chegada. #}
+      {% set ns.cum = ns.cum + (goal_reps or 0) + 1 %}
       <div class="mov-row chegada-inline">
         {% if has_lbl %}<div class="mr-lbl">—</div>{% endif %}
         <div class="mr-name">
@@ -1010,14 +998,21 @@ MOV_TABLE_MACRO = r"""
       </div>
     {% else %}
       {% set ns.cum = ns.cum + (mov.reps | default(0)) %}
-      <div class="mov-row{% if mov.paralelo %} mov-row-paralelo{% endif %}">
+      <div class="mov-row{% if mov.paralelo %} mov-row-paralelo{% endif %}{% if mov.reps is not defined %} mov-row-flex{% endif %}">
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
           {% if mov.paralelo %}<span class="mr-paralelo-mark" title="Executado em paralelo">‖</span>{% endif %}
           {% if mov.reps is defined %}<span class="mr-reps-inline">({{ mov.reps }})</span>{% endif %}{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
         </div>
-        <div class="mr-reps">{{ mov.reps if mov.reps is defined else '—' }}</div>
-        <div class="mr-cum">{{ ns.cum if mov.reps is defined else '—' }}</div>
+        {% if mov.reps is defined %}
+          <div class="mr-reps">{{ mov.reps }}</div>
+          <div class="mr-cum">{{ ns.cum }}</div>
+        {% else %}
+          {# Movimento sem reps prescritos (ex: max snatch com Goal):
+             juiz preenche reps na caixinha branca. Cumulativo idem. #}
+          <div class="mr-reps mr-reps-empty"><div class="mr-reps-empty-box"></div></div>
+          <div class="mr-cum mr-cum-empty"><div class="mr-cum-empty-box"></div></div>
+        {% endif %}
       </div>
     {% endif %}
   {% endfor %}
@@ -1672,7 +1667,7 @@ PAGE_TMPL_STR = r"""<div class="page">
     {% set ns_relay.out = ns_relay.out + [{'chegada': true}] %}
     {{ mov_table(ns_relay.out, wkt.numero) }}
   {% else %}
-    {{ mov_table(wkt.movimentos, wkt.numero, with_bloco_reps=(wkt.goal_reps is defined and wkt.goal_reps)) }}
+    {{ mov_table(wkt.movimentos, wkt.numero, goal_reps=(wkt.goal_reps | default(0))) }}
   {% endif %}
 {% endif %}
 
