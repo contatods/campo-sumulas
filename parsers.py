@@ -347,6 +347,14 @@ def parse_workout_text(text: str, numero: int) -> Workout:
                  r'(?:final|fim|end)\s+(?:de|of)?\s*(?:the\s+)?(?:cada|each)\s+(?:round|rodada)', full, re.I) \
        or re.search(r'(?:tie[\s-]?break|tb|desempate)\s+(?:por|per|each|a\s+cada)\s+(?:round|rodada)', full, re.I):
         wkt["tiebreak_por_round"] = True
+    # Tiebreak geral (não por round): For Time típico — 'Tiebreak: tempo ao fim
+    # das 21 pull-ups'. Marca flag pro score box criar campo de tempo extra.
+    if not wkt.get("tiebreak_por_round"):
+        for ln in lines:
+            m_tb = re.match(r'\s*(?:tie[\s-]?break|tb|desempate)\s*[:\-]\s*(.+)$', ln, re.I)
+            if m_tb:
+                wkt["tiebreak"] = m_tb.group(1).strip()
+                break
 
     # Detecta progressão de reps por round: '*Add N reps each round' /
     # '*Acrescentar N reps a cada round' / '+N reps por round'.

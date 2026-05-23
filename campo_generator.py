@@ -549,9 +549,15 @@ body{
 }
 .sb-field-tempo{flex:2}
 .sb-field-reps {flex:1}
+.sb-field-tb   {flex:2}
 .sb-field-lbl{
   font-size:4.5pt;font-weight:700;color:var(--ghost);
   text-transform:uppercase;letter-spacing:.14em;flex-shrink:0;
+}
+.sb-field-sub{
+  font-size:4pt;font-weight:400;color:var(--ghost);
+  text-transform:none;letter-spacing:.02em;
+  margin-left:1mm;font-style:italic;
 }
 .sb-field-line{
   border-bottom:2px solid var(--ink);
@@ -641,14 +647,16 @@ body{
   background:var(--dk)!important;border-left:none;
 }
 .ar-cum-inner{display:flex;align-items:center;justify-content:center;width:100%}
+/* Campo escrevível branco DENTRO da célula escura — juiz precisa enxergar o
+   que escreve a caneta. Antes era transparente sobre fundo dark = ilegível. */
 .ar-write-cum{
   width:calc(100% - 2.5mm);height:calc(100% - 2.5mm);margin:1.25mm;
-  border:1px solid rgba(255,255,255,.12);
-  background:rgba(255,255,255,.04);
-  display:flex;align-items:flex-start;padding:1mm;
+  border:1px solid var(--w);
+  background:var(--w);
+  display:flex;align-items:flex-start;padding:1mm;border-radius:1.5px;
 }
-.ar-ref-sb{font-size:6.5pt;font-weight:700;color:rgba(255,255,255,.55)}
-.ar-ref-sb-lbl{font-size:5pt;color:rgba(255,255,255,.45);display:block;line-height:1.2}
+.ar-ref-sb{font-size:6.5pt;font-weight:700;color:var(--mid)}
+.ar-ref-sb-lbl{font-size:5pt;color:var(--ghost);display:block;line-height:1.2}
 .ar-tb-cell{
   flex-shrink:0;display:flex;align-items:stretch;
   background:var(--field)!important;
@@ -1110,7 +1118,8 @@ AMRAP_TABLE_MACRO = r"""
 """
 
 SCORE_BOX_MACRO = r"""
-{% macro score_box(tipo) %}
+{% macro score_box(tipo, wkt=none) %}
+{% set tb_text = wkt.tiebreak if (wkt is not none and wkt.tiebreak) else none %}
 {% if tipo == 'for_time' %}
 <div class="score-section">
   <span class="sc-t">Resultado</span>
@@ -1129,6 +1138,12 @@ SCORE_BOX_MACRO = r"""
     <span class="sb-field-lbl">Reps</span>
     <div class="sb-field-line"></div>
   </div>
+  {% if tb_text %}
+  <div class="sb-field sb-field-tb">
+    <span class="sb-field-lbl">Tie-break <span class="sb-field-sub">{{ tb_text }}</span></span>
+    <div class="sb-field-line"></div>
+  </div>
+  {% endif %}
   <div class="sb-tc-col">
     <div class="sb-tc-box"></div>
     <span class="sb-tc-lbl">Time Cap</span>
@@ -1153,6 +1168,12 @@ SCORE_BOX_MACRO = r"""
     <span class="sb-field-lbl">Reps Extras</span>
     <div class="sb-field-line"></div>
   </div>
+  {% if tb_text %}
+  <div class="sb-field sb-field-tb">
+    <span class="sb-field-lbl">Tie-break <span class="sb-field-sub">{{ tb_text }}</span></span>
+    <div class="sb-field-line"></div>
+  </div>
+  {% endif %}
   <div class="sb-tc-col">
     <div class="sb-tc-box"></div>
     <span class="sb-tc-lbl">Time Cap</span>
@@ -1607,7 +1628,7 @@ PAGE_TMPL_STR = r"""<div class="page">
 {% endif %}
 
 {# ── SCORE BOX ── #}
-{{ score_box(tipo) }}
+{{ score_box(tipo, wkt) }}
 
 {# ── ASSINATURAS — coladas logo abaixo do score box ── #}
 <div class="sign-zone">
