@@ -421,16 +421,16 @@ def parse_workout_text(text: str, numero: int) -> Workout:
         movs.append({"chegada": True})
     wkt["movimentos"] = movs
 
-    # Aplica progressão de reps: gera mov.reps_por_round pra cada mov afetado.
-    # Se algum mov tem '*', só os marcados progridem; se nenhum tem '*', aplica geral.
+    # Aplica progressão de reps APENAS aos movs com '*' explícito.
+    # Sem markers, a directive '*Add N reps each round' é ignorada — evita
+    # progredir Swim/Thrusters quando só Burpees tem '*' (Monstar Recap).
     delta = wkt.get("reps_delta_por_round", 0)
     ultimo_max = wkt.get("ultimo_round_max", False)
     if delta and movs:
-        algum_marcado = any(m.get("progressivo") for m in movs if not m.get("chegada") and not m.get("separador"))
         n_rounds = wkt.get("emom_rounds") or wkt.get("n_rounds") or 5
         for m in movs:
             if m.get("chegada") or m.get("separador"): continue
-            if algum_marcado and not m.get("progressivo"): continue
+            if not m.get("progressivo"): continue   # strict: só os marcados
             base = m.get("reps")
             if not isinstance(base, int): continue
             seq: list = [base + i * delta for i in range(n_rounds)]
@@ -1624,6 +1624,14 @@ def _parse_equipamento(wb) -> Optional[dict[str, Any]]:
             pesos.add(peso)
     if not pesos:
         return None
+    # Heurística: se a unidade não veio explícita ('45', '35'), tenta inferir.
+    # 45 e 55 são anilhas icônicas em lb (não existem em kg padrão).
+    # 1.25 e 2.5 são fracionárias típicas de kg.
+    if unidade == 'kg':   # default — só re-avalia se ninguém escreveu 'kg'/'lb'
+        tem_lb_typical = any(p in (45, 55) for p in pesos)
+        tem_kg_typical = any(p in (1.25, 2.5) for p in pesos)
+        if tem_lb_typical and not tem_kg_typical:
+            unidade = 'lb'
     return {
         'anilhas': sorted(pesos, reverse=True),
         'unidade': unidade,
