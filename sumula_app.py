@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.22.0'
+VERSION = '1.22.1'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -338,7 +338,21 @@ class SumulaHandler(BaseHTTPRequestHandler):
 
         ev       = cfg.get('evento', {}) or {}
         assign_workout_numbers(workouts)   # recalcula slots Express
-        enriquecer_workouts(workouts)      # calcula n_rounds (IA/algoritmo)
+        # Preview rápido: pré-popula n_rounds via algoritmo pra QUALQUER AMRAP
+        # sem n_rounds já setado. Isso evita a chamada IA dentro de
+        # enriquecer_workouts() (que tem timeout 15s e é o gargalo do preview).
+        # Para o ZIP final, o usuário usa /api/generate que SIM chama a IA.
+        from ai_rounds import _estimar_rounds_algoritmico
+        for w in workouts:
+            if w.get('tipo') == 'amrap' and 'n_rounds' not in w:
+                w['n_rounds'] = _estimar_rounds_algoritmico(
+                    w.get('movimentos', []), w.get('time_cap', '') or '')
+            elif w.get('tipo') == 'express':
+                f1 = w.get('formula1') or {}
+                if f1 and 'n_rounds' not in f1:
+                    f1['n_rounds'] = _estimar_rounds_algoritmico(
+                        f1.get('movimentos', []), f1.get('janela', ''))
+        enriquecer_workouts(workouts)      # n_rounds já set → não chama IA
         wkt      = workouts[wkt_idx]
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
         logo_evt = ev.get('logo_evento', '')
