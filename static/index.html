@@ -269,6 +269,20 @@
       <span class="pb-name" id="pbName">—</span>
       <span class="pb-hint">Ctrl+P para imprimir / salvar como PDF</span>
     </div>
+    <!-- Banner discreto pós-import (some quando dispensado) — fica antes do
+         conteúdo pra empurrar o iframe pra baixo (flex item, não absolute). -->
+    <div class="post-import-banner" id="postImportBanner" style="display:none">
+      <div class="pib-row">
+        <span class="pib-icon">✓</span>
+        <span class="pib-msg" id="pibMsg">Importado.</span>
+        <button class="pib-cta" onclick="abrirConfig('dias')">Configurar datas</button>
+        <button class="pib-cta secondary" onclick="abrirValidacao()" title="Verificar problemas no evento">Validar</button>
+        <button class="pib-cta secondary" id="pibAIBtn" onclick="explicarComIA()" style="display:none" title="Pedir pra IA explicar os avisos do import">🤖 Explicar com IA</button>
+        <button class="pib-close" onclick="dispensarBanner()" title="Fechar">×</button>
+      </div>
+      <div id="pibAIBox" style="display:none"></div>
+    </div>
+
     <div class="preview-empty" id="previewEmpty">
       <!-- Estado: nenhum workout ainda — onboarding com CTAs -->
       <div id="emptyOnboarding" style="display:flex;flex-direction:column;align-items:center;gap:14px;width:100%">
@@ -294,19 +308,6 @@
       </div>
     </div>
     <iframe id="previewFrame" class="preview-frame"></iframe>
-
-    <!-- Banner discreto pós-import (some quando dispensado) -->
-    <div class="post-import-banner" id="postImportBanner" style="display:none">
-      <div class="pib-row">
-        <span class="pib-icon">✓</span>
-        <span class="pib-msg" id="pibMsg">Importado.</span>
-        <button class="pib-cta" onclick="abrirConfig('dias')">Configurar datas</button>
-        <button class="pib-cta secondary" onclick="abrirValidacao()" title="Verificar problemas no evento">Validar</button>
-        <button class="pib-cta secondary" id="pibAIBtn" onclick="explicarComIA()" style="display:none" title="Pedir pra IA explicar os avisos do import">🤖 Explicar com IA</button>
-        <button class="pib-close" onclick="dispensarBanner()" title="Fechar">×</button>
-      </div>
-      <div id="pibAIBox" style="display:none"></div>
-    </div>
 
     <!-- Painel de validação (modal sobreposto) -->
     <div class="cfg-modal" id="validModal" style="display:none">

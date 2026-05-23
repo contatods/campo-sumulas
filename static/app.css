@@ -539,10 +539,10 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .dia-edit-row .icon-btn.danger{opacity:.4;transition:opacity .12s,color .12s}
 .dia-edit-row:hover .icon-btn.danger{opacity:1}
 
-/* ── Banner discreto pós-import ───────────────────────────────────── */
+/* ── Banner discreto pós-import — flex item que empurra o iframe ─── */
 .post-import-banner{padding:8px 14px;
   background:var(--orange-dim);border-bottom:1px solid var(--orange-edge);
-  position:absolute;top:38px;left:0;right:0;z-index:40}
+  flex-shrink:0}
 .pib-row{display:flex;align-items:center;gap:10px}
 .pib-icon{color:var(--orange);font-weight:700;font-size:13px}
 .pib-msg{font-size:11px;color:var(--text);flex:1}
