@@ -598,7 +598,44 @@ def parse_excel(data: bytes) -> dict[str, Any]:
         result['equipamento'] = equip
         result['unidade_default'] = equip['unidade']
         _aplicar_equipamento_a_for_load(result, equip)
+    # Enriquece roster com categoria (via faixa de número da aba Inscritos).
+    # Usado pra súmulas "pré-evento" — atleta inscrito mas sem bateria/raia ainda.
+    inscritos_faixas = _parse_inscritos(wb)
+    if inscritos_faixas and result.get('roster'):
+        _enriquecer_roster_com_categoria(result['roster'], inscritos_faixas, result.get('dias') or [])
     return result
+
+
+def _enriquecer_roster_com_categoria(roster: list[dict],
+                                      inscritos: dict[str, tuple[int, int]],
+                                      dias: list[dict]) -> None:
+    """Adiciona campo 'categoria' a cada entry do roster baseado na faixa de
+    número da aba Inscritos. Mutação in-place.
+
+    Categoria armazenada é a forma original (não a normalizada usada como
+    chave em inscritos). Resolve isso buscando match nas categorias dos dias.
+    Se não bater faixa nenhuma, deixa categoria=''.
+    """
+    # Pra reconverter categoria_normalizada → nome real, monta um índice
+    nomes_reais: dict[str, str] = {}
+    for dia in dias:
+        for cat in dia.get('categorias', []) or []:
+            nome = cat.get('nome', '')
+            if nome:
+                nomes_reais.setdefault(_normalizar_categoria(nome), nome)
+                nomes_reais.setdefault(_normalizar_categoria_relaxada(nome), nome)
+    for atl in roster:
+        try:
+            num = int(str(atl.get('numero', '')).strip())
+        except (ValueError, AttributeError):
+            atl.setdefault('categoria', '')
+            continue
+        cat_match = ''
+        for cat_norm, (n_ini, n_fim) in inscritos.items():
+            if n_ini <= num <= n_fim:
+                cat_match = nomes_reais.get(cat_norm, cat_norm)
+                break
+        atl['categoria'] = cat_match
 
 
 def _aplicar_equipamento_a_for_load(result: dict[str, Any], equip: dict[str, Any]) -> None:

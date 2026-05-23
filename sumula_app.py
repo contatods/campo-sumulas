@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.21.11'
+VERSION = '1.22.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -285,6 +285,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
             routes = {
                 '/api/preview':            self._handle_preview,
                 '/api/generate':           self._handle_generate,
+                '/api/generate/pre-evento': self._handle_generate_pre_evento,
                 '/api/import/excel':       self._handle_import_excel,
                 '/api/import/pdf':         self._handle_import_pdf,
                 '/api/ai/sugerir-time-cap': self._handle_sugerir_time_cap,
@@ -474,6 +475,96 @@ class SumulaHandler(BaseHTTPRequestHandler):
         nome_zip = sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas'
         self._send(200, 'application/zip', buf.getvalue(),
                    {'Content-Disposition': f'attachment; filename="{nome_zip}.zip"'})
+
+    def _handle_generate_pre_evento(self, body):
+        """Gera ZIP de súmulas 'pré-evento' — para atletas/times inscritos no
+        roster mas ainda SEM bateria/raia alocada.
+
+        Estrutura: Categoria/Workout_NN.html — N páginas (1 por não-alocado).
+        Sem dia (atleta ainda não tem cronograma definido). Todos os workouts
+        da categoria são gerados, agregando de todos os dias em que ela aparece.
+
+        Cada página tem nome + box do atleta, mas raia, bateria e número
+        (do atleta na bateria) ficam em branco — juiz preenche à mão depois.
+        """
+        cfg = body.get('config')
+        if not isinstance(cfg, dict):
+            raise BadRequest("config (objeto) é obrigatório")
+        dias = cfg.get('dias') or []
+        roster = cfg.get('roster') or []
+        if not roster:
+            raise BadRequest("roster vazio — não há atletas inscritos")
+
+        ev       = cfg.get('evento', {}) or {}
+        logo     = _resolve_logo(ev.get('logo_empresa', ''))
+        logo_evt = ev.get('logo_evento', '')
+
+        # Junta workouts por categoria (de todos os dias) + identifica alocados
+        # Estrutura: {categoria_nome: {'workouts':[...], 'alocados_nums': set}}
+        cats_agg: dict[str, dict] = {}
+        for dia in dias:
+            for cat in dia.get('categorias', []) or []:
+                cnome = cat.get('nome', '')
+                if not cnome: continue
+                bucket = cats_agg.setdefault(cnome, {'workouts': [], 'alocados_nums': set()})
+                # Agrega workouts (evita duplicar pela posição/nome)
+                for w in cat.get('workouts', []) or []:
+                    bucket['workouts'].append(w)
+                # Coleta números alocados em qualquer bateria desta categoria
+                for b in cat.get('baterias', []) or []:
+                    for aloc in b.get('alocacoes', []) or []:
+                        num = str(aloc.get('numero', '')).strip()
+                        if num: bucket['alocados_nums'].add(num)
+
+        # Pra cada entrada do roster, identifica categoria e filtra os não-alocados
+        nao_alocados_por_cat: dict[str, list[dict]] = {}
+        for atl in roster:
+            cat_nome = atl.get('categoria', '') or ''
+            if not cat_nome: continue
+            num = str(atl.get('numero', '')).strip()
+            if not num: continue
+            bucket = cats_agg.get(cat_nome)
+            if not bucket: continue   # categoria do roster não existe nos dias
+            if num in bucket['alocados_nums']: continue   # já tem bateria/raia
+            nao_alocados_por_cat.setdefault(cat_nome, []).append(atl)
+
+        if not nao_alocados_por_cat:
+            raise BadRequest(
+                "Nenhum atleta/time inscrito está sem bateria — "
+                "todos do roster já estão alocados."
+            )
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for cat_nome, nao_alocados in nao_alocados_por_cat.items():
+                workouts = cats_agg[cat_nome]['workouts']
+                if not workouts: continue
+                _validate_workout_tipos(workouts)
+                assign_workout_numbers(workouts)
+                enriquecer_workouts(workouts)
+                cat_pasta = sanitize(cat_nome)
+                ev_local = {**ev, 'categoria': cat_nome, 'data': ev.get('data', '')}
+
+                # Converte roster em "atletas" (raia/bateria vazias)
+                atletas = [
+                    {
+                        'nome':    a.get('nome', ''),
+                        'box':     a.get('box', ''),
+                        'raia':    '',
+                        'bateria': '',
+                        'numero':  a.get('numero', ''),
+                    }
+                    for a in nao_alocados
+                ]
+                for wkt_pos, wkt in enumerate(workouts, start=1):
+                    nome_arq = f"{wkt_pos:02d}_{sanitize(wkt.get('nome', 'wkt'))}.html"
+                    caminho  = f"Pre-Evento/{cat_pasta}/{nome_arq}"
+                    html = render_workout_combined(ev_local, wkt, FONTS, logo, logo_evt, atletas)
+                    zf.writestr(caminho, html.encode('utf-8'))
+
+        nome_zip = sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas'
+        self._send(200, 'application/zip', buf.getvalue(),
+                   {'Content-Disposition': f'attachment; filename="{nome_zip}_pre-evento.zip"'})
 
     def _handle_import_excel(self, body):
         data_b64 = body.get('data')

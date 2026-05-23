@@ -895,6 +895,88 @@ function atualizarBotaoGerar() {
     const nCat = _contagemPaginas('cat', compOn);
     subCt.textContent = `${nCat} página${nCat !== 1 ? 's' : ''} · ${cat.nome}${compOn ? '' : ' · sem competidores'}`;
   }
+
+  // Botão "Pré-evento" — atletas no roster sem bateria
+  const btnPre = document.getElementById('btnGerarPreEvento');
+  const subPre = document.getElementById('bgeSubPreEvento');
+  if (btnPre && subPre) {
+    const stats = _statsPreEvento();
+    btnPre.disabled = stats.total === 0;
+    subPre.textContent = stats.total === 0
+      ? (stats.semCategoria ? `${stats.semCategoria} no roster sem categoria definida` : 'todos do roster já estão alocados')
+      : `${stats.total} não alocado${stats.total !== 1 ? 's' : ''} em ${stats.cats} categoria${stats.cats !== 1 ? 's' : ''}`;
+  }
+}
+
+function _statsPreEvento() {
+  // Calcula quantos atletas do roster ainda não têm bateria/raia, agrupados
+  // por categoria. Só conta os que têm 'categoria' atribuída (via faixa
+  // Inscritos do Excel).
+  const roster = config.roster || [];
+  const dias = config.dias || [];
+  if (!roster.length) return {total: 0, cats: 0, semCategoria: 0};
+  // Mapa: categoria → set de números alocados
+  const alocadosPorCat = {};
+  for (const d of dias) {
+    for (const c of d.categorias || []) {
+      const set = alocadosPorCat[c.nome] || (alocadosPorCat[c.nome] = new Set());
+      for (const b of c.baterias || []) {
+        for (const a of b.alocacoes || []) {
+          const n = String(a.numero || '').trim();
+          if (n) set.add(n);
+        }
+      }
+    }
+  }
+  let total = 0, semCategoria = 0;
+  const cats = new Set();
+  for (const a of roster) {
+    const cat = (a.categoria || '').trim();
+    if (!cat) { semCategoria++; continue; }
+    const num = String(a.numero || '').trim();
+    if (!num) continue;
+    const set = alocadosPorCat[cat];
+    if (!set || !set.has(num)) {
+      total++;
+      cats.add(cat);
+    }
+  }
+  return {total, cats: cats.size, semCategoria};
+}
+
+function gerarPreEvento() {
+  const stats = _statsPreEvento();
+  if (stats.total === 0) {
+    toast('Nada a gerar — todos do roster já estão alocados', 'warn');
+    return;
+  }
+  const btn = document.getElementById('btnGerarPreEvento');
+  const sub = document.getElementById('bgeSubPreEvento');
+  const subTextOriginal = sub ? sub.textContent : '';
+  if (btn) { btn.disabled = true; btn.classList.add('generating'); }
+  if (sub) sub.textContent = 'gerando…';
+  fetch('/api/generate/pre-evento', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ config })
+  })
+  .then(r => { if (!r.ok) return r.json().then(j => { throw new Error(j.error || 'falha na geração'); }); return r.blob(); })
+  .then(blob => {
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href = url;
+    const baseName = (config.evento.nome || 'sumulas').replace(/\s+/g, '_');
+    a.download = `${baseName}_pre-evento.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`Pré-evento gerado — ${stats.total} atletas/times em ${stats.cats} categoria${stats.cats !== 1 ? 's' : ''}`, 'ok');
+  })
+  .catch(e => toast('Erro: ' + e.message, 'err'))
+  .finally(() => {
+    if (btn) btn.classList.remove('generating');
+    if (sub) sub.textContent = subTextOriginal;
+    atualizarBotaoGerar();
+  });
 }
 
 function gerarZIPEscopo(escopo) {
