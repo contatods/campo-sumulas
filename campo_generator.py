@@ -389,6 +389,10 @@ body{
   font-size:6.5pt;font-weight:400;color:var(--ghost);
   flex-shrink:0;
 }
+.mr-carga{
+  font-size:6.5pt;font-weight:700;color:var(--mid);
+  letter-spacing:.04em;flex-shrink:0;
+}
 .mr-reps{
   width:21mm;flex-shrink:0;
   display:flex;align-items:center;justify-content:center;
@@ -973,7 +977,7 @@ MOV_TABLE_MACRO = r"""
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
           {% if mov.paralelo %}<span class="mr-paralelo-mark" title="Executado em paralelo">‖</span>{% endif %}
-          <span class="mr-reps-inline">({{ mov.reps }})</span>{{ mov.nome }}
+          <span class="mr-reps-inline">({{ mov.reps }})</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
         </div>
         <div class="mr-reps">{{ mov.reps }}</div>
         <div class="mr-cum">{{ ns.cum }}</div>
