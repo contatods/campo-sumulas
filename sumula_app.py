@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.21.3'
+VERSION = '1.21.4'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -95,7 +95,7 @@ def _to_int_or_max(v) -> int:
 
 
 FOR_LOAD_TENTATIVAS_MIN = 1
-FOR_LOAD_TENTATIVAS_MAX = 8   # cap pra não estourar A4 — estudo mostra ~5-6 cabem
+FOR_LOAD_TENTATIVAS_MAX = 12  # cap A4 — individual compact aguenta até ~12; team menos
 FOR_LOAD_ANILHAS_MAX = 12     # cap horizontal pra régua não estourar A4 (~190mm)
 
 
