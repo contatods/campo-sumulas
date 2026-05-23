@@ -452,15 +452,28 @@ body{
   content:''; /* keep alignment, sem alterar */
 }
 
-/* Nota leve no topo da tabela For Time indicando relay (Spin etc).
-   Sub-blocos por atleta foram removidos — workout é UM tempo total. */
+/* Nota do formato relay no topo do mov_table (Spin etc).
+   Mov_table renderiza N blocos (1 por atleta), reps cumulativos. */
 .relay-note{
-  background:var(--field);border:1px solid var(--rule);
-  padding:1.5mm 3mm;margin-bottom:0;
-  font-size:7pt;font-weight:700;color:var(--ink);
-  letter-spacing:.1em;text-transform:uppercase;
-  border-bottom:0;
+  background:var(--ink);color:var(--w);
+  padding:1.2mm 3mm;font-size:6.5pt;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid var(--ink);border-bottom:0;
 }
+/* Separador de bloco por atleta dentro do mov_table. Mostra 'Atleta N' +
+   linha pra preencher nome. Não consome cum — só visual. */
+.atleta-sep-row{
+  display:flex;align-items:center;gap:3mm;
+  padding:1.5mm 3mm;background:var(--field);
+  border-top:2px solid var(--ink);
+}
+.atleta-sep-row:first-child{border-top:0}
+.atleta-sep-pos{
+  font-size:7pt;font-weight:900;color:var(--w);
+  background:var(--ink);padding:0.6mm 3mm;border-radius:2px;
+  letter-spacing:.08em;text-transform:uppercase;flex-shrink:0;
+}
+.atleta-sep-nome{flex:1;min-height:5mm;border-bottom:1.5px solid var(--ink)}
 
 /* Relay — N sub-blocos (1 por atleta) [DEPRECATED — só pra compat] */
 .mov-relay{display:flex;flex-direction:column;gap:1.5mm}
@@ -929,7 +942,12 @@ MOV_TABLE_MACRO = r"""
   </div>
   {% set ns = namespace(cum=0) %}
   {% for mov in movimentos %}
-    {% if mov.separador is defined and mov.separador %}
+    {% if mov.atleta_header is defined %}
+      <div class="atleta-sep-row">
+        <span class="atleta-sep-pos">Atleta {{ mov.atleta_header }}</span>
+        <div class="atleta-sep-nome"></div>
+      </div>
+    {% elif mov.separador is defined and mov.separador %}
       <div class="sep-row"><span class="sep-txt">{{ mov.separador | upper }}</span></div>
     {% elif mov.chegada is defined and mov.chegada %}
       {% set ns.cum = ns.cum + 1 %}
@@ -1573,9 +1591,19 @@ PAGE_TMPL_STR = r"""<div class="page">
      numa tabela só (não duplica por atleta — score é da equipe). #}
   {% set _n_relay = wkt.n_atletas_time or ({'dupla':2,'trio':3,'quarteto':4,'time':3}).get(wkt.modalidade, 0) %}
   {% if wkt.rounds_per_atleta and _n_relay > 0 %}
-    <div class="relay-note">Formato Relay · {{ wkt.rounds_per_atleta }} Round{% if wkt.rounds_per_atleta != 1 %}s{% endif %} por Atleta ({{ _n_relay }} atletas em sequência)</div>
+    <div class="relay-note">Formato Relay · {{ wkt.rounds_per_atleta }} Round{% if wkt.rounds_per_atleta != 1 %}s{% endif %} por Atleta · {{ _n_relay }} atletas em sequência · Tempo total + reps acumuladas</div>
+    {# Expande a lista: pra cada atleta, header + base_movs. Chegada só no fim.
+       Cumulativo atravessa atletas — score é da equipe, não individual. #}
+    {% set _base_movs = wkt.movimentos | rejectattr('chegada','defined') | list %}
+    {% set ns_relay = namespace(out=[]) %}
+    {% for pos in range(1, _n_relay + 1) %}
+      {% set ns_relay.out = ns_relay.out + [{'atleta_header': pos}] + _base_movs %}
+    {% endfor %}
+    {% set ns_relay.out = ns_relay.out + [{'chegada': true}] %}
+    {{ mov_table(ns_relay.out, wkt.numero) }}
+  {% else %}
+    {{ mov_table(wkt.movimentos, wkt.numero) }}
   {% endif %}
-  {{ mov_table(wkt.movimentos, wkt.numero) }}
 {% endif %}
 
 {# ── SCORE BOX ── #}
