@@ -1657,6 +1657,7 @@ function updateEmptyState() {
 
 function updateClearAllVisibility() {
   const btn = document.getElementById('btnClearAll');
+  if (!btn) return;   // elemento opcional — não derruba o import se ausente
   const hasData = temDados() || config.evento.nome;
   btn.style.display = hasData ? '' : 'none';
 }
