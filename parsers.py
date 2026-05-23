@@ -397,10 +397,24 @@ def parse_workout_text(text: str, numero: int) -> Workout:
             in_paralelo = False
             # Não consome a linha — pode ter movimento depois "After both: 21 Pull-Ups"
         if any(ll.startswith(p) for p in skip_prefixes): continue
-        # Sufixo '*' marca movimento progressivo (reps aumentam por round).
-        # Não tirar do nome — só sinalizar e remover o '*' antes do _parse_mov_line.
-        is_progressivo = bool(re.search(r'\*\s*$', line.strip()))
-        line_clean = re.sub(r'\*\s*$', '', line).rstrip()
+        # Marca movimento progressivo. Aceita vários markers comuns:
+        #   sufixo no fim:           '10 Burpees*'
+        #   antes do (athletes):     '10 Burpees* (2 athletes)'
+        #   após o (athletes):       '10 Burpees (2 athletes)*'
+        #   inline:                  '10 Burpees (prog)'
+        # Símbolos aceitos: '*', '★', '↑', '↗' (Excel pode autocorrigir '*')
+        s_strip = line.strip()
+        # Marker no fim, opcionalmente seguido de (texto) no fim
+        end_marker = re.search(r'[*★↑↗](?:\s*\([^)*]*\))?\s*$', s_strip)
+        inline_marker = re.search(r'\((?:prog|progressivo|progressive|\+)\)\s*$', s_strip, re.I)
+        is_progressivo = bool(end_marker) or bool(inline_marker)
+        # Remove o marker antes do parse_mov_line (não polui o nome).
+        # Cuidado: '*Add 2 reps each round' começa com '*' — só remove markers
+        # que NÃO estão no início (esses são directives).
+        line_clean = line
+        if not line_clean.lstrip().startswith(('*', '★', '↑', '↗')):
+            line_clean = re.sub(r'[*★↑↗](?=\s|\(|$)', '', line_clean)
+        line_clean = re.sub(r'\((?:prog|progressivo|progressive|\+)\)\s*$', '', line_clean, flags=re.I).rstrip()
         # Pula a linha-diretriz `*Add N reps each round` (já capturada acima)
         if re.match(r'^\s*\*?\s*(?:add|acrescent[ae]r?|adicione|\+)\s+\d+\s+reps?\s+(?:each|a\s+cada|por)\s+round', line_clean, re.I):
             continue
