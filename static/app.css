@@ -258,8 +258,10 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   font-size:11px;font-weight:700;letter-spacing:.08em;opacity:0;
   transition:opacity .25s;pointer-events:none;z-index:999}
 .toast.show{opacity:1}
-.toast.ok{background:#1A3A1A;color:#6C6;border:1px solid #2A4A2A}
-.toast.err{background:#3A1A1A;color:#C66;border:1px solid #4A2A2A}
+.toast.ok{background:#0A2A1A;color:var(--green);border:1px solid rgba(0,230,118,.35)}
+.toast.err{background:#2A0A14;color:var(--red);border:1px solid rgba(255,61,90,.4)}
+.toast.warn{background:#2A1A0A;color:var(--orange);border:1px solid var(--orange-edge)}
+.toast.info{background:var(--surface3);color:var(--blue);border:1px solid rgba(0,212,255,.3)}
 
 /* ── Categoria switcher (no topo da sidebar quando há import) ── */
 .cat-switcher{display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface2)}

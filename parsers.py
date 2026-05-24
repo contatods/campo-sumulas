@@ -76,6 +76,17 @@ _FRASE_NAO_MOVIMENTO_RE = re.compile(
     r'sets?\s+per\s+athletes?|sets?\s+por\s+atleta)\b',
     re.IGNORECASE,
 )
+# Filtro EXTRA usado SÓ no fallback de flex-mov (For Time com Goal). Mais
+# agressivo — pega notas/regulamento em EN que escapam do filtro genérico
+# porque movimentos normais nunca têm 'must', 'should', 'cross the', etc.
+_NOTA_LIKELY_RE = re.compile(
+    r'\b(?:athletes?\s+(?:must|should|will|need|alternate|cross)|'
+    r'must\b|should\b|will\s+(?:start|finish|complete)|need\s+to|needs\s+to|'
+    r'deve\b|deverá|precisa|tem\s+que|'
+    r'cross\s+the\b|finish\s+line|alternat(?:ing|e)\b|'
+    r'before\s+(?:start|finishing)|after\s+(?:complet|finish))\b',
+    re.IGNORECASE,
+)
 
 
 # Extrai carga no fim do nome do movimento. Dois formatos:
@@ -97,6 +108,16 @@ _CARGA_AT_END_RE = re.compile(
     r'\s*\)?\s*$',                                   # antes era opcional — capturava
     re.IGNORECASE,                                   # altura (24") e distância (800m)
 )
+# Carga no INÍCIO ('20kg Sandbag Carry', '95lb Thrusters'). Útil quando o
+# organizador formata diferente. SÓ pega se a unidade vier imediatamente
+# após o número (sem espaço pra distância). Senão confunde com reps líderes.
+_CARGA_AT_START_RE = re.compile(
+    r'^\s*'
+    r'(\d+(?:[\.,]\d+)?(?:/\d+(?:[\.,]\d+)?)?)\s*'   # número
+    r'(kg|lb|lbs|#)'                                 # unidade de peso ATACHADA
+    r'\s+(\S.+)$',                                   # resto = nome
+    re.IGNORECASE,
+)
 
 
 def _extrair_carga(nome: str) -> tuple[str, Optional[str]]:
@@ -106,6 +127,13 @@ def _extrair_carga(nome: str) -> tuple[str, Optional[str]]:
     ('50/35 LB', '20 KG', '@135/95'). Sem unidade quando o input usa só `@`.
     Genérico — usado em parser de qualquer tipo de workout.
     """
+    # Tenta carga no INÍCIO primeiro ('20kg Sandbag Carry', '95lb Thrusters')
+    m_start = _CARGA_AT_START_RE.match(nome)
+    if m_start:
+        num, unit, resto = m_start.group(1), m_start.group(2).upper(), m_start.group(3).strip()
+        if resto and len(resto) >= 3:
+            return (resto, f"{num} {unit}")
+    # Senão tenta no FIM (com unidade obrigatória) ou @-prefixed
     m = _CARGA_END_RE.search(nome) or _CARGA_AT_END_RE.search(nome)
     if not m: return (nome, None)
     nome_limpo = nome[:m.start()].rstrip(' ,-()@').strip()
@@ -470,16 +498,18 @@ def parse_workout_text(text: str, numero: int) -> Workout:
             # For Time com Goal (Simple Mind/Dimension): movimentos podem vir
             # SEM reps líderes (só nome + carga). Atleta distribui reps livre.
             # Filtro ESTRITO pra não pegar notas/regulamento como movimento:
-            #   - Linha curta (≤ 6 palavras)
+            #   - Linha curta (≤ 4 palavras) — movimentos CrossFit são curtos
+            #     ('Snatches 95/65 lb' = 3), notas são frases
             #   - Sem ponto final (notas costumam ter)
             #   - Sem palavras de frase explicativa
             #   - Não termina com ':' (header tipo 'Notes:')
             nome_raw = line_clean.strip()
             palavras = nome_raw.split()
-            if (1 <= len(palavras) <= 6
+            if (1 <= len(palavras) <= 5
                 and not nome_raw.endswith(('.', ':', '!', '?', ';'))
                 and not nome_raw.startswith(('-', '*', '•', '→'))
-                and not _FRASE_NAO_MOVIMENTO_RE.search(nome_raw)):
+                and not _FRASE_NAO_MOVIMENTO_RE.search(nome_raw)
+                and not _NOTA_LIKELY_RE.search(nome_raw)):
                 nome_raw_up = nome_raw.upper()
                 nome_limpo, carga = _extrair_carga(nome_raw_up)
                 if nome_limpo and len(nome_limpo) >= 3:

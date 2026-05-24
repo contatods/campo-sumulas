@@ -136,15 +136,17 @@ body{
   font-family:var(--font-body);text-transform:uppercase;
 }
 
-/* ── A4 MARKER ── */
-.a4-marker{
-  position:absolute;top:281mm;left:-2mm;right:-2mm;height:0;
-  border-top:2px dashed rgba(200,0,0,.5);pointer-events:none;z-index:999;
-}
-.a4-marker::after{
-  content:'A4';position:absolute;right:0;top:-10px;
-  font-size:7px;font-weight:700;color:rgba(200,0,0,.55);
-  letter-spacing:.06em;font-family:Arial,sans-serif;
+/* ── A4 MARKER (só na tela, escondido em print/PDF) ── */
+@media screen{
+  .a4-marker{
+    position:absolute;top:281mm;left:-2mm;right:-2mm;height:0;
+    border-top:2px dashed rgba(200,0,0,.5);pointer-events:none;z-index:999;
+  }
+  .a4-marker::after{
+    content:'A4';position:absolute;right:0;top:-10px;
+    font-size:7px;font-weight:700;color:rgba(200,0,0,.55);
+    letter-spacing:.06em;font-family:Arial,sans-serif;
+  }
 }
 @media print{.a4-marker{display:none!important}}
 
