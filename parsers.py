@@ -144,6 +144,20 @@ def _extrair_carga(nome: str) -> tuple[str, Optional[str]]:
     return (nome_limpo, carga)
 
 
+# ── Helpers genéricos ─────────────────────────────────────────────────────────
+def _safe_int(s, default: Optional[int] = None) -> Optional[int]:
+    """Tenta int(s) silenciosamente. Retorna default se falhar.
+
+    Substitui o padrão repetido `try: int(...) except ValueError: pass`.
+    Mais legível e padroniza tratamento de input não numérico.
+    """
+    if s is None: return default
+    try:
+        return int(str(s).strip())
+    except (ValueError, TypeError):
+        return default
+
+
 # ── Texto livre de workout ──────────────────────────────────────────────────────
 def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     """Extrai (reps, nome_upper) de uma linha de movimento.
@@ -307,185 +321,153 @@ def _normalizar_complex(texto: str) -> str:
     return s.upper()
 
 
-def parse_workout_text(text: str, numero: int) -> Workout:
-    """Converte o texto livre de uma célula/seção num dict de workout."""
-    lines = [l.strip() for l in str(text).split('\n') if l.strip()]
-    wkt: Workout = {"numero": numero, "nome": f"WKT {numero}", "tipo": "for_time",
-                    "modalidade": "individual", "time_cap": "", "movimentos": [], "descricao": []}
+def _extrair_nome_workout(lines: list[str]) -> Optional[str]:
+    """Extrai o nome do workout da primeira linha, se ela for um título
+    (entre aspas ou texto livre não começando com dígito). Retorna None
+    se a primeira linha já parece ser conteúdo (movs/diretrizes)."""
+    if not lines: return None
+    m = re.match(r'^["“‘](.+?)["”’]', lines[0])
+    if m: return m.group(1).strip().upper()
+    if not re.match(r'^\d', lines[0]):
+        return lines[0].strip('"“”').upper()[:40]
+    return None
 
-    # Nome: primeira linha entre aspas (simples, duplas, curvas)
-    if lines:
-        m = re.match(r'^["“‘](.+?)["”’]', lines[0])
-        if m:
-            wkt["nome"] = m.group(1).strip().upper()
-        elif not re.match(r'^\d', lines[0]):
-            wkt["nome"] = lines[0].strip('"“”').upper()[:40]
 
-    # Detecta Express antes de qualquer outra coisa
-    if any(re.search(r'express formula', l, re.I) for l in lines):
-        return _parse_express(lines, wkt)
+def _parse_for_load(lines: list[str], wkt: Workout, full: str) -> Workout:
+    """Branch For Load: detecta tentativas, captura descrição e sequência.
+    Returna o wkt populado pra retorno imediato em parse_workout_text."""
+    wkt["tipo"] = "for_load"
+    m_tent = re.search(r'(\d+)\s*tentativas?', full)
+    if m_tent:
+        tent = _safe_int(m_tent.group(1))
+        if tent is not None: wkt["tentativas"] = tent
+    # Texto livre fica em descricao; trunca em separadores tipo NOTAS pra
+    # não bagunçar a súmula com regulamento que estoura A4.
+    wkt["descricao"] = _truncar_descricao_em_notas(lines)
+    wkt["movimentos"] = []
+    wkt["sequencia_movimentos"] = _extrair_sequencia_for_load(lines, wkt.get("nome", ""))
+    return wkt
 
-    # Tipo
-    full = '\n'.join(lines).lower()
-    if 'for load' in full or 'max lift' in full or 'max load' in full or \
-       re.search(r'\bcarga m[áa]xima\b', full):
-        wkt["tipo"] = "for_load"
-        # Tentativas explícitas no texto (ex: "5 tentativas")
-        m_tent = re.search(r'(\d+)\s*tentativas?', full)
-        if m_tent:
-            try: wkt["tentativas"] = int(m_tent.group(1))
-            except ValueError: pass
-        # Texto livre fica em descricao; trunca em separadores tipo NOTAS
-        # pra não bagunçar a súmula com regulamento que estoura A4.
-        wkt["descricao"] = _truncar_descricao_em_notas(lines)
-        wkt["movimentos"] = []
-        # Extrai sequência de movimentos pro árbitro (lembrete visual).
-        # Aceita combos com '+' ('1 Squat Clean + 1 Push Jerk + 1 Split Jerk'),
-        # listas linha a linha, ou movimento embutido no nome do workout.
-        wkt["sequencia_movimentos"] = _extrair_sequencia_for_load(lines, wkt.get("nome", ""))
-        return wkt
-    if 'for time' in full or 'por tempo' in full:
-        wkt["tipo"] = "for_time"
-    elif 'amrap' in full or 'as many reps' in full:
-        wkt["tipo"] = "amrap"
 
-    # Detecta relay 'N round(s) per athlete' (For Time típico em trios).
-    # Marca wkt['rounds_per_atleta'] pra que o renderer gere sub-blocos.
-    m_relay = re.search(r'(\d+)\s+rounds?\s+per\s+athletes?', full, re.I) \
-              or re.search(r'(\d+)\s+rounds?\s+por\s+atleta', full, re.I)
+def _detectar_directives(full: str, lines: list[str], wkt: Workout) -> None:
+    """Detecta e popula in-place todas as diretrizes do workout no wkt:
+    relay (N rounds per athlete), EMOM, tiebreak (por round e geral),
+    progressão de reps, goal de For Time, último round MAX. Mutação."""
+    # Relay 'N round(s) per athlete' (For Time típico em trios)
+    m_relay = (re.search(r'(\d+)\s+rounds?\s+per\s+athletes?', full, re.I)
+               or re.search(r'(\d+)\s+rounds?\s+por\s+atleta', full, re.I))
     if m_relay:
-        try: wkt["rounds_per_atleta"] = int(m_relay.group(1))
-        except ValueError: pass
+        n = _safe_int(m_relay.group(1))
+        if n is not None: wkt["rounds_per_atleta"] = n
 
-    # Detecta EMOM (`every X minutes, for Y rounds`) e marca como AMRAP-rounds.
+    # EMOM (`every X minutes, for Y rounds`) — usa scorecard AMRAP
     m_emom = re.search(r'every\s+(\d+(?::\d+)?)\s*minutes?\s*,?\s*for\s+(\d+)\s+rounds?', full, re.I)
     if m_emom:
-        wkt["tipo"] = "amrap"   # ainda usa scorecard AMRAP
+        wkt["tipo"] = "amrap"
         wkt["emom_janela"] = m_emom.group(1)
-        try: wkt["emom_rounds"] = int(m_emom.group(2))
-        except ValueError: pass
+        n = _safe_int(m_emom.group(2))
+        if n is not None: wkt["emom_rounds"] = n
 
-    # Detecta tie-break por round — phrasings comuns PT/EN:
-    #   'Tiebreak: tempo no final de cada round'
-    #   'Tie-break: tempo ao final de cada rodada'
-    #   'Tiebreak: time at the end of each round'
-    #   'TB por round', 'TB cada round', 'tie-break por round'
-    #   'desempate: tempo ao fim de cada round'
-    if re.search(r'(?:tie[\s-]?break|tb|desempate)[:\s-]*'
-                 r'(?:tempo|time)?[^.\n]{0,40}'
-                 r'(?:final|fim|end)\s+(?:de|of)?\s*(?:the\s+)?(?:cada|each)\s+(?:round|rodada)', full, re.I) \
-       or re.search(r'(?:tie[\s-]?break|tb|desempate)\s+(?:por|per|each|a\s+cada)\s+(?:round|rodada)', full, re.I):
+    # Tie-break por round (cobrar tempo no final de cada round)
+    tb_por_round = (
+        re.search(r'(?:tie[\s-]?break|tb|desempate)[:\s-]*'
+                  r'(?:tempo|time)?[^.\n]{0,40}'
+                  r'(?:final|fim|end)\s+(?:de|of)?\s*(?:the\s+)?(?:cada|each)\s+(?:round|rodada)', full, re.I)
+        or re.search(r'(?:tie[\s-]?break|tb|desempate)\s+(?:por|per|each|a\s+cada)\s+(?:round|rodada)', full, re.I))
+    if tb_por_round:
         wkt["tiebreak_por_round"] = True
-    # Tiebreak geral (não por round): For Time típico — 'Tiebreak: tempo ao fim
-    # das 21 pull-ups'. Marca flag pro score box criar campo de tempo extra.
-    if not wkt.get("tiebreak_por_round"):
+    else:
+        # Tiebreak geral (For Time com critério específico — 'tempo ao fim das 21 pull-ups')
         for ln in lines:
             m_tb = re.match(r'\s*(?:tie[\s-]?break|tb|desempate)\s*[:\-]\s*(.+)$', ln, re.I)
             if m_tb:
                 wkt["tiebreak"] = m_tb.group(1).strip()
                 break
 
-    # Detecta progressão de reps por round: '*Add N reps each round' /
-    # '*Acrescentar N reps a cada round' / '+N reps por round'.
-    # Movimentos marcados com '*' sufixo progridem; sem markers, aplica geral.
+    # Progressão de reps (*Add N reps each round)
     m_prog = (re.search(r'\*\s*(?:add|acrescent[ae]r?|adicione)\s+(\d+)\s+reps?\s+(?:each|a\s+cada|por)\s+round', full, re.I)
               or re.search(r'\*\s*\+\s*(\d+)\s+reps?\s+(?:each|a\s+cada|por)\s+round', full, re.I)
               or re.search(r'(?:add|acrescent[ae]r?|adicione)\s+(\d+)\s+reps?\s+(?:each|a\s+cada|por)\s+round', full, re.I))
     if m_prog:
-        try: wkt["reps_delta_por_round"] = int(m_prog.group(1))
-        except ValueError: pass
-    # Goal de For Time tipo Simple Dimension / Simple Mind:
-    #   'Goal: 75 Snatches + finishing rep (cross the line)'
-    #   'Objetivo: 75 Snatches + chegada'
-    # Atleta tem que atingir N reps totais de um movimento + chegada.
-    # Reps por bloco são livres — juiz precisa contar reps por part.
-    # Captura 'Goal: N <Movimento>' parando ANTES de '+', 'e', 'and', '&', dígitos
-    # extras ou pontuação. Evita capturar '75 DB Snatches + 50 Burpees' como
-    # um único movimento. Movimento limitado a 1-4 palavras alfabéticas/hífen.
-    m_goal = (re.search(
+        delta = _safe_int(m_prog.group(1))
+        if delta is not None: wkt["reps_delta_por_round"] = delta
+
+    # Goal de For Time tipo Simple Dimension/Mind. Para ANTES de '+', 'and',
+    # dígitos extras, palavras-chave de chegada — evita capturar combos longos.
+    m_goal = re.search(
         r'(?:goal|objetivo|alvo)\s*[:\-]?\s*(\d+)\s+'
         r'((?:[A-Za-zÀ-ú][\w\-/]*)(?:\s+(?!\+|and\b|e\b|&|\d|finishing|chegada|cross)[A-Za-zÀ-ú][\w\-/]*){0,3})',
-        full, re.I))
+        full, re.I)
     if m_goal:
-        try: wkt["goal_reps"] = int(m_goal.group(1))
-        except (ValueError, IndexError): pass
+        n = _safe_int(m_goal.group(1))
+        if n is not None: wkt["goal_reps"] = n
         nome_mov = m_goal.group(2).strip().upper()
-        # Salvaguarda: remove qualquer sufixo que escapou (raro mas defensivo)
         nome_mov = re.sub(r'\s*(?:\+|and|e|&)\s.*$', '', nome_mov, flags=re.I).strip()
         wkt["goal_movimento"] = nome_mov
 
-    # Diretriz adicional: último round vira MAX / AMRAP.
-    # Ex: 'last round max', 'último round MAX', 'final round AMRAP', 'last MAX'.
-    if re.search(r'(?:last|[úu]ltimo|final)\s+round\s+(?:is\s+)?(?:max|amrap)', full, re.I) \
-       or re.search(r'(?:last|[úu]ltimo|final)\s+(?:round\s+)?(?:max|amrap)\s+reps?', full, re.I) \
-       or re.search(r'(?:round|rd)\s*\d+\s*[:=]\s*(?:max|amrap)', full, re.I):
+    # Último round vira MAX / AMRAP
+    if (re.search(r'(?:last|[úu]ltimo|final)\s+round\s+(?:is\s+)?(?:max|amrap)', full, re.I)
+        or re.search(r'(?:last|[úu]ltimo|final)\s+(?:round\s+)?(?:max|amrap)\s+reps?', full, re.I)
+        or re.search(r'(?:round|rd)\s*\d+\s*[:=]\s*(?:max|amrap)', full, re.I)):
         wkt["ultimo_round_max"] = True
 
-    # Movimentos, separadores, time cap
+
+# Regexes pré-compiladas usadas no loop de movimentos (perf + clareza)
+_PARALELO_RE = re.compile(r'^\s*(?:simultaneous(?:ly)?|paralelo|simultaneamente|'
+                          r'simultane[oa])\b.*:\s*$', re.I)
+_FIM_PARALELO_RE = re.compile(r'^\s*(?:after\s+both|after\s+all|then|ap[óo]s\s+(?:os\s+)?'
+                              r'(?:dois|todos|ambos))\b', re.I)
+_SKIP_PREFIXES = ('for time', 'por tempo', 'amrap', 'as many reps', 'rest',
+                  'atenção', 'atencao', 'obs', 'note', '"', '“')
+_MARKER_END_RE = re.compile(r'[*★↑↗](?:\s*\([^)*]*\))?\s*$')
+_MARKER_INLINE_RE = re.compile(r'\((?:prog|progressivo|progressive|\+)\)\s*$', re.I)
+_DIRECTIVE_PROG_RE = re.compile(
+    r'^\s*\*?\s*(?:add|acrescent[ae]r?|adicione|\+)\s+\d+\s+reps?\s+(?:each|a\s+cada|por)\s+round', re.I)
+_DIRECTIVE_GOAL_RE = re.compile(r'^\s*(?:goal|objetivo|alvo)\s*[:\-]', re.I)
+
+
+def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], str]:
+    """Itera lines extraindo movimentos. Aplica regras de paralelo, marcadores
+    progressivos, blocos `then...` e fallback flex-mov pra workouts com Goal.
+    Retorna (lista de movimentos, time_cap). Não mutates wkt."""
     movs: list[Movimento] = []
     block = 1
-    # Trunca em marcador NOTAS / OBSERVAÇÕES / —— pra não pegar regulamento
-    # como movimento (especialmente em For Time com Goal: que aceita linhas
-    # sem reps líderes).
-    lines = _truncar_descricao_em_notas(lines)
-    has_seps = any(re.match(r'^then\.+$', l, re.I) for l in lines)
-    skip_prefixes = ('for time', 'por tempo', 'amrap', 'as many reps', 'rest',
-                     'atenção', 'atencao', 'obs', 'note', '"', '“')
-    # 'Simultaneous buy-in:' marca início de bloco paralelo (vários movimentos
-    # executados ao mesmo tempo por atletas diferentes). 'After both' / 'then...'
-    # encerram o bloco paralelo.
     in_paralelo = False
-    paralelo_re = re.compile(r'^\s*(?:simultaneous(?:ly)?|paralelo|simultaneamente|'
-                              r'simultane[oa])\b.*:\s*$', re.I)
-    fim_paralelo_re = re.compile(r'^\s*(?:after\s+both|after\s+all|then|ap[óo]s\s+(?:os\s+)?'
-                                  r'(?:dois|todos|ambos))\b', re.I)
+    time_cap = ""
+    has_seps = any(re.match(r'^then\.+$', l, re.I) for l in lines)
+    has_goal = bool(wkt.get("goal_reps"))
 
     for line in lines:
         ll = line.lower()
         tc = re.search(r'time\s*cap[:\s]+(\d+)\s*min', line, re.I)
-        if tc: wkt["time_cap"] = f"{tc.group(1)} min"; continue
+        if tc:
+            time_cap = f"{tc.group(1)} min"
+            continue
         if re.match(r'^then[\.\s]*$', line, re.I):
             if movs: movs.append({"separador": "then..."})
             block += 1
             in_paralelo = False
             continue
-        # Inicio de bloco paralelo: marca movs seguintes como paralelo
-        if paralelo_re.match(line):
+        if _PARALELO_RE.match(line):
             in_paralelo = True
             continue
-        # Fim de paralelo (mas mantém na lista de movs — só sai do modo)
-        if fim_paralelo_re.match(line):
-            in_paralelo = False
-            # Não consome a linha — pode ter movimento depois "After both: 21 Pull-Ups"
-        if any(ll.startswith(p) for p in skip_prefixes): continue
-        # Pula a linha-diretriz `Goal: N <mov> + finishing rep` (já capturada acima)
-        if re.match(r'^\s*(?:goal|objetivo|alvo)\s*[:\-]', line, re.I):
-            continue
-        # Marca movimento progressivo. Aceita vários markers comuns:
-        #   sufixo no fim:           '10 Burpees*'
-        #   antes do (athletes):     '10 Burpees* (2 athletes)'
-        #   após o (athletes):       '10 Burpees (2 athletes)*'
-        #   inline:                  '10 Burpees (prog)'
-        # Símbolos aceitos: '*', '★', '↑', '↗' (Excel pode autocorrigir '*')
+        if _FIM_PARALELO_RE.match(line):
+            in_paralelo = False   # não consome — 'After both: 21 Pull-Ups' tem mov após
+        if any(ll.startswith(p) for p in _SKIP_PREFIXES): continue
+        if _DIRECTIVE_GOAL_RE.match(line): continue   # 'Goal:' já capturada
+
+        # Marca progressivo + remove markers do nome
         s_strip = line.strip()
-        # Marker no fim, opcionalmente seguido de (texto) no fim
-        end_marker = re.search(r'[*★↑↗](?:\s*\([^)*]*\))?\s*$', s_strip)
-        inline_marker = re.search(r'\((?:prog|progressivo|progressive|\+)\)\s*$', s_strip, re.I)
-        is_progressivo = bool(end_marker) or bool(inline_marker)
-        # Remove o marker antes do parse_mov_line (não polui o nome).
-        # Cuidado: '*Add 2 reps each round' começa com '*' — só remove markers
-        # que NÃO estão no início (esses são directives).
+        is_progressivo = bool(_MARKER_END_RE.search(s_strip)) or bool(_MARKER_INLINE_RE.search(s_strip))
         line_clean = line
         if not line_clean.lstrip().startswith(('*', '★', '↑', '↗')):
             line_clean = re.sub(r'[*★↑↗](?=\s|\(|$)', '', line_clean)
-        line_clean = re.sub(r'\((?:prog|progressivo|progressive|\+)\)\s*$', '', line_clean, flags=re.I).rstrip()
-        # Pula a linha-diretriz `*Add N reps each round` (já capturada acima)
-        if re.match(r'^\s*\*?\s*(?:add|acrescent[ae]r?|adicione|\+)\s+\d+\s+reps?\s+(?:each|a\s+cada|por)\s+round', line_clean, re.I):
-            continue
+        line_clean = _MARKER_INLINE_RE.sub('', line_clean).rstrip()
+        if _DIRECTIVE_PROG_RE.match(line_clean): continue   # '*Add N reps each round'
+
         parsed = _parse_mov_line(line_clean)
         if parsed:
             reps, nome = parsed
-            # Extrai carga (peso) se vier no fim do nome — aplica a qualquer tipo
             nome_limpo, carga = _extrair_carga(nome)
             mov: Movimento = {"nome": nome_limpo}
             if reps is not None: mov["reps"] = reps
@@ -494,50 +476,101 @@ def parse_workout_text(text: str, numero: int) -> Workout:
             if in_paralelo: mov["paralelo"] = True
             if is_progressivo: mov["progressivo"] = True
             movs.append(mov)
-        elif wkt.get("goal_reps") and not re.match(r'^\d', line_clean.strip()):
-            # For Time com Goal (Simple Mind/Dimension): movimentos podem vir
-            # SEM reps líderes (só nome + carga). Atleta distribui reps livre.
-            # Filtro ESTRITO pra não pegar notas/regulamento como movimento:
-            #   - Linha curta (≤ 4 palavras) — movimentos CrossFit são curtos
-            #     ('Snatches 95/65 lb' = 3), notas são frases
-            #   - Sem ponto final (notas costumam ter)
-            #   - Sem palavras de frase explicativa
-            #   - Não termina com ':' (header tipo 'Notes:')
-            nome_raw = line_clean.strip()
-            palavras = nome_raw.split()
-            if (1 <= len(palavras) <= 5
-                and not nome_raw.endswith(('.', ':', '!', '?', ';'))
-                and not nome_raw.startswith(('-', '*', '•', '→'))
-                and not _FRASE_NAO_MOVIMENTO_RE.search(nome_raw)
-                and not _NOTA_LIKELY_RE.search(nome_raw)):
-                nome_raw_up = nome_raw.upper()
-                nome_limpo, carga = _extrair_carga(nome_raw_up)
-                if nome_limpo and len(nome_limpo) >= 3:
-                    mov_flex: Movimento = {"nome": nome_limpo}
-                    if carga: mov_flex["carga"] = carga
-                    if has_seps and block in BLOCK_LABELS: mov_flex["label"] = BLOCK_LABELS[block]
-                    if in_paralelo: mov_flex["paralelo"] = True
-                    movs.append(mov_flex)
+        elif has_goal:
+            # For Time com Goal: aceita movs sem reps líderes (Snatches 95/65 lb)
+            mov_flex = _tentar_flex_mov(line_clean, has_seps, block, in_paralelo)
+            if mov_flex: movs.append(mov_flex)
 
+    return movs, time_cap
+
+
+def _tentar_flex_mov(line_clean: str, has_seps: bool,
+                     block: int, in_paralelo: bool) -> Optional[Movimento]:
+    """Fallback flex-mov pra For Time com Goal: aceita 'Snatches 95/65 lb'
+    (sem reps líderes). Filtro estrito pra não pegar notas/regulamento."""
+    if re.match(r'^\d', line_clean.strip()): return None   # tem reps — não é flex
+    nome_raw = line_clean.strip()
+    palavras = nome_raw.split()
+    # 1-5 palavras; sem pontuação final (frases têm); sem bullet de lista
+    if not (1 <= len(palavras) <= 5
+            and not nome_raw.endswith(('.', ':', '!', '?', ';'))
+            and not nome_raw.startswith(('-', '*', '•', '→'))
+            and not _FRASE_NAO_MOVIMENTO_RE.search(nome_raw)
+            and not _NOTA_LIKELY_RE.search(nome_raw)):
+        return None
+    nome_limpo, carga = _extrair_carga(nome_raw.upper())
+    if not nome_limpo or len(nome_limpo) < 3: return None
+    mov: Movimento = {"nome": nome_limpo}
+    if carga: mov["carga"] = carga
+    if has_seps and block in BLOCK_LABELS: mov["label"] = BLOCK_LABELS[block]
+    if in_paralelo: mov["paralelo"] = True
+    return mov
+
+
+def _aplicar_progressao_reps(wkt: Workout) -> None:
+    """Pós-processamento: gera mov.reps_por_round nos movs marcados como
+    progressivos. Strict: SÓ aplica nos marcados com '*' explícito —
+    diretriz '*Add N reps' sem markers não chuta geral. Mutação in-place."""
+    delta = wkt.get("reps_delta_por_round", 0)
+    if not delta: return
+    movs = wkt.get("movimentos") or []
+    if not movs: return
+    n_rounds = wkt.get("emom_rounds") or wkt.get("n_rounds") or 5
+    ultimo_max = wkt.get("ultimo_round_max", False)
+    for m in movs:
+        if m.get("chegada") or m.get("separador"): continue
+        if not m.get("progressivo"): continue
+        base = m.get("reps")
+        if not isinstance(base, int): continue
+        seq: list = [base + i * delta for i in range(n_rounds)]
+        if ultimo_max and seq: seq[-1] = 'MAX'
+        m["reps_por_round"] = seq
+
+
+def parse_workout_text(text: str, numero: int) -> Workout:
+    """Converte texto livre de uma célula/seção num dict de workout.
+
+    Pipeline:
+      1. Extrai nome (primeira linha entre aspas, ou texto livre não-numérico)
+      2. Detecta tipo (express / for_load / for_time / amrap)
+      3. Detecta diretrizes (relay, EMOM, tiebreak, progressão, Goal, MAX)
+      4. Loop de movimentos (filtra noise, marca paralelo/progressivo, captura carga)
+      5. Adiciona chegada (For Time) e aplica progressão (movs marcados)
+    """
+    lines = [l.strip() for l in str(text).split('\n') if l.strip()]
+    wkt: Workout = {"numero": numero, "nome": f"WKT {numero}", "tipo": "for_time",
+                    "modalidade": "individual", "time_cap": "",
+                    "movimentos": [], "descricao": []}
+
+    # 1) Nome
+    nome = _extrair_nome_workout(lines)
+    if nome: wkt["nome"] = nome
+
+    # 2) Tipo — Express e For Load retornam imediatamente (paths dedicados)
+    if any(re.search(r'express formula', l, re.I) for l in lines):
+        return _parse_express(lines, wkt)
+    full = '\n'.join(lines).lower()
+    if ('for load' in full or 'max lift' in full or 'max load' in full
+        or re.search(r'\bcarga m[áa]xima\b', full)):
+        return _parse_for_load(lines, wkt, full)
+    if 'for time' in full or 'por tempo' in full:
+        wkt["tipo"] = "for_time"
+    elif 'amrap' in full or 'as many reps' in full:
+        wkt["tipo"] = "amrap"
+
+    # 3) Diretrizes (relay, EMOM, tiebreak, progressão, goal, MAX)
+    _detectar_directives(full, lines, wkt)
+
+    # 4) Movimentos — trunca antes em NOTAS pra não pegar regulamento
+    lines_movs = _truncar_descricao_em_notas(lines)
+    movs, time_cap = _parse_movimentos(lines_movs, wkt)
+    if time_cap: wkt["time_cap"] = time_cap
+
+    # 5) For Time fecha com chegada; aplica progressão nos marcados
     if wkt["tipo"] == "for_time" and movs:
         movs.append({"chegada": True})
     wkt["movimentos"] = movs
-
-    # Aplica progressão de reps APENAS aos movs com '*' explícito.
-    # Sem markers, a directive '*Add N reps each round' é ignorada — evita
-    # progredir Swim/Thrusters quando só Burpees tem '*' (Monstar Recap).
-    delta = wkt.get("reps_delta_por_round", 0)
-    ultimo_max = wkt.get("ultimo_round_max", False)
-    if delta and movs:
-        n_rounds = wkt.get("emom_rounds") or wkt.get("n_rounds") or 5
-        for m in movs:
-            if m.get("chegada") or m.get("separador"): continue
-            if not m.get("progressivo"): continue   # strict: só os marcados
-            base = m.get("reps")
-            if not isinstance(base, int): continue
-            seq: list = [base + i * delta for i in range(n_rounds)]
-            if ultimo_max and seq: seq[-1] = 'MAX'
-            m["reps_por_round"] = seq
+    _aplicar_progressao_reps(wkt)
     return wkt
 
 

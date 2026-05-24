@@ -1689,12 +1689,14 @@ def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
     if wkt.get('tipo') == 'for_time' and not wkt.get('rounds_per_atleta'):
         desc = ' '.join(wkt.get('descricao') or []) + ' ' + (wkt.get('nome') or '')
         import re as _re
+        from parsers import _safe_int
         m = (_re.search(r'(\d+)\s+rounds?\s+per\s+athletes?', desc, _re.I)
              or _re.search(r'(\d+)\s+rounds?\s+por\s+atleta', desc, _re.I))
         if m:
-            wkt = dict(wkt)
-            try: wkt['rounds_per_atleta'] = int(m.group(1))
-            except ValueError: pass
+            n = _safe_int(m.group(1))
+            if n is not None:
+                wkt = dict(wkt)
+                wkt['rounds_per_atleta'] = n
 
     # Trunca descrição em separadores (NOTAS, Observações, etc) — regulamento
     # não deve aparecer na súmula impressa, só prescrição core. Salvaguarda

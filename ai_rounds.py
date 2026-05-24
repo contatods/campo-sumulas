@@ -53,6 +53,22 @@ _carregar_env_local()
 AI_KEY: str = os.environ.get('ANTHROPIC_API_KEY', '')
 AI_ATIVO: bool = HAS_ANTHROPIC and bool(AI_KEY)
 
+# ── Constantes de tuning ──────────────────────────────────────────────────────
+# Timeouts da API: fast pra preview/cálculos, chat pra interações longas.
+AI_TIMEOUT_FAST_S: float = 15.0   # rounds estimation, time-cap suggestion
+AI_TIMEOUT_CHAT_S: float = 20.0   # chat / validar / resumo
+
+# Pace algorítmico (reps/min) usado quando IA cai. Mais rápido pra AMRAPs
+# curtos (< 50 reps/round), mais lento pra rounds pesados.
+ROUNDS_PACE_LIGHT: int = 10       # reps/min em rounds leves (< 50 reps)
+ROUNDS_PACE_HEAVY: int = 7        # reps/min em rounds pesados
+ROUNDS_REPS_THRESHOLD: int = 50   # corte entre light/heavy
+
+# Truncamento de contexto pro chat — Anthropic 200K tokens é caro, e
+# eventos grandes podem produzir JSON de 100K+. 60K chars (~15K tokens)
+# cobre uso real sem estourar.
+AI_CONTEXT_MAX_CHARS: int = 60_000
+
 
 def _extrair_minutos(texto: str) -> Optional[int]:
     """Extrai duração em minutos de strings como:
@@ -101,7 +117,7 @@ def _estimar_rounds_ia(movimentos: list[Movimento], duracao_str: str) -> int:
         return _estimar_rounds_algoritmico(movimentos, duracao_str)
     try:
         # timeout=15s evita pendurar o handler quando a API está lenta.
-        client = anthropic.Anthropic(api_key=AI_KEY, timeout=15.0)
+        client = anthropic.Anthropic(api_key=AI_KEY, timeout=AI_TIMEOUT_FAST_S)
         resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=20,
@@ -180,7 +196,7 @@ def sugerir_time_cap(movimentos: list[Movimento], tipo: str = 'for_time') -> str
     if not total_reps:
         return '10 min'
     # Pace ~10 reps/min em workouts curtos, ~7 em longos. Add 50% de buffer.
-    pace = 10 if total_reps < 50 else 7
+    pace = ROUNDS_PACE_LIGHT if total_reps < ROUNDS_REPS_THRESHOLD else ROUNDS_PACE_HEAVY
     minutos = max(5, int((total_reps / pace) * 1.5))
     # Arredonda pra múltiplos de 5 (cleaner)
     minutos = ((minutos + 2) // 5) * 5 or 5
@@ -397,7 +413,7 @@ def estimar_duracao_workout_min(wkt: Workout) -> int:
                      if str(m.get('reps', '')).isdigit())
     if not total_reps:
         return 10
-    pace = 10 if total_reps < 50 else 7
+    pace = ROUNDS_PACE_LIGHT if total_reps < ROUNDS_REPS_THRESHOLD else ROUNDS_PACE_HEAVY
     return max(5, int(total_reps / pace * 1.4))
 
 
@@ -456,7 +472,7 @@ def chat_evento(mensagens: list[dict], config: dict) -> str:
         raise RuntimeError('IA inativa — defina ANTHROPIC_API_KEY pra usar o chat.')
     import json as _json
     contexto = _json.dumps(config, ensure_ascii=False)
-    if len(contexto) > 60000:
+    if len(contexto) > AI_CONTEXT_MAX_CHARS:
         # Truncate seguro: passa só nomes/baterias, não alocações detalhadas
         ev = config.get('evento', {})
         slim = {
@@ -494,7 +510,7 @@ def chat_evento(mensagens: list[dict], config: dict) -> str:
         "informação não está no JSON, diga claramente que não está.\n\n"
         f"Estado atual do evento:\n{contexto}"
     )
-    client = anthropic.Anthropic(api_key=AI_KEY, timeout=20.0)
+    client = anthropic.Anthropic(api_key=AI_KEY, timeout=AI_TIMEOUT_CHAT_S)
     resp = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=600,
@@ -545,7 +561,7 @@ def explicar_avisos_import(stats: dict, avisos: list[dict]) -> str:
         f"Dados do import:\n{contexto}"
     )
 
-    client = anthropic.Anthropic(api_key=AI_KEY, timeout=20.0)
+    client = anthropic.Anthropic(api_key=AI_KEY, timeout=AI_TIMEOUT_CHAT_S)
     resp = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=600,
