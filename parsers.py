@@ -92,9 +92,9 @@ _CARGA_END_RE = re.compile(
 _CARGA_AT_END_RE = re.compile(
     r'\s*\(?\s*@\s*'
     r'(\d+(?:[\.,]\d+)?(?:/\d+(?:[\.,]\d+)?)?)\s*'   # número após @
-    r'(kg|lb|lbs|#|pood)?'                           # unidade opcional
-    r'\s*\)?\s*$',
-    re.IGNORECASE,
+    r'(kg|lb|lbs|#|pood)'                            # unidade DE PESO obrigatória
+    r'\s*\)?\s*$',                                   # antes era opcional — capturava
+    re.IGNORECASE,                                   # altura (24") e distância (800m)
 )
 
 
@@ -370,16 +370,19 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     #   'Objetivo: 75 Snatches + chegada'
     # Atleta tem que atingir N reps totais de um movimento + chegada.
     # Reps por bloco são livres — juiz precisa contar reps por part.
-    m_goal = (re.search(r'(?:goal|objetivo|alvo)\s*[:\-]?\s*(\d+)\s+([A-Za-zÀ-ú][\w\-/]*(?:\s+[A-Za-zÀ-ú][\w\-/]*){0,3}?)\s*(?:\+|\b(?:and|e)\b)\s*(?:\d+\s+)?(?:finishing\s+rep|chegada|cross\s+the\s+line|finish\s+line)',
-                       full, re.I)
-              or re.search(r'(?:goal|objetivo|alvo)\s*[:\-]?\s*(\d+)\s+([A-Za-zÀ-ú][\w\-/]*(?:\s+[A-Za-zÀ-ú][\w\-/]*){0,3}?)(?=[\s.,;]|$)',
-                          full, re.I))
+    # Captura 'Goal: N <Movimento>' parando ANTES de '+', 'e', 'and', '&', dígitos
+    # extras ou pontuação. Evita capturar '75 DB Snatches + 50 Burpees' como
+    # um único movimento. Movimento limitado a 1-4 palavras alfabéticas/hífen.
+    m_goal = (re.search(
+        r'(?:goal|objetivo|alvo)\s*[:\-]?\s*(\d+)\s+'
+        r'((?:[A-Za-zÀ-ú][\w\-/]*)(?:\s+(?!\+|and\b|e\b|&|\d|finishing|chegada|cross)[A-Za-zÀ-ú][\w\-/]*){0,3})',
+        full, re.I))
     if m_goal:
         try: wkt["goal_reps"] = int(m_goal.group(1))
         except (ValueError, IndexError): pass
         nome_mov = m_goal.group(2).strip().upper()
-        # Remove sufixos comuns que entraram na captura
-        nome_mov = re.sub(r'\s*(?:\+|and|e)\s.*$', '', nome_mov, flags=re.I).strip()
+        # Salvaguarda: remove qualquer sufixo que escapou (raro mas defensivo)
+        nome_mov = re.sub(r'\s*(?:\+|and|e|&)\s.*$', '', nome_mov, flags=re.I).strip()
         wkt["goal_movimento"] = nome_mov
 
     # Diretriz adicional: último round vira MAX / AMRAP.
@@ -658,18 +661,30 @@ def _enriquecer_roster_com_categoria(roster: list[dict],
     """Adiciona campo 'categoria' a cada entry do roster baseado na faixa de
     número da aba Inscritos. Mutação in-place.
 
-    Categoria armazenada é a forma original (não a normalizada usada como
-    chave em inscritos). Resolve isso buscando match nas categorias dos dias.
-    Se não bater faixa nenhuma, deixa categoria=''.
+    Categoria armazenada é o nome ORIGINAL da categoria nos dias[] (não a
+    normalizada usada como chave em inscritos). O match usa duas estratégias
+    em ordem:
+      1. Match estrito de normalização (preserva distinções tipo
+         'Rx Misto (Iniciante)' vs 'Rx Misto (Avançado)')
+      2. Cruza com a FAIXA de número da categoria nos dias (se houver) pra
+         desambiguar quando inscritos usa forma relaxada.
+    Sem match, categoria=''.
     """
-    # Pra reconverter categoria_normalizada → nome real, monta um índice
-    nomes_reais: dict[str, str] = {}
+    # Índices por normalização (estrita e relaxada) → lista de nomes reais.
+    # Lista (não setdefault sozinho) preserva múltiplas candidatas pra detectar
+    # ambiguidade depois.
+    por_estrita: dict[str, list[str]] = {}
+    por_relaxada: dict[str, list[str]] = {}
     for dia in dias:
         for cat in dia.get('categorias', []) or []:
             nome = cat.get('nome', '')
-            if nome:
-                nomes_reais.setdefault(_normalizar_categoria(nome), nome)
-                nomes_reais.setdefault(_normalizar_categoria_relaxada(nome), nome)
+            if not nome: continue
+            ke = _normalizar_categoria(nome)
+            kr = _normalizar_categoria_relaxada(nome)
+            if nome not in por_estrita.setdefault(ke, []):
+                por_estrita[ke].append(nome)
+            if nome not in por_relaxada.setdefault(kr, []):
+                por_relaxada[kr].append(nome)
     for atl in roster:
         try:
             num = int(str(atl.get('numero', '')).strip())
@@ -678,9 +693,14 @@ def _enriquecer_roster_com_categoria(roster: list[dict],
             continue
         cat_match = ''
         for cat_norm, (n_ini, n_fim) in inscritos.items():
-            if n_ini <= num <= n_fim:
-                cat_match = nomes_reais.get(cat_norm, cat_norm)
-                break
+            if not (n_ini <= num <= n_fim): continue
+            # Tenta estrita primeiro (preserva 'Rx Misto (Iniciante)' vs '(Avançado)')
+            candidatas = por_estrita.get(cat_norm) or por_relaxada.get(cat_norm) or []
+            if len(candidatas) == 1:
+                cat_match = candidatas[0]
+            # Múltiplas candidatas (ambíguo) ou nenhuma → cat_match='' silencioso;
+            # usuário resolve manualmente, evita assumir errado.
+            break
         atl['categoria'] = cat_match
 
 

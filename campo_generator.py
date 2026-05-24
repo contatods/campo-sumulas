@@ -707,7 +707,7 @@ body{
 .ar-ref-prog{color:var(--ink)!important;font-weight:900!important;
   text-decoration:underline;text-underline-offset:1.5px}
 /* Última round MAX — destaque visual P&B safe (caixa borda dupla preta) */
-.ar-reps-cell-max{outline:1.5px solid var(--ink);outline-offset:-2px}
+.ar-cum-cell-max{outline:1.5px solid var(--w);outline-offset:-2px}
 .ar-ref-max{font-weight:900!important;font-size:7pt!important;
   letter-spacing:.04em;text-transform:uppercase}
 .ah-n{flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10pt;font-weight:900;color:rgba(255,255,255,.12)}

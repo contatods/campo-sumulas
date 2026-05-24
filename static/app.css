@@ -69,8 +69,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   border-color:var(--orange-edge);background:var(--surface3)}
 .field select{cursor:pointer}
 .field textarea{resize:vertical;min-height:72px;line-height:1.5}
-.field input::placeholder,.field textarea::placeholder{color:var(--text4)}
-.field-help{font-size:9px;color:var(--text4);line-height:1.5;margin-top:3px;letter-spacing:.03em}
+.field input::placeholder,.field textarea::placeholder{color:var(--text3)}
+.field-help{font-size:9px;color:var(--text3);line-height:1.5;margin-top:3px;letter-spacing:.03em}
 .field-row{display:flex;gap:8px}
 .field-row .field{flex:1}
 .field-row .field.w80{flex:0 0 80px}
@@ -85,7 +85,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .logo-upload-wrap span{font-size:10px;color:var(--text3);pointer-events:none}
 
 /* ── Workout list ── */
-.wkt-empty{padding:14px;font-size:11px;color:var(--text4);text-align:center;font-style:italic}
+.wkt-empty{padding:14px;font-size:11px;color:var(--text3);text-align:center;font-style:italic}
 .wkt-card{display:flex;align-items:center;padding:9px 14px;gap:10px;cursor:pointer;
   border-bottom:1px solid var(--border);transition:background .1s}
 .wkt-card:hover{background:var(--surface2)}
@@ -117,7 +117,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   color:var(--text2);cursor:pointer;font-size:10px;font-weight:700;letter-spacing:.1em;
   border-radius:var(--radius);transition:background .15s,color .15s,border-color .15s;text-align:center}
 .btn-import:hover{background:var(--surface3);border-color:#3A3A3A;color:var(--text)}
-.import-hint{font-size:9.5px;color:var(--text4);margin-top:7px;line-height:1.5;text-align:center}
+.import-hint{font-size:9.5px;color:var(--text3);margin-top:7px;line-height:1.5;text-align:center}
 
 /* ── Generate button ── */
 .btn-generate{width:100%;padding:10px 14px;background:#FFF;color:#000;
@@ -166,7 +166,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   color:var(--text3);margin-bottom:8px}
 .mov-table{border:1px solid var(--border3);border-radius:var(--radius);overflow:hidden;margin-bottom:8px}
 .mov-table-hdr{display:flex;background:var(--surface3);padding:4px 8px;gap:6px}
-.mov-table-hdr span{font-size:8px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--text4)}
+.mov-table-hdr span{font-size:8px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--text3)}
 .mth-nome{flex:1}
 .mth-reps{width:70px;text-align:center}
 .mth-label{width:72px}
@@ -199,7 +199,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .mov-row .mi-chegada{flex:1;font-size:10px;font-weight:700;letter-spacing:.12em;
   text-transform:uppercase;color:#3A7;padding:2px 0}
 .mov-row .mi-ctrl{width:52px;display:flex;justify-content:center;gap:2px}
-.empty-table{padding:12px;text-align:center;font-size:11px;color:var(--text4);font-style:italic}
+.empty-table{padding:12px;text-align:center;font-size:11px;color:var(--text3);font-style:italic}
 .mov-actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
 .btn-mov{padding:5px 10px;background:var(--surface3);border:1px solid var(--border3);
   color:var(--text2);cursor:pointer;font-size:10px;font-weight:700;letter-spacing:.08em;
@@ -229,12 +229,12 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .pb-label{font-size:8.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--text4)}
 .pb-name{font-size:11px;font-weight:700;color:var(--text2);flex:1;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pb-hint{font-size:9px;color:var(--text4);letter-spacing:.04em;flex-shrink:0}
+.pb-hint{font-size:9px;color:var(--text3);letter-spacing:.04em;flex-shrink:0}
 .preview-empty{flex:1;display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:12px;background:var(--bg)}
 .pe-icon{font-size:28px;color:var(--border3)}
 .pe-text{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--text4)}
-.pe-sub{font-size:10px;color:var(--text4);max-width:260px;text-align:center;line-height:1.6}
+.pe-sub{font-size:10px;color:var(--text3);max-width:260px;text-align:center;line-height:1.6}
 .preview-frame{flex:1;border:none;width:100%;display:none;background:#FFF}
 
 /* ── Buttons ── */
@@ -279,7 +279,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   border:1px solid var(--border3);padding:1px 6px;border-radius:8px;letter-spacing:.05em}
 
 /* ── Atletas list ── */
-.atl-empty{padding:10px 4px;font-size:10.5px;color:var(--text4);text-align:center;font-style:italic;line-height:1.5}
+.atl-empty{padding:10px 4px;font-size:10.5px;color:var(--text3);text-align:center;font-style:italic;line-height:1.5}
 .atl-order-hint{font-size:8.5px;color:var(--text4);letter-spacing:.1em;text-transform:uppercase;
   text-align:center;padding:6px 4px 4px;border-top:1px dashed var(--border2);margin-top:4px}
 .atl-bat-group{margin-bottom:6px}
@@ -315,7 +315,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .cta-card:hover{border-color:var(--orange-edge);background:var(--surface2);color:var(--text);transform:translateY(-1px)}
 .cta-icon{font-size:28px;line-height:1;margin-bottom:10px;display:block}
 .cta-title{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-bottom:5px}
-.cta-sub{font-size:9.5px;color:var(--text4);letter-spacing:.06em;line-height:1.5}
+.cta-sub{font-size:9.5px;color:var(--text3);letter-spacing:.06em;line-height:1.5}
 
 /* ── Limpar tudo (link discreto) ── */
 .btn-clear-all{background:none;border:none;color:var(--text4);cursor:pointer;
@@ -351,9 +351,9 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .dia-tab.active{color:#000;background:#FFF;border-color:#FFF}
 
 /* ── Categorias (sidebar) ─────────────────────────────────────────── */
-.cat-empty{padding:14px;font-size:11px;color:var(--text4);text-align:center;
+.cat-empty{padding:14px;font-size:11px;color:var(--text3);text-align:center;
   font-style:italic;line-height:1.6}
-.cat-empty-inner{padding:8px;font-size:10px;color:var(--text4);text-align:center;font-style:italic}
+.cat-empty-inner{padding:8px;font-size:10px;color:var(--text3);text-align:center;font-style:italic}
 .cat-card{border-bottom:1px solid var(--border)}
 .cat-hdr{display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;
   transition:background .1s}
@@ -397,7 +397,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .bat-row-info{flex:1;min-width:0}
 .bat-row-codigo{font-size:10px;font-weight:700;color:var(--text2);letter-spacing:.04em;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
-.bat-row-meta{font-size:9px;color:var(--text4);letter-spacing:.05em;line-height:1.4;
+.bat-row-meta{font-size:9px;color:var(--text3);letter-spacing:.05em;line-height:1.4;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ── Gerar options (rodapé) ───────────────────────────────────────── */
