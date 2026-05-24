@@ -46,6 +46,33 @@ function apiFetch(url, opts = {}) {
   return fetch(url, opts);
 }
 
+// ── Acessibilidade: sync de display + aria-hidden + foco em modais ──────────
+// Restaura o foco no elemento que abriu o modal quando ele fecha — padrão
+// WCAG pra leitor de tela e navegação por teclado.
+let _focoAnterior = null;
+function setDialogOpen(id, isOpen, displayMode = '') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (isOpen) {
+    _focoAnterior = document.activeElement;
+    el.style.display = displayMode || 'block';
+    el.setAttribute('aria-hidden', 'false');
+    // Foca primeiro elemento focável após display aplicar (microtask delay)
+    setTimeout(() => {
+      const focusable = el.querySelector(
+        'input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable) focusable.focus();
+    }, 30);
+  } else {
+    el.style.display = 'none';
+    el.setAttribute('aria-hidden', 'true');
+    if (_focoAnterior && typeof _focoAnterior.focus === 'function') {
+      try { _focoAnterior.focus(); } catch (e) {}
+    }
+  }
+}
+
 // Defaults For Load (espelham types_ds.py — manter sincronizado)
 const ANILHAS_KG_DEFAULT = [25, 20, 15, 10, 5, 2.5, 1.25];
 const ANILHAS_LB_DEFAULT = [55, 45, 35, 25, 15, 10, 5, 2.5];
@@ -69,7 +96,7 @@ function temDados() {
 //  CONFIG MODAL (Evento + Dias + Importar — tudo num lugar só)
 // ═══════════════════════════════════════════════════════════════════
 function abrirConfig(tab) {
-  document.getElementById('configModal').style.display = '';
+  setDialogOpen('configModal', true);
   // Popula form do evento
   document.getElementById('evNome').value = config.evento.nome || '';
   document.getElementById('evCat').value  = config.evento.categoria || '';
@@ -94,16 +121,16 @@ function abrirConfig(tab) {
 }
 
 function fecharConfig() {
-  document.getElementById('configModal').style.display = 'none';
+  setDialogOpen('configModal', false);
 }
 
 // ─── Modal de ajuda / manual ────────────────────────────────────────────────
 function abrirAjuda() {
-  document.getElementById('ajudaModal').style.display = 'block';
+  setDialogOpen('ajudaModal', true);
   ajudaTab('visao');
 }
 function fecharAjuda() {
-  document.getElementById('ajudaModal').style.display = 'none';
+  setDialogOpen('ajudaModal', false);
 }
 function ajudaTab(t) {
   document.querySelectorAll('[data-ajuda-tab]').forEach(b => {
@@ -154,12 +181,12 @@ function resetCompleto() {
 function abrirEventos() {
   // Garante que evento atual está salvo antes de listar
   if (eventoAtivoId) _persistNow();
-  document.getElementById('eventosModal').style.display = 'block';
+  setDialogOpen('eventosModal', true);
   renderListaEventos();
 }
 
 function fecharEventos() {
-  document.getElementById('eventosModal').style.display = 'none';
+  setDialogOpen('eventosModal', false);
 }
 
 function renderListaEventos() {
@@ -385,7 +412,9 @@ let chatAIAtiva = false;  // sabido após /api/status
 
 function toggleChat() {
   chatOpen = !chatOpen;
-  document.getElementById('chatPanel').style.display = chatOpen ? '' : 'none';
+  const panel = document.getElementById('chatPanel');
+  panel.style.display = chatOpen ? '' : 'none';
+  panel.setAttribute('aria-hidden', chatOpen ? 'false' : 'true');
   if (chatOpen) {
     if (!chatAIAtiva) {
       document.getElementById('chatFooterInfo').style.display = '';
@@ -442,7 +471,7 @@ function removerThinking() {
 }
 
 function abrirValidacao() {
-  document.getElementById('validModal').style.display = '';
+  setDialogOpen('validModal', true);
   document.getElementById('validacaoStatus').textContent = 'Analisando…';
   document.getElementById('validacaoLista').innerHTML = '';
   apiFetch('/api/ai/validar-evento', {
@@ -476,7 +505,7 @@ function abrirValidacao() {
 }
 
 function fecharValidacao() {
-  document.getElementById('validModal').style.display = 'none';
+  setDialogOpen('validModal', false);
 }
 
 // Atualiza o banner pós-import com resumo curto + botão validar
@@ -556,7 +585,7 @@ function renderDiasEditor() {
     <div class="dia-edit-row">
       <input class="dia-edit-label" type="text" placeholder="Rótulo (ex: Sexta)" value="${esc(d.label || '')}" oninput="onDiaLabelChange(${i}, this.value)">
       <input class="dia-edit-data" type="date" value="${esc(d.data_iso || '')}" oninput="onDiaDataChange(${i}, this.value)" title="Data do dia">
-      <button class="icon-btn danger" onclick="removerDia(${i})" title="Remover dia">×</button>
+      <button class="icon-btn danger" onclick="removerDia(${i})" title="Remover dia" aria-label="Remover dia ${esc(d.label || '')}">×</button>
     </div>`).join('');
 }
 
@@ -811,8 +840,8 @@ function renderCategoriaDetalhe(cat, ci) {
             <div class="wkt-row-tags"><span class="tag ${w.tipo}">${esc(tipoLabel)}</span>${w.time_cap ? ` <span class="tag">${esc(w.time_cap)}</span>` : ''}${w.arena ? ` <span class="tag">${esc(w.arena)}</span>` : ''}</div>
           </div>
           <div class="wkt-row-actions">
-            <button class="icon-btn" onclick="event.stopPropagation();editarWorkout(${ci}, ${wi})" title="Editar">✎</button>
-            <button class="icon-btn danger" onclick="event.stopPropagation();deletarWorkout(${ci}, ${wi})" title="Excluir">×</button>
+            <button class="icon-btn" onclick="event.stopPropagation();editarWorkout(${ci}, ${wi})" title="Editar" aria-label="Editar workout ${esc(w.nome || '')}">✎</button>
+            <button class="icon-btn danger" onclick="event.stopPropagation();deletarWorkout(${ci}, ${wi})" title="Excluir" aria-label="Excluir workout ${esc(w.nome || '')}">×</button>
           </div>
         </div>`;
       }).join('')
@@ -1152,12 +1181,24 @@ function editarWorkout(ci, wi) {
 }
 
 function abrirEditor() {
-  document.getElementById('editor').classList.add('open');
+  const ed = document.getElementById('editor');
+  _focoAnterior = document.activeElement;
+  ed.classList.add('open');
+  ed.setAttribute('aria-hidden', 'false');
+  setTimeout(() => {
+    const focusable = ed.querySelector('input:not([type=hidden]):not([disabled])');
+    if (focusable) focusable.focus();
+  }, 30);
 }
 
 function fecharEditor() {
-  document.getElementById('editor').classList.remove('open');
+  const ed = document.getElementById('editor');
+  ed.classList.remove('open');
+  ed.setAttribute('aria-hidden', 'true');
   editingPath = null;
+  if (_focoAnterior && typeof _focoAnterior.focus === 'function') {
+    try { _focoAnterior.focus(); } catch (e) {}
+  }
 }
 
 function onTipoChange() {
@@ -1433,8 +1474,8 @@ function appendMovRow(section, mov) {
 }
 
 function ctrlBtns(section) {
-  return `<button class="icon-btn" onclick="movUp(this)" title="Subir">↑</button>
-    <button class="icon-btn danger" onclick="removeRow(this)" title="Remover">×</button>`;
+  return `<button class="icon-btn" onclick="movUp(this)" title="Subir" aria-label="Mover movimento pra cima">↑</button>
+    <button class="icon-btn danger" onclick="removeRow(this)" title="Remover" aria-label="Remover movimento">×</button>`;
 }
 
 function repsStep(btn, delta) {

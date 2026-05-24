@@ -35,7 +35,7 @@
     <div class="sidebar-scroll">
       <div id="categoriasHeader" class="sb-section-hdr">
         <span id="categoriasHdrTitle">Categoria</span>
-        <button class="icon-btn" onclick="adicionarCategoria()" title="Adicionar categoria" id="btnAddCat" style="display:none">+</button>
+        <button class="icon-btn" onclick="adicionarCategoria()" title="Adicionar categoria" id="btnAddCat" style="display:none" aria-label="Adicionar categoria">+</button>
       </div>
       <!-- Seletor de categoria (1 dropdown clicável que abre lista) -->
       <div id="catSelWrap" style="display:none">
@@ -78,14 +78,14 @@
   </aside>
 
   <!-- ── Editor panel (slides in) ─────────────────────────────────────────── -->
-  <div class="editor" id="editor">
+  <div class="editor" id="editor" role="dialog" aria-modal="true" aria-labelledby="edTitle" aria-hidden="true">
     <div class="ed-hdr">
       <span class="ed-hdr-title" id="edTitle">Novo Workout</span>
       <label class="ed-opt" title="Mostrar a coluna Carga / Variante nas tabelas de movimento">
         <input type="checkbox" id="chkLabel" onchange="toggleLabelCol()">
         <span>Carga</span>
       </label>
-      <button class="ed-close" onclick="fecharEditor()" title="Fechar">×</button>
+      <button class="ed-close" onclick="fecharEditor()" title="Fechar" aria-label="Fechar editor de workout">×</button>
     </div>
     <div class="ed-body">
 
@@ -314,12 +314,12 @@
     <iframe id="previewFrame" class="preview-frame"></iframe>
 
     <!-- Painel de validação (modal sobreposto) -->
-    <div class="cfg-modal" id="validModal" style="display:none">
+    <div class="cfg-modal" id="validModal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="validModalTitle" aria-hidden="true">
       <div class="cfg-overlay" onclick="fecharValidacao()"></div>
       <div class="cfg-panel">
         <div class="cfg-header">
-          <span class="cfg-title">Validação do evento</span>
-          <button class="ed-close" onclick="fecharValidacao()" title="Fechar">×</button>
+          <span class="cfg-title" id="validModalTitle">Validação do evento</span>
+          <button class="ed-close" onclick="fecharValidacao()" title="Fechar" aria-label="Fechar validação">×</button>
         </div>
         <div class="cfg-pane" id="validacaoPane">
           <p class="cfg-hint" id="validacaoStatus">Analisando…</p>
@@ -335,12 +335,12 @@
 <input type="file" id="fileExcel" accept=".xlsx,.xls" style="display:none" onchange="handleImport(this,'excel')">
 
 <!-- Modal: configurações do evento (nome, logos, dias, importar) -->
-<div id="configModal" class="cfg-modal" style="display:none">
+<div id="configModal" class="cfg-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="configModalTitle" aria-hidden="true">
   <div class="cfg-overlay" onclick="fecharConfig()"></div>
   <div class="cfg-panel">
     <div class="cfg-header">
-      <span class="cfg-title">Configurações</span>
-      <button class="ed-close" onclick="fecharConfig()" title="Fechar">×</button>
+      <span class="cfg-title" id="configModalTitle">Configurações</span>
+      <button class="ed-close" onclick="fecharConfig()" title="Fechar" aria-label="Fechar configurações">×</button>
     </div>
     <div class="cfg-tabs">
       <button class="cfg-tab active" data-tab="evento" onclick="cfgTab('evento')">Evento</button>
@@ -414,12 +414,12 @@
 </div>
 
 <!-- Modal: Ajuda / Manual do sistema -->
-<div id="ajudaModal" class="cfg-modal" style="display:none">
+<div id="ajudaModal" class="cfg-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ajudaModalTitle" aria-hidden="true">
   <div class="cfg-overlay" onclick="fecharAjuda()"></div>
   <div class="cfg-panel cfg-panel-wide">
     <div class="cfg-header">
-      <span class="cfg-title">Manual do sistema</span>
-      <button class="ed-close" onclick="fecharAjuda()" title="Fechar">×</button>
+      <span class="cfg-title" id="ajudaModalTitle">Manual do sistema</span>
+      <button class="ed-close" onclick="fecharAjuda()" title="Fechar" aria-label="Fechar ajuda">×</button>
     </div>
     <div class="cfg-tabs">
       <button class="cfg-tab active" data-ajuda-tab="visao" onclick="ajudaTab('visao')">Visão geral</button>
@@ -575,12 +575,12 @@
 </div>
 
 <!-- Modal: gerenciador de eventos (multi-evento) -->
-<div id="eventosModal" class="cfg-modal" style="display:none">
+<div id="eventosModal" class="cfg-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="eventosModalTitle" aria-hidden="true">
   <div class="cfg-overlay" onclick="fecharEventos()"></div>
   <div class="cfg-panel">
     <div class="cfg-header">
-      <span class="cfg-title">Eventos salvos</span>
-      <button class="ed-close" onclick="fecharEventos()" title="Fechar">×</button>
+      <span class="cfg-title" id="eventosModalTitle">Eventos salvos</span>
+      <button class="ed-close" onclick="fecharEventos()" title="Fechar" aria-label="Fechar lista de eventos">×</button>
     </div>
     <div class="cfg-pane" id="cfgPaneEventos">
       <p class="cfg-hint">Cada evento é salvo separado no navegador. Pode alternar, duplicar, renomear ou arquivar.</p>
@@ -595,10 +595,10 @@
 <div id="eventoDisplay" style="display:none"></div>
 
 <!-- Modal: seletor de categoria -->
-<div id="catModal" style="display:none">
+<div id="catModal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="catModalTitle" aria-hidden="true">
   <div class="modal-overlay">
     <div class="modal">
-      <div class="modal-title">Selecionar Categoria</div>
+      <div class="modal-title" id="catModalTitle">Selecionar Categoria</div>
       <div class="modal-sub" id="catModalSub">Escolha a categoria para gerar as súmulas:</div>
       <div class="cat-grid" id="catGrid"></div>
       <button class="modal-cancel" onclick="document.getElementById('catModal').style.display='none'">Cancelar</button>
@@ -606,15 +606,15 @@
   </div>
 </div>
 
-<!-- Toast -->
-<div class="toast" id="toast"></div>
+<!-- Toast: aria-live anuncia mudanças pra leitor de tela sem roubar foco -->
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Chat assistente (botão flutuante + painel) -->
-<button class="chat-fab" id="chatFab" onclick="toggleChat()" title="Chat assistente do evento">💬</button>
-<div class="chat-panel" id="chatPanel" style="display:none">
+<button class="chat-fab" id="chatFab" onclick="toggleChat()" title="Chat assistente do evento" aria-label="Abrir chat assistente">💬</button>
+<div class="chat-panel" id="chatPanel" style="display:none" role="dialog" aria-modal="false" aria-labelledby="chatPanelTitle" aria-hidden="true">
   <div class="chat-hdr">
-    <span>Assistente</span>
-    <button class="ed-close" onclick="toggleChat()">×</button>
+    <span id="chatPanelTitle">Assistente</span>
+    <button class="ed-close" onclick="toggleChat()" aria-label="Fechar chat assistente">×</button>
   </div>
   <div class="chat-msgs" id="chatMsgs">
     <div class="chat-msg-bot">Oi. Posso ajudar com perguntas sobre o evento carregado — atletas, baterias, horários, conferências.</div>
