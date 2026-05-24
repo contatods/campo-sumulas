@@ -41,7 +41,8 @@ BLOCK_LABELS = {1: "1º BLOCO", 2: "2º BLOCO", 3: "3º BLOCO", 4: "4º BLOCO", 
 # e atleta/árbitro consultam à parte.
 _DESC_CUT_RE = re.compile(
     r'^\s*(?:[─—–\-]+\s*)?'
-    r'(?:notas?|observa[çc][õo]es?|pontua[çc][ãa]o|tiebreak|regras?|regulamento|crit[ée]rios?|score|scoring)'
+    r'(?:notas?|notes?|observa[çc][õo]es?|observations?|pontua[çc][ãa]o|tiebreak|'
+    r'regras?|rules?|regulamento|crit[ée]rios?|criteria|score|scoring)'
     r'\s*(?:[─—–\-]+\s*)?\s*:?\s*$',
     re.IGNORECASE,
 )

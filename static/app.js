@@ -1239,6 +1239,7 @@ function buildJanelaForTime(start, end) {
 
 function salvarWorkout() {
   if (!editingPath) return;
+  invalidatePreviewCache();   // workout mudou — invalida cache do iframe
   const nome = document.getElementById('edNome').value.trim().toUpperCase();
   if (!nome) { toast('Digite o nome do workout', 'err'); return; }
   const tipo = document.getElementById('edTipo').value;
@@ -1329,6 +1330,7 @@ function deletarWorkout(ci, wi) {
   const w = cat.workouts[wi];
   if (!w) return;
   if (!confirm(`Excluir workout "${w.nome}"?`)) return;
+  invalidatePreviewCache();
   cat.workouts.splice(wi, 1);
   if (previewPath && previewPath.cat === ci && previewPath.wkt === wi) {
     previewPath = null;
@@ -1465,6 +1467,29 @@ function movUp(btn) {
 // ═══════════════════════════════════════════════════════════════════
 //  PREVIEW
 // ═══════════════════════════════════════════════════════════════════
+// Cache de preview por path+hash do workout. Evita refazer fetch quando o
+// usuário alterna entre workouts sem ter editado nada. Limpa quando o user
+// edita um workout (invalidatePreviewCache chamado em salvarWorkout).
+let _previewCache = new Map();   // key = JSON da chave → blob URL
+let _previewPending = null;       // AbortController da request em voo
+let _previewDebounce = null;      // timer pra cancelar requests rapidas
+
+function _previewCacheKey(path, wkt) {
+  // Hash leve: tipo + nome + nº movs + tempo + cargas. Não precisa ser perfeito —
+  // só evitar refetch quando NADA mudou. Se houver miss, faz fetch (sem custo).
+  const movs = (wkt.movimentos || []).length;
+  const f1Movs = (wkt.formula1 && wkt.formula1.movimentos || []).length;
+  return `${path.dia}|${path.cat}|${path.wkt}|${wkt.tipo}|${wkt.nome}|${movs}+${f1Movs}|${wkt.time_cap || ''}`;
+}
+
+function invalidatePreviewCache() {
+  // Limpa todos os blob URLs e o cache. Chamado quando workouts mudam.
+  for (const url of _previewCache.values()) {
+    if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
+  }
+  _previewCache.clear();
+}
+
 function previewWorkoutByPath(path) {
   const dia = config.dias[path.dia];
   const cat = (dia || {}).categorias && dia.categorias[path.cat];
@@ -1478,24 +1503,48 @@ function previewWorkoutByPath(path) {
     cat.nome,
     `${path.wkt + 1} — ${wkt.nome || '—'}`,
   ].join(' › ');
-  document.getElementById('pbName').textContent = breadcrumb;
-  document.getElementById('previewEmpty').style.display = 'none';
+  const pbName = document.getElementById('pbName');
+  if (pbName) pbName.textContent = breadcrumb;
+  const empty = document.getElementById('previewEmpty');
+  if (empty) empty.style.display = 'none';
   const frame = document.getElementById('previewFrame');
+  if (!frame) return;
   frame.style.display = 'block';
 
-  fetch('/api/preview', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config, dia_idx: path.dia, cat_idx: path.cat, wkt_idx: path.wkt })
-  })
-  .then(r => { if (!r.ok) throw new Error('Erro ' + r.status); return r.text(); })
-  .then(html => {
-    const blob = new Blob([html], { type: 'text/html' });
-    const old = frame.src;
-    frame.src = URL.createObjectURL(blob);
-    if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
-  })
-  .catch(e => { toast('Erro no preview: ' + e.message, 'err'); });
+  // Cache hit: serve direto do blob salvo (instantâneo)
+  const key = _previewCacheKey(path, wkt);
+  if (_previewCache.has(key)) {
+    frame.src = _previewCache.get(key);
+    return;
+  }
+
+  // Debounce 150ms: rapid switches entre workouts cancelam request anterior
+  if (_previewDebounce) clearTimeout(_previewDebounce);
+  if (_previewPending) { try { _previewPending.abort(); } catch (e) {} }
+  _previewDebounce = setTimeout(() => {
+    _previewPending = new AbortController();
+    fetch('/api/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config, dia_idx: path.dia, cat_idx: path.cat, wkt_idx: path.wkt }),
+      signal: _previewPending.signal,
+    })
+    .then(r => { if (!r.ok) throw new Error('Erro ' + r.status); return r.text(); })
+    .then(html => {
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const old = frame.src;
+      frame.src = url;
+      _previewCache.set(key, url);
+      if (old && old.startsWith('blob:') && !Array.from(_previewCache.values()).includes(old)) {
+        URL.revokeObjectURL(old);
+      }
+    })
+    .catch(e => {
+      if (e.name === 'AbortError') return;   // user clicou outro workout — OK
+      toast('Erro no preview: ' + e.message, 'err');
+    });
+  }, 150);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1667,6 +1716,7 @@ function aplicarImport(result) {
     toast('Resposta sem dias — formato inesperado', 'err');
     return;
   }
+  invalidatePreviewCache();   // dados novos — cache antigo é inválido
   config.dias = result.dias;
   config.roster = result.roster || [];
   if (result.evento_nome && !config.evento.nome) {

@@ -448,3 +448,267 @@ def test_parse_mov_line_aceita_reps_gendered():
     reps, nome = result
     assert reps == 30
     assert "30/24" in nome and "CAL ROW" in nome
+
+
+# ── _extrair_sequencia_for_load ────────────────────────────────────────────────
+def test_extrair_sequencia_for_load_complex_simples():
+    """Toll Gate típico: linha com COMPLEX: e buy-in caloric antes."""
+    from parsers import _extrair_sequencia_for_load
+    lines = [
+        "ATHLETE 1 (0:00–4:00) 12-CALORIE AIR BIKE 1-REP-MAX COMPLEX: "
+        "1 SQUAT CLEAN 1 FRONT SQUAT 1 SHOULDER-TO-OVERHEAD",
+        "ATHLETE 2 (5:00–9:00) 12-CALORIE AIR BIKE 1-REP-MAX COMPLEX (MESMO PADRÃO)",
+    ]
+    r = _extrair_sequencia_for_load(lines, "TOLL GATE")
+    assert r['buy_in'] == '12-CALORIE AIR BIKE'
+    assert 'SQUAT CLEAN' in r['complex']
+    assert 'FRONT SQUAT' in r['complex']
+    assert 'SHOULDER-TO-OVERHEAD' in r['complex']
+
+
+def test_extrair_sequencia_for_load_trunca_notas():
+    """Linhas após NOTAS/OBSERVAÇÕES não entram na sequência."""
+    from parsers import _extrair_sequencia_for_load
+    lines = [
+        "1 Squat Clean + 1 Push Jerk + 1 Split Jerk",
+        "—— NOTAS ——",
+        "PONTO DE PARTIDA - ATLETA 1 NA AIR BIKE...",
+        "OBSERVAÇÕES",
+        "CADA ATLETA TEM 4:00",
+    ]
+    r = _extrair_sequencia_for_load(lines, "MAX")
+    assert r['complex'] == '1 SQUAT CLEAN + 1 PUSH JERK + 1 SPLIT JERK'
+    # Notas/regulamento não vazaram
+    assert 'PONTO DE PARTIDA' not in (r['complex'] or '')
+    assert 'CADA ATLETA' not in (r['complex'] or '')
+
+
+def test_extrair_sequencia_for_load_buyin_marker_explicito():
+    """'Buy-in: X' + 'Then: Y' organiza em duas partes."""
+    from parsers import _extrair_sequencia_for_load
+    lines = ['Buy-in: 30 Wall-Ball Shots', 'Then: 1 Squat Clean + 1 Push Jerk']
+    r = _extrair_sequencia_for_load(lines, '')
+    assert r['buy_in'] == '30 WALL-BALL SHOTS'
+    assert r['complex'] == '1 SQUAT CLEAN + 1 PUSH JERK'
+
+
+def test_extrair_sequencia_for_load_fallback_nome():
+    """Sem texto útil, infere complex do nome do workout."""
+    from parsers import _extrair_sequencia_for_load
+    r = _extrair_sequencia_for_load(['For Load', '3 tentativas'], 'MAX DEADLIFT')
+    assert r['complex'] == 'DEADLIFT'
+    assert r['buy_in'] is None
+
+
+def test_extrair_sequencia_for_load_filtra_atletas_repetidos():
+    """ATHLETE 2/3 com '(mesmo padrão)' não duplica complex."""
+    from parsers import _extrair_sequencia_for_load
+    lines = [
+        "ATHLETE 1 (0:00-4:00) 12-cal Air Bike 1-REP-MAX COMPLEX: 1 Squat Clean + 1 Jerk",
+        "ATHLETE 2 (5:00-9:00) 12-cal Air Bike 1-REP-MAX COMPLEX (mesmo padrão)",
+        "ATHLETE 3 (10:00-14:00) 12-cal Air Bike 1-REP-MAX COMPLEX (mesmo padrão)",
+    ]
+    r = _extrair_sequencia_for_load(lines, "TOLL GATE")
+    # Complex aparece UMA vez (não 3x duplicado)
+    assert r['complex'].count('SQUAT CLEAN') == 1
+
+
+# ── Goal de For Time (Simple Mind/Dimension) ──────────────────────────────────
+def test_goal_reps_combo_para_no_plus():
+    """Goal: 75 DB Snatches + 50 Burpees → captura SÓ 'DB SNATCHES' (não soma)."""
+    txt = "For Time\n21 Pull-Ups\nGoal: 75 DB Snatches + 50 Burpees + finishing rep"
+    wkt = parse_workout_text(txt, 1)
+    assert wkt['goal_reps'] == 75
+    assert wkt['goal_movimento'] == 'DB SNATCHES'
+
+
+def test_goal_reps_basico_en_pt():
+    """Detecta tanto 'Goal:' (EN) quanto 'Objetivo:' (PT)."""
+    txt_en = "For Time\nGoal: 75 Snatches + finishing rep"
+    txt_pt = "For Time\nObjetivo: 100 Wall-Balls + chegada"
+    assert parse_workout_text(txt_en, 1)['goal_reps'] == 75
+    assert parse_workout_text(txt_pt, 1)['goal_reps'] == 100
+    assert parse_workout_text(txt_pt, 1)['goal_movimento'] == 'WALL-BALLS'
+
+
+def test_goal_aceita_movimentos_sem_reps_lideres():
+    """Quando wkt tem goal_reps, linhas 'Snatches 95/65 lb' (sem reps) viram movs."""
+    txt = """For Time
+21 Pull-Ups
+then...
+Snatches 95/65 lb
+then...
+Snatches 135/95 lb
+Goal: 75 Snatches + finishing rep"""
+    wkt = parse_workout_text(txt, 1)
+    nomes = [m.get('nome') for m in wkt['movimentos'] if m.get('nome')]
+    assert 'PULL-UPS' in nomes
+    # 2 entradas SNATCHES com cargas diferentes
+    snatches = [m for m in wkt['movimentos'] if m.get('nome') == 'SNATCHES']
+    assert len(snatches) == 2
+    assert snatches[0]['carga'] == '95/65 LB'
+    assert snatches[1]['carga'] == '135/95 LB'
+
+
+def test_goal_filtra_notas_de_movimentos():
+    """Linhas de NOTAS / OBSERVAÇÕES não viram movimentos quando goal_reps set."""
+    txt = """For Time
+21 Pull-Ups
+then...
+Snatches 95/65 lb
+Goal: 75 Snatches + finishing rep
+Notes:
+Athletes must alternate
+Cross the finish line"""
+    wkt = parse_workout_text(txt, 1)
+    nomes = [m.get('nome') for m in wkt['movimentos'] if m.get('nome')]
+    assert not any('NOTES' in n for n in nomes)
+    assert not any('ATHLETES MUST' in n for n in nomes)
+    assert not any('CROSS THE FINISH' in n for n in nomes)
+
+
+# ── Progressão de reps por round ──────────────────────────────────────────────
+def test_progressao_reps_aplica_apenas_marcados():
+    """'*Add N reps' SÓ aplica em movs com '*'; sem markers, ignora directive."""
+    txt = """Every 2:30 minutes, for 5 rounds:
+50-metres Swim (2 athletes)
+10 Dumbbell Thrusters
+10 Sync. Pogo Burpees (2 athletes)*
+*Add 2 reps each round, last round MAX"""
+    wkt = parse_workout_text(txt, 1)
+    burpees = next(m for m in wkt['movimentos'] if 'BURPEE' in m['nome'])
+    thrusters = next(m for m in wkt['movimentos'] if 'THRUSTER' in m['nome'])
+    swim = next(m for m in wkt['movimentos'] if 'SWIM' in m['nome'])
+    assert burpees['reps_por_round'] == [10, 12, 14, 16, 'MAX']
+    assert thrusters.get('reps_por_round') is None
+    assert swim.get('reps_por_round') is None
+
+
+def test_progressao_sem_marker_nao_aplica():
+    """Sem '*' em nenhum mov, directive '*Add' é ignorada (não chuta geral)."""
+    txt = """Every 2:30 minutes, for 5 rounds:
+10 Burpees
+10 Pull-Ups
+*Add 2 reps each round"""
+    wkt = parse_workout_text(txt, 1)
+    for m in wkt['movimentos']:
+        if m.get('chegada') or m.get('separador'): continue
+        assert m.get('reps_por_round') is None
+
+
+def test_marker_progressivo_em_varias_posicoes():
+    """Aceita '*', '★', '↑' antes/depois de '(N athletes)'."""
+    cases = [
+        '10 Burpees*',
+        '10 Burpees (2 athletes)*',
+        '10 Burpees* (2 athletes)',
+        '10 Burpees ★',
+        '10 Burpees (prog)',
+    ]
+    for line in cases:
+        txt = f"Every 2:30 minutes, for 5 rounds:\n{line}\n*Add 2 reps each round"
+        wkt = parse_workout_text(txt, 1)
+        mov = next(m for m in wkt['movimentos'] if 'BURPEE' in m['nome'])
+        assert mov.get('progressivo'), f"falhou pra: {line!r}"
+
+
+# ── Carga inline em movimentos ────────────────────────────────────────────────
+def test_extrair_carga_unidades_pesos():
+    """Captura carga em formatos kg/lb/# com unidade obrigatória."""
+    from parsers import _extrair_carga
+    casos = [
+        ('THRUSTERS 50/35 LB',   '50/35 LB'),
+        ('SNATCHES 75#',          '75 #'),
+        ('CLEAN 100 KG',          '100 KG'),
+        ('POWER SNATCHES @135 LB','135 LB'),
+        ('DEADLIFT @200KG',       '200 KG'),
+    ]
+    for nome, carga_esperada in casos:
+        _, c = _extrair_carga(nome)
+        assert c == carga_esperada, f"{nome}: esperava {carga_esperada}, got {c}"
+
+
+def test_extrair_carga_nao_captura_altura_distancia():
+    """'@24"' (altura) e '@800m' (distância) NÃO devem virar carga."""
+    from parsers import _extrair_carga
+    casos = [
+        'BOX JUMP-OVERS @ 24"',
+        'WALL BALL @ 14',         # sem unidade — também não
+        '30/24 CAL ROW',          # cal, não peso
+        '900M SKI ERG',           # m, não peso
+        'DOUBLE-UNDERS',          # sem nada
+    ]
+    for nome in casos:
+        _, c = _extrair_carga(nome)
+        assert c is None, f"{nome}: NÃO devia virar carga, mas got {c!r}"
+
+
+# ── _enriquecer_roster_com_categoria ──────────────────────────────────────────
+def test_roster_categoria_match_unico_da_match():
+    """Atleta na faixa única → categoria atribuída pelo nome real dos dias."""
+    from parsers import _enriquecer_roster_com_categoria
+    roster = [{'numero': '301', 'nome': 'A', 'box': 'X'}]
+    inscritos = {'rx masculino': (301, 350)}
+    dias = [{'categorias': [{'nome': 'Rx Masculino', 'workouts': [], 'baterias': []}]}]
+    _enriquecer_roster_com_categoria(roster, inscritos, dias)
+    assert roster[0]['categoria'] == 'Rx Masculino'
+
+
+def test_roster_categoria_ambiguo_fica_vazio():
+    """Múltiplas categorias com mesmo normalizado → categoria='' (não chuta)."""
+    from parsers import _enriquecer_roster_com_categoria
+    roster = [{'numero': '225', 'nome': 'B', 'box': 'X'}]
+    inscritos = {'rx misto': (201, 300)}   # forma relaxada
+    dias = [{'categorias': [
+        {'nome': 'Rx Misto (Iniciante)', 'workouts': [], 'baterias': []},
+        {'nome': 'Rx Misto (Avançado)',  'workouts': [], 'baterias': []},
+    ]}]
+    _enriquecer_roster_com_categoria(roster, inscritos, dias)
+    assert roster[0]['categoria'] == ''
+
+
+def test_roster_categoria_numero_invalido_vazio():
+    """Atleta sem número numérico válido → categoria=''."""
+    from parsers import _enriquecer_roster_com_categoria
+    roster = [{'numero': 'abc', 'nome': 'C', 'box': 'X'}]
+    inscritos = {'rx masculino': (301, 350)}
+    dias = [{'categorias': [{'nome': 'Rx Masculino', 'workouts': [], 'baterias': []}]}]
+    _enriquecer_roster_com_categoria(roster, inscritos, dias)
+    assert roster[0]['categoria'] == ''
+
+
+# ── EMOM detection (janela + rounds) ──────────────────────────────────────────
+def test_emom_detecta_janela_e_rounds():
+    """'Every 2:30 minutes, for 5 rounds' → emom_janela='2:30' + emom_rounds=5."""
+    txt = "Every 2:30 minutes, for 5 rounds:\n10 Burpees"
+    wkt = parse_workout_text(txt, 1)
+    assert wkt['emom_janela'] == '2:30'
+    assert wkt['emom_rounds'] == 5
+    assert wkt['tipo'] == 'amrap'
+
+
+# ── _parse_equipamento heurística libra ───────────────────────────────────────
+def test_parse_equipamento_heuristica_lb_sem_unidade():
+    """Pesos 45/35/25/15/10/5 sem unidade explícita → assume lb."""
+    import openpyxl
+    from parsers import _parse_equipamento
+    wb = openpyxl.Workbook()
+    ws = wb.create_sheet("Equipamento")
+    ws.append(["Anilha","Peso","Qtd"])
+    for p, q in [(45,8),(35,8),(25,4),(15,4),(10,4),(5,4)]:
+        ws.append(["X", p, q])
+    r = _parse_equipamento(wb)
+    assert r['unidade'] == 'lb'
+
+
+def test_parse_equipamento_heuristica_kg_quando_tem_25():
+    """Pesos com 2.5 ou 1.25 (fracionários) → kg."""
+    import openpyxl
+    from parsers import _parse_equipamento
+    wb = openpyxl.Workbook()
+    ws = wb.create_sheet("Equipamento")
+    ws.append(["Anilha","Peso","Qtd"])
+    for p, q in [(25,8),(20,8),(15,4),(10,4),(2.5,4),(1.25,4)]:
+        ws.append(["X", p, q])
+    r = _parse_equipamento(wb)
+    assert r['unidade'] == 'kg'

@@ -502,38 +502,6 @@ body{
 }
 .atleta-sep-nome{flex:1;min-height:5mm;border-bottom:1.5px solid var(--ink)}
 
-/* Relay — N sub-blocos (1 por atleta) [DEPRECATED — só pra compat] */
-.mov-relay{display:flex;flex-direction:column;gap:1.5mm}
-.mov-relay-hdr{
-  background:var(--panel);color:rgba(255,255,255,.85);
-  padding:1.2mm 2.5mm;font-size:7pt;font-weight:700;
-  letter-spacing:.14em;text-transform:uppercase;
-  display:flex;align-items:center;justify-content:space-between;
-  border:2px solid var(--ink);border-bottom:0;
-}
-.mov-relay-meta{
-  font-size:6pt;font-weight:400;color:rgba(255,255,255,.55);
-  letter-spacing:.06em;text-transform:none;
-}
-.mov-relay-bloco{display:flex;flex-direction:column}
-.mov-relay-atleta{
-  display:flex;align-items:center;gap:2mm;
-  padding:1mm 2mm;background:var(--field);
-  border:1px solid var(--rule);border-bottom:0;
-  font-size:6.5pt;
-}
-.mra-pos{
-  font-weight:900;color:var(--ink);
-  letter-spacing:.08em;text-transform:uppercase;flex-shrink:0;
-  background:var(--w);padding:.5mm 1.5mm;border:1px solid var(--rule);
-}
-.mra-nome-line{flex:1;border-bottom:1px solid var(--mid);height:3mm}
-.mra-tempo-lbl{
-  font-size:5.5pt;font-weight:700;color:var(--ghost);
-  letter-spacing:.1em;text-transform:uppercase;flex-shrink:0;
-}
-.mra-tempo-line{width:18mm;border-bottom:1px solid var(--mid);height:3mm;flex-shrink:0}
-
 /* ══════════════════════════════════════════════════════
    SCORE BOX — dominant post-workout element
    Orange top border announces: "fill this now".
@@ -1019,28 +987,8 @@ MOV_TABLE_MACRO = r"""
 </div>
 {% endmacro %}
 
-{# Macro relay: renderiza N sub-blocos (1 por atleta) cada com a mesma tabela
-   de movimentos. Usado quando wkt.rounds_per_atleta está setado em workout
-   For Time de modalidade team (dupla/trio/quarteto). #}
-{% macro mov_table_relay(movimentos, num, n_atletas, rounds_por_atleta) %}
-<div class="mov-relay">
-  <div class="mov-relay-hdr">
-    Relay · {{ rounds_por_atleta }} Round{% if rounds_por_atleta != 1 %}s{% endif %} por Atleta
-    <span class="mov-relay-meta">({{ n_atletas }} atletas em sequência)</span>
-  </div>
-  {% for pos in range(1, n_atletas + 1) %}
-    <div class="mov-relay-bloco">
-      <div class="mov-relay-atleta">
-        <span class="mra-pos">Atleta {{ pos }}</span>
-        <div class="mra-nome-line"></div>
-        <span class="mra-tempo-lbl">Tempo</span>
-        <div class="mra-tempo-line"></div>
-      </div>
-      {{ mov_table(movimentos, num) }}
-    </div>
-  {% endfor %}
-</div>
-{% endmacro %}
+{# Macro mov_table_relay foi removido em v1.21.5 — Spin agora renderiza
+   atleta_header inline em mov_table (uma tabela só com cum cumulativo). #}
 """
 
 AMRAP_TABLE_MACRO = r"""
