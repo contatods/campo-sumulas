@@ -987,17 +987,39 @@ function _statsPreEvento() {
   return {total, cats: cats.size, semCategoria};
 }
 
+// ─── Helpers compartilhados pelos botões de gerar ZIP ─────────────────────────
+// Dispara download de um blob como arquivo. Revoga URL ao final pra evitar leak.
+function _downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Desabilita botões + mostra 'gerando…'. Retorna closure pra restaurar estado.
+function _gerarBtnsBusy(btnIds, activeBtnId, subId) {
+  btnIds.forEach(id => { const b = document.getElementById(id); if (b) b.disabled = true; });
+  const btn = activeBtnId ? document.getElementById(activeBtnId) : null;
+  if (btn) btn.classList.add('generating');
+  const sub = subId ? document.getElementById(subId) : null;
+  const subOriginal = sub ? sub.textContent : '';
+  if (sub) sub.textContent = 'gerando…';
+  return () => {
+    if (btn) btn.classList.remove('generating');
+    if (sub) sub.textContent = subOriginal;
+    atualizarBotaoGerar();
+  };
+}
+
 function gerarPreEvento() {
   const stats = _statsPreEvento();
   if (stats.total === 0) {
     toast('Nada a gerar — todos do roster já estão alocados', 'warn');
     return;
   }
-  const btn = document.getElementById('btnGerarPreEvento');
-  const sub = document.getElementById('bgeSubPreEvento');
-  const subTextOriginal = sub ? sub.textContent : '';
-  if (btn) { btn.disabled = true; btn.classList.add('generating'); }
-  if (sub) sub.textContent = 'gerando…';
+  const restore = _gerarBtnsBusy(['btnGerarPreEvento'], 'btnGerarPreEvento', 'bgeSubPreEvento');
   apiFetch('/api/generate/pre-evento', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1005,28 +1027,15 @@ function gerarPreEvento() {
   })
   .then(r => { if (!r.ok) return r.json().then(j => { throw new Error(j.error || 'falha na geração'); }); return r.blob(); })
   .then(blob => {
-    const url = URL.createObjectURL(blob);
-    const a   = document.createElement('a');
-    a.href = url;
     const baseName = (config.evento.nome || 'sumulas').replace(/\s+/g, '_');
-    a.download = `${baseName}_pre-evento.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
+    _downloadBlob(blob, `${baseName}_pre-evento.zip`);
     toast(`Pré-evento gerado — ${stats.total} atletas/times em ${stats.cats} categoria${stats.cats !== 1 ? 's' : ''}`, 'ok');
   })
   .catch(e => toast('Erro: ' + e.message, 'err'))
-  .finally(() => {
-    if (btn) btn.classList.remove('generating');
-    if (sub) sub.textContent = subTextOriginal;
-    atualizarBotaoGerar();
-  });
+  .finally(restore);
 }
 
-function gerarZIPEscopo(escopo) {
-  const totalWkts = (config.dias || []).reduce((sum, d) =>
-    sum + (d.categorias || []).reduce((s, c) => s + (c.workouts || []).length, 0), 0);
-  if (!totalWkts) return;
-
+function _buildPayloadGerar(escopo) {
   const incluir = document.getElementById('chkIncluirCompetidores');
   const incluirOn = !incluir || incluir.checked;
   const payload = { config, incluir_competidores: incluirOn };
@@ -1035,27 +1044,36 @@ function gerarZIPEscopo(escopo) {
   } else if (escopo === 'cat') {
     const dia = (config.dias || [])[diaAtual];
     if (!dia || !dia.categorias || !dia.categorias[catSel]) {
-      toast('Sem categoria selecionada', 'err'); return;
+      toast('Sem categoria selecionada', 'err'); return null;
     }
     payload.dia_idx = diaAtual;
     payload.cat_idx = catSel;
   }
+  return payload;
+}
 
-  const btnId = escopo === 'evento' ? 'btnGerarEvento'
-              : escopo === 'dia'    ? 'btnGerarDia'
-              : 'btnGerarCat';
-  const btn = document.getElementById(btnId);
-  const subId = escopo === 'evento' ? 'bgeSubEvento'
-              : escopo === 'dia'    ? 'bgeSubDia'
-              : 'bgeSubCat';
-  const subEl = document.getElementById(subId);
-  const subTextOriginal = subEl ? subEl.textContent : '';
-  ['btnGerarEvento','btnGerarDia','btnGerarCat'].forEach(id => {
-    const b = document.getElementById(id); if (b) b.disabled = true;
-  });
-  if (subEl) subEl.textContent = 'gerando…';
-  if (btn) btn.classList.add('generating');
+function _nomeArquivoZip(escopo) {
+  const baseName = (config.evento.nome || 'sumulas').replace(/\s+/g, '_');
+  if (escopo === 'dia') {
+    const label = (config.dias[diaAtual] || {}).label || 'dia';
+    return `${baseName}_${label}.zip`;
+  }
+  if (escopo === 'cat') {
+    const c = ((config.dias[diaAtual] || {}).categorias || [])[catSel];
+    return c ? `${baseName}_${c.nome.replace(/\s+/g, '_')}.zip` : `${baseName}.zip`;
+  }
+  return `${baseName}.zip`;
+}
 
+function gerarZIPEscopo(escopo) {
+  const totalWkts = (config.dias || []).reduce((sum, d) =>
+    sum + (d.categorias || []).reduce((s, c) => s + (c.workouts || []).length, 0), 0);
+  if (!totalWkts) return;
+  const payload = _buildPayloadGerar(escopo);
+  if (!payload) return;
+  const btnIdMap = { evento: 'btnGerarEvento', dia: 'btnGerarDia', cat: 'btnGerarCat' };
+  const subIdMap = { evento: 'bgeSubEvento',   dia: 'bgeSubDia',   cat: 'bgeSubCat' };
+  const restore = _gerarBtnsBusy(Object.values(btnIdMap), btnIdMap[escopo], subIdMap[escopo]);
   apiFetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1063,27 +1081,11 @@ function gerarZIPEscopo(escopo) {
   })
   .then(r => { if (!r.ok) throw new Error('Falha na geração'); return r.blob(); })
   .then(blob => {
-    const url = URL.createObjectURL(blob);
-    const a   = document.createElement('a');
-    a.href = url;
-    const baseName = (config.evento.nome || 'sumulas').replace(/\s+/g, '_');
-    let sufixo = '';
-    if (escopo === 'dia') sufixo = `_${(config.dias[diaAtual] || {}).label || 'dia'}`;
-    else if (escopo === 'cat') {
-      const c = ((config.dias[diaAtual] || {}).categorias || [])[catSel];
-      sufixo = c ? `_${c.nome.replace(/\s+/g, '_')}` : '';
-    }
-    a.download = `${baseName}${sufixo}.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
+    _downloadBlob(blob, _nomeArquivoZip(escopo));
     toast('ZIP gerado com sucesso!', 'ok');
   })
   .catch(e => toast('Erro: ' + e.message, 'err'))
-  .finally(() => {
-    if (btn) btn.classList.remove('generating');
-    if (subEl) subEl.textContent = subTextOriginal;
-    atualizarBotaoGerar();
-  });
+  .finally(restore);
 }
 
 // Compat: gerarZIP() ainda existe pro botão antigo (caso ainda referenciado)
@@ -1292,49 +1294,77 @@ function buildJanelaForTime(start, end) {
   return `${start} → ${end}  ·  FOR TIME`;
 }
 
+// ─── salvarWorkout: pipeline orquestrado ──────────────────────────────────────
+// Splits da função original (86 linhas): leitura do form, resolução do path
+// destino, obter/mover/criar wkt, popular campos por tipo, atualizar UI.
+// Pipeline: lê form → resolve destino → wkt = obter/mover/criar →
+// popular campos genéricos → popular por tipo → atualizar UI + persist.
 function salvarWorkout() {
   if (!editingPath) return;
+  const form = _lerFormWorkout();
+  if (!form) return;   // validação já mostrou toast
+  const destino = _resolverDestinoWorkout(form);
+  if (!destino) return;
   invalidatePreviewCache();   // workout mudou — invalida cache do iframe
-  const nome = document.getElementById('edNome').value.trim().toUpperCase();
-  if (!nome) { toast('Digite o nome do workout', 'err'); return; }
-  const tipo = document.getElementById('edTipo').value;
-  const timeCap = document.getElementById('edTimeCap').value.trim();
-  const desc = document.getElementById('edDescricao').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const { wkt, moveu } = _obterOuCriarWorkout(destino);
+  _popularCamposGenericos(wkt, form);
+  _popularCamposPorTipo(wkt, form.tipo);
+  _aposSalvarWorkout(moveu);
+}
 
+function _lerFormWorkout() {
+  const nome = document.getElementById('edNome').value.trim().toUpperCase();
+  if (!nome) { toast('Digite o nome do workout', 'err'); return null; }
+  return {
+    nome,
+    tipo:    document.getElementById('edTipo').value,
+    timeCap: document.getElementById('edTimeCap').value.trim(),
+    desc:    document.getElementById('edDescricao').value.split('\n').map(s=>s.trim()).filter(Boolean),
+  };
+}
+
+function _resolverDestinoWorkout() {
   // Path destino lido dos selects (pode ter mudado durante a edição)
   const novoDia = parseInt(document.getElementById('edDia').value, 10);
   const novaCat = parseInt(document.getElementById('edCat').value, 10);
-  if (isNaN(novoDia) || isNaN(novaCat)) { toast('Selecione dia e categoria', 'err'); return; }
+  if (isNaN(novoDia) || isNaN(novaCat)) { toast('Selecione dia e categoria', 'err'); return null; }
   const catDestino = (config.dias[novoDia] && config.dias[novoDia].categorias[novaCat]) || null;
-  if (!catDestino) { toast('Categoria de destino inválida', 'err'); return; }
+  if (!catDestino) { toast('Categoria de destino inválida', 'err'); return null; }
   catDestino.workouts = catDestino.workouts || [];
+  return { novoDia, novaCat, catDestino };
+}
 
-  let wkt;
+function _obterOuCriarWorkout(destino) {
+  const { novoDia, novaCat, catDestino } = destino;
   const moveu = editingPath.wkt >= 0
     && (editingPath.dia !== novoDia || editingPath.cat !== novaCat);
-
+  let wkt;
   if (editingPath.wkt >= 0 && !moveu) {
-    // Edição in-place
+    // Edição in-place — mantém referência do mesmo objeto
     wkt = config.dias[editingPath.dia].categorias[editingPath.cat].workouts[editingPath.wkt];
   } else if (moveu) {
-    // Move workout: tira da posição original e empurra na destino
+    // Move workout entre categorias (splice de origem, push no destino)
     const origem = config.dias[editingPath.dia].categorias[editingPath.cat];
     wkt = origem.workouts.splice(editingPath.wkt, 1)[0];
     catDestino.workouts.push(wkt);
     editingPath = { dia: novoDia, cat: novaCat, wkt: catDestino.workouts.length - 1 };
   } else {
-    // Workout novo
     wkt = { numero: 0, modalidade: 'individual' };
     catDestino.workouts.push(wkt);
     editingPath = { dia: novoDia, cat: novaCat, wkt: catDestino.workouts.length - 1 };
   }
+  return { wkt, moveu };
+}
 
-  wkt.nome     = nome;
-  wkt.tipo     = tipo;
-  wkt.estilo   = tipo;
-  wkt.time_cap = timeCap;
-  wkt.descricao = desc;
+function _popularCamposGenericos(wkt, form) {
+  wkt.nome      = form.nome;
+  wkt.tipo      = form.tipo;
+  wkt.estilo    = form.tipo;
+  wkt.time_cap  = form.timeCap;
+  wkt.descricao = form.desc;
+}
 
+function _popularCamposPorTipo(wkt, tipo) {
   if (tipo === 'express') {
     const f1Start = document.getElementById('edF1Start').value.trim();
     const f1End   = document.getElementById('edF1End').value.trim();
@@ -1361,7 +1391,9 @@ function salvarWorkout() {
     delete wkt.formula1;
     delete wkt.formula2;
   }
+}
 
+function _aposSalvarWorkout(moveu) {
   previewPath = { dia: editingPath.dia, cat: editingPath.cat, wkt: editingPath.wkt };
   fecharEditor();
   // Se mudou de dia, atualiza o dia ativo e expande a categoria destino
