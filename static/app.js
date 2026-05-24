@@ -32,6 +32,20 @@ let eventoAtivoId = null;
 
 const TIPO_LABEL = { for_time: 'For Time', amrap: 'AMRAP', express: 'Express', for_load: 'For Load' };
 
+// API token opcional pra deploy público. Quando o backend tem
+// CAMPOSUMULAS_TOKEN setado, ele exige header 'X-Api-Token' em todo POST.
+// Front lê o token de localStorage e injeta automaticamente via apiFetch().
+// Pra setar: no DevTools, localStorage.setItem('camposumulas_token', 'XXX').
+// Pra limpar: localStorage.removeItem('camposumulas_token').
+const TOKEN_KEY = 'camposumulas_token';
+function apiFetch(url, opts = {}) {
+  const token = (localStorage.getItem(TOKEN_KEY) || '').trim();
+  if (token) {
+    opts.headers = { ...(opts.headers || {}), 'X-Api-Token': token };
+  }
+  return fetch(url, opts);
+}
+
 // Defaults For Load (espelham types_ds.py — manter sincronizado)
 const ANILHAS_KG_DEFAULT = [25, 20, 15, 10, 5, 2.5, 1.25];
 const ANILHAS_LB_DEFAULT = [55, 45, 35, 25, 15, 10, 5, 2.5];
@@ -283,7 +297,7 @@ function explicarComIA() {
   const box = document.getElementById('pibAIBox');
   btn.disabled = true;
   btn.textContent = '🤖 Pensando…';
-  fetch('/api/ai/explicar-avisos', {
+  apiFetch('/api/ai/explicar-avisos', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ stats: _ultimosStats, avisos: _ultimosAvisos }),
@@ -331,7 +345,7 @@ function sugerirTimeCap() {
   } else {
     movs = getMovTableArray('main');
   }
-  fetch('/api/ai/sugerir-time-cap', {
+  apiFetch('/api/ai/sugerir-time-cap', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ movimentos: movs, tipo })
@@ -350,7 +364,7 @@ function gerarDescricao() {
     time_cap: document.getElementById('edTimeCap').value.trim(),
     movimentos: tipo === 'express' ? [] : getMovTableArray('main'),
   };
-  fetch('/api/ai/auto-descricao', {
+  apiFetch('/api/ai/auto-descricao', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ workout: wkt })
@@ -392,7 +406,7 @@ function enviarChat() {
   chatHistory.push({ role: 'user', content: txt });
   appendChatMsg('bot', 'pensando…', true);
 
-  fetch('/api/ai/chat', {
+  apiFetch('/api/ai/chat', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ messages: chatHistory, config })
@@ -431,7 +445,7 @@ function abrirValidacao() {
   document.getElementById('validModal').style.display = '';
   document.getElementById('validacaoStatus').textContent = 'Analisando…';
   document.getElementById('validacaoLista').innerHTML = '';
-  fetch('/api/ai/validar-evento', {
+  apiFetch('/api/ai/validar-evento', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ config })
@@ -468,7 +482,7 @@ function fecharValidacao() {
 // Atualiza o banner pós-import com resumo curto + botão validar
 function atualizarBannerPosImport() {
   if (!temDados()) return;
-  fetch('/api/ai/resumo-evento', {
+  apiFetch('/api/ai/resumo-evento', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ config })
@@ -955,7 +969,7 @@ function gerarPreEvento() {
   const subTextOriginal = sub ? sub.textContent : '';
   if (btn) { btn.disabled = true; btn.classList.add('generating'); }
   if (sub) sub.textContent = 'gerando…';
-  fetch('/api/generate/pre-evento', {
+  apiFetch('/api/generate/pre-evento', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ config })
@@ -1013,7 +1027,7 @@ function gerarZIPEscopo(escopo) {
   if (subEl) subEl.textContent = 'gerando…';
   if (btn) btn.classList.add('generating');
 
-  fetch('/api/generate', {
+  apiFetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -1523,7 +1537,7 @@ function previewWorkoutByPath(path) {
   if (_previewPending) { try { _previewPending.abort(); } catch (e) {} }
   _previewDebounce = setTimeout(() => {
     _previewPending = new AbortController();
-    fetch('/api/preview', {
+    apiFetch('/api/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ config, dia_idx: path.dia, cat_idx: path.cat, wkt_idx: path.wkt }),
@@ -1578,7 +1592,7 @@ function gerarZIP() {
   lbl.textContent = 'Gerando…';
   sub.textContent = 'Aguarde, montando o ZIP';
 
-  fetch('/api/generate', {
+  apiFetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -1619,7 +1633,7 @@ function handleImport(input, type) {
   const reader = new FileReader();
   reader.onload = e => {
     const b64 = e.target.result.split(',')[1];
-    fetch('/api/import/' + type, {
+    apiFetch('/api/import/' + type, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data: b64, filename: file.name })
@@ -2204,7 +2218,7 @@ function toast(msg, type = 'ok') {
 //  inicializados antes de loadState() / renderXxx() acessá-los)
 // ═══════════════════════════════════════════════════════════════════
 (function initApp() {
-  fetch('/api/status').then(r=>r.json()).then(s => {
+  apiFetch('/api/status').then(r=>r.json()).then(s => {
     chatAIAtiva = !!s.ai_ativo;
     if (s.ai_ativo) document.getElementById('aiBadge').style.display = '';
   }).catch(()=>{});

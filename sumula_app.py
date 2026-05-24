@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.26.0'
+VERSION = '1.27.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -33,28 +33,47 @@ class BadRequest(ValueError):
     pass
 
 
-# Rate limit do endpoint /api/ai/chat — single-instance, em memória.
-# Janela deslizante de 60s, máx N chamadas globais. Protege contra loop
-# acidental no front (custo da API Anthropic é por chamada).
-CHAT_RATE_LIMIT_MAX = 30        # chamadas
-CHAT_RATE_LIMIT_WINDOW_S = 60   # janela em segundos
-_chat_calls: list[float] = []
-_chat_calls_lock = threading.Lock()
+# Rate limit dos endpoints /api/ai/* — single-instance, em memória.
+# Janela deslizante de 60s, máx N chamadas globais. Protege contra:
+#   - Loop acidental no front (custo da API Anthropic é por chamada)
+#   - Abuso quando deployado em cloud público (URL exposta)
+# Single-instance: rate limit não é distribuído. Em multi-worker no Render
+# cada worker terá seu próprio contador (multiplicador implícito).
+AI_RATE_LIMIT_MAX = 60          # chamadas/min — somatório de TODOS os /api/ai/*
+AI_RATE_LIMIT_WINDOW_S = 60     # janela em segundos
+_ai_calls: list[float] = []
+_ai_calls_lock = threading.Lock()
+
+# Token opcional pra proteger endpoints em deploy público. Quando setado em
+# env, requests sem header 'X-Api-Token' válido recebem 401. Quando não
+# setado, comportamento atual (público). Use:
+#   export CAMPOSUMULAS_TOKEN=alguma-string-secreta
+# E o front envia o header em cada chamada.
+API_TOKEN = os.environ.get('CAMPOSUMULAS_TOKEN', '').strip()
 
 # Timestamp de startup pra calcular uptime no /api/status
 _STARTUP_TS = time.time()
 
 
-def _chat_rate_limit_ok() -> tuple[bool, int]:
-    """Retorna (allowed, retry_after_seconds). Limpa calls fora da janela."""
+def _ai_rate_limit_ok() -> tuple[bool, int]:
+    """Retorna (allowed, retry_after_seconds). Limpa calls fora da janela.
+
+    Compartilhado por todos os handlers /api/ai/* — o orçamento de 60/min
+    cobre o uso real (poucas chamadas por sessão de usuário) e estanca
+    abuso (loop ou ataque automatizado).
+    """
     now = time.time()
-    with _chat_calls_lock:
-        _chat_calls[:] = [t for t in _chat_calls if now - t < CHAT_RATE_LIMIT_WINDOW_S]
-        if len(_chat_calls) >= CHAT_RATE_LIMIT_MAX:
-            mais_antiga = _chat_calls[0]
-            return False, int(CHAT_RATE_LIMIT_WINDOW_S - (now - mais_antiga)) + 1
-        _chat_calls.append(now)
+    with _ai_calls_lock:
+        _ai_calls[:] = [t for t in _ai_calls if now - t < AI_RATE_LIMIT_WINDOW_S]
+        if len(_ai_calls) >= AI_RATE_LIMIT_MAX:
+            mais_antiga = _ai_calls[0]
+            return False, int(AI_RATE_LIMIT_WINDOW_S - (now - mais_antiga)) + 1
+        _ai_calls.append(now)
         return True, 0
+
+
+# Aliases pra compat com handlers antigos que usavam _chat_rate_limit_ok
+_chat_rate_limit_ok = _ai_rate_limit_ok
 
 
 def _mensagem_erro_ia(exc: Exception) -> str:
@@ -296,8 +315,28 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 '/api/ai/chat':            self._handle_chat,
             }
             handler = routes.get(self.path)
-            if handler: handler(body)
-            else: self._send(404, 'text/plain', b'Rota nao encontrada')
+            if not handler:
+                self._send(404, 'text/plain', b'Rota nao encontrada')
+                return
+            # Gate de auth opcional: se CAMPOSUMULAS_TOKEN setado, exige header
+            # X-Api-Token correspondente. Aplica a TODOS POST endpoints.
+            if API_TOKEN:
+                token_recebido = (self.headers.get('X-Api-Token') or '').strip()
+                if token_recebido != API_TOKEN:
+                    self._send(401, 'application/json',
+                               json.dumps({"error": "token inválido ou ausente — header X-Api-Token"}).encode('utf-8'))
+                    return
+            # Gate de rate limit: aplica a TODOS endpoints /api/ai/* — protege
+            # quota Anthropic contra loops e abuso quando deployado público.
+            if self.path.startswith('/api/ai/'):
+                ok, retry = _ai_rate_limit_ok()
+                if not ok:
+                    self._send(429, 'application/json',
+                               json.dumps({"error": f"rate limit atingido — aguarde {retry}s",
+                                           "retry_after": retry}).encode('utf-8'),
+                               {'Retry-After': str(retry)})
+                    return
+            handler(body)
         except BadRequest as e:
             self._send(400, 'application/json',
                        json.dumps({"error": str(e)}).encode('utf-8'))
@@ -643,20 +682,12 @@ class SumulaHandler(BaseHTTPRequestHandler):
         """Explica avisos do import em linguagem humanizada via IA.
 
         Body: {stats: {...}, avisos: [...]}
-        Reusa o rate limit do chat (custo de IA por chamada).
+        Rate limit já aplicado no dispatch (gate /api/ai/*).
         """
         if not AI_ATIVO:
             self._send(200, 'application/json; charset=utf-8',
                        json.dumps({'error': 'IA inativa', 'ai_ativo': False},
                                   ensure_ascii=False).encode('utf-8'))
-            return
-        ok, retry_after = _chat_rate_limit_ok()
-        if not ok:
-            self._send(429, 'application/json; charset=utf-8',
-                       json.dumps({
-                           'error': f'Muitas chamadas em pouco tempo. Tente de novo em {retry_after}s.',
-                           'retry_after': retry_after,
-                       }, ensure_ascii=False).encode('utf-8'))
             return
         stats = body.get('stats') or {}
         avisos = body.get('avisos') or []
@@ -674,18 +705,11 @@ class SumulaHandler(BaseHTTPRequestHandler):
                    json.dumps({'texto': texto}, ensure_ascii=False).encode('utf-8'))
 
     def _handle_chat(self, body):
-        """Chat com Claude tendo o config como contexto. Body: {messages, config}."""
+        """Chat com Claude tendo o config como contexto. Body: {messages, config}.
+        Rate limit já aplicado no dispatch (gate /api/ai/*)."""
         if not AI_ATIVO:
             self._send(200, 'application/json; charset=utf-8',
                        json.dumps({'error': 'IA inativa', 'ai_ativo': False}, ensure_ascii=False).encode('utf-8'))
-            return
-        ok, retry_after = _chat_rate_limit_ok()
-        if not ok:
-            self._send(429, 'application/json; charset=utf-8',
-                       json.dumps({
-                           'error': f'Muitas mensagens em pouco tempo. Tente de novo em {retry_after}s.',
-                           'retry_after': retry_after,
-                       }, ensure_ascii=False).encode('utf-8'))
             return
         mensagens = body.get('messages')
         if not isinstance(mensagens, list) or not mensagens:
