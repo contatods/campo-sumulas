@@ -327,7 +327,7 @@ def test_render_for_load_quarteto_misto_2F_2M(fonts_empty):
 
 def test_render_for_load_trio_rx_nao_misto_nao_aplica_genero_por_atleta(fonts_empty):
     """Trio Rx Masculino: todos os sub-blocos com mesma barra M, sem marca de gênero."""
-    ev = {"nome": "EVT", "categoria": "Trio Rx Masculino", "data": "2026"}
+    ev = {"nome": "EVT", "categoria": "Trio Rx Masculino", "data": "2026", "unidade_default": "kg"}
     atl = {"nome": "TRIO", "box": "CF", "raia": "1", "numero": "1", "bateria": "1"}
     wkt = {"numero": 1, "nome": "MAX", "tipo": "for_load",
            "modalidade": "trio", "tentativas": 3}

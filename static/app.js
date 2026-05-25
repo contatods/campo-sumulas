@@ -1179,7 +1179,9 @@ function editarWorkout(ci, wi) {
     setMovTableFromArray('f2', (w.formula2 || {}).movimentos || []);
     switchExpressTab('f1');
   } else if (w.tipo === 'for_load') {
-    const unidWkt = w.unidade || 'kg';
+    // Default lb pra eventos novos (CrossFit BR + competições oficiais usam lb).
+    // Eventos antigos mantêm o que foi salvo (w.unidade já populada).
+    const unidWkt = w.unidade || 'lb';
     document.getElementById('edFlTentativas').value = w.tentativas || 3;
     document.getElementById('edFlUnidade').value    = unidWkt;
     document.getElementById('edFlBarraM').value     = w.barra_masculina || (unidWkt === 'lb' ? 45 : 20);
@@ -1238,7 +1240,7 @@ function onTipoChange() {
 }
 
 function _preencherDefaultsForLoad() {
-  const unidade = document.getElementById('edFlUnidade').value || 'kg';
+  const unidade = document.getElementById('edFlUnidade').value || 'lb';
   const anilhasInp = document.getElementById('edFlAnilhas');
   if (!anilhasInp.value.trim()) {
     anilhasInp.value = _anilhasDefault(unidade).join(', ');
@@ -1254,7 +1256,7 @@ function _preencherDefaultsForLoad() {
 // Trocar unidade kg↔lb sugere atualizar anilhas+barras pro default da unidade.
 // Pergunta antes de sobrescrever pra não perder customização do usuário.
 function onForLoadUnidadeChange() {
-  const unidade = document.getElementById('edFlUnidade').value || 'kg';
+  const unidade = document.getElementById('edFlUnidade').value || 'lb';
   const anilhasInp = document.getElementById('edFlAnilhas');
   const barraM = document.getElementById('edFlBarraM');
   const barraF = document.getElementById('edFlBarraF');
@@ -1448,9 +1450,11 @@ function _popularCamposPorTipo(wkt, tipo) {
     delete wkt.movimentos;
   } else if (tipo === 'for_load') {
     wkt.tentativas = parseInt(document.getElementById('edFlTentativas').value, 10) || 3;
-    wkt.unidade = document.getElementById('edFlUnidade').value || 'kg';
-    wkt.barra_masculina = parseFloat(document.getElementById('edFlBarraM').value) || 20;
-    wkt.barra_feminina  = parseFloat(document.getElementById('edFlBarraF').value) || 15;
+    wkt.unidade = document.getElementById('edFlUnidade').value || 'lb';
+    // Defaults barras alinhados com a unidade: lb=45/35, kg=20/15
+    const isLb = wkt.unidade === 'lb';
+    wkt.barra_masculina = parseFloat(document.getElementById('edFlBarraM').value) || (isLb ? 45 : 20);
+    wkt.barra_feminina  = parseFloat(document.getElementById('edFlBarraF').value) || (isLb ? 35 : 15);
     const anilhasInp = document.getElementById('edFlAnilhas').value
       .split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0);
     wkt.anilhas = [...new Set(anilhasInp)].sort((a, b) => b - a);   // dedup + grande → pequeno

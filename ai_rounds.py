@@ -165,9 +165,9 @@ def enriquecer_workouts(workouts: list[Workout]) -> list[Workout]:
             # tentativas: heurística (IA-like) se faltar
             if not wkt.get('tentativas'):
                 wkt['tentativas'] = estimar_tentativas_for_load(wkt)
-            # unidade default 'kg' (caller pode sobrescrever via ev.unidade_default
-            # antes de chamar enriquecer)
-            unidade = (wkt.get('unidade') or 'kg').lower()
+            # unidade default 'lb' (CrossFit BR + competições oficiais usam lb).
+            # Caller pode sobrescrever via ev.unidade_default antes de chamar.
+            unidade = (wkt.get('unidade') or 'lb').lower()
             wkt['unidade'] = unidade
             # anilhas, barras: aplica defaults da unidade
             if not wkt.get('anilhas'):

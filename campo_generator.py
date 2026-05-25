@@ -969,7 +969,7 @@ body{
 
 
 MOV_TABLE_MACRO = r"""
-{% macro mov_table(movimentos, num, goal_reps=0) %}
+{% macro mov_table(movimentos, num, goal_reps=0, rounds_fixos=1) %}
 {% set has_lbl = movimentos | selectattr('label','defined') | selectattr('label') | list | length > 0 %}
 <div class="mov-wrap">
   <div class="mov-hdr">
@@ -990,8 +990,12 @@ MOV_TABLE_MACRO = r"""
     {% elif mov.secao is defined and mov.secao %}
       <div class="secao-row"><span class="secao-txt">{{ mov.secao | upper }}</span></div>
     {% elif mov.chegada is defined and mov.chegada %}
-      {# Se workout tem goal_reps (Simple Mind/Dim), soma as reps do alvo
-         no acumulado final: cum = cum_prescritos + goal_reps + chegada. #}
+      {# Acumulado final:
+         - Multiplica cum pelo nº de rounds fixos ('5 rounds for time' = ×5)
+         - Soma goal_reps (Simple Mind/Dim) + 1 (rep da chegada) #}
+      {% if rounds_fixos and rounds_fixos > 1 %}
+        {% set ns.cum = ns.cum * rounds_fixos %}
+      {% endif %}
       {% set ns.cum = ns.cum + (goal_reps or 0) + 1 %}
       <div class="mov-row chegada-inline">
         {% if has_lbl %}<div class="mr-lbl">—</div>{% endif %}
@@ -1401,7 +1405,7 @@ FOR_LOAD_TABLE_MACRO = r"""
    individual usa layout linear, team (dupla/trio/quarteto/time) usa
    sub-blocos por atleta com soma final. #}
 {% macro for_load_table(wkt, atleta) %}
-{% set unidade  = wkt.unidade | default('kg') %}
+{% set unidade  = wkt.unidade | default('lb') %}
 {% set genero   = wkt._genero | default('M') %}
 {# Default conservador: só F usa barra feminina; M e MISTO usam masculina. #}
 {% set barra    = wkt.barra_feminina if genero == 'F' else wkt.barra_masculina %}
@@ -1642,6 +1646,14 @@ PAGE_TMPL_STR = r"""<div class="page">
       <span class="goal-banner-sub">distribuído livremente · juiz conta reps por bloco</span>
     </div>
   {% endif %}
+  {# 'N rounds for time' — atleta faz a sequência N vezes, score = tempo total.
+     Banner deixa claro pro juiz e o acumulado no final do mov_table é × N. #}
+  {% if wkt.rounds_fixos and wkt.rounds_fixos > 1 %}
+    <div class="goal-banner">
+      {{ wkt.rounds_fixos }} Rounds For Time
+      <span class="goal-banner-sub">repete a sequência {{ wkt.rounds_fixos }} vezes · score = tempo total</span>
+    </div>
+  {% endif %}
   {# Relay (rounds_per_atleta): workout único de tempo contínuo. A info do
      formato relay vai como nota acima da tabela; reps + tempo total ficam
      numa tabela só (não duplica por atleta — score é da equipe). #}
@@ -1658,7 +1670,7 @@ PAGE_TMPL_STR = r"""<div class="page">
     {% set ns_relay.out = ns_relay.out + [{'chegada': true}] %}
     {{ mov_table(ns_relay.out, wkt.numero) }}
   {% else %}
-    {{ mov_table(wkt.movimentos, wkt.numero, goal_reps=(wkt.goal_reps | default(0))) }}
+    {{ mov_table(wkt.movimentos, wkt.numero, goal_reps=(wkt.goal_reps | default(0)), rounds_fixos=(wkt.rounds_fixos | default(1))) }}
   {% endif %}
 {% endif %}
 
@@ -1699,7 +1711,7 @@ def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
                               barra_default, n_atletas_da_modalidade)
         wkt = dict(wkt)
         wkt['_genero']  = detectar_genero_categoria(ev.get('categoria', ''))
-        wkt.setdefault('unidade', ev.get('unidade_default', 'kg'))
+        wkt.setdefault('unidade', ev.get('unidade_default', 'lb'))
         wkt.setdefault('tentativas', 3)
         wkt.setdefault('anilhas', anilhas_default(wkt['unidade']))
         wkt.setdefault('barra_masculina', barra_default('M', wkt['unidade']))
@@ -1770,7 +1782,7 @@ def render_for_load_team_summary(ev, wkt, fonts, logo_src, logo_evento, atletas)
     Sai como página única (sem combined). Caller normalmente concatena com
     as páginas individuais dos atletas no ZIP.
     """
-    unidade = wkt.get('unidade') or ev.get('unidade_default') or 'kg'
+    unidade = wkt.get('unidade') or ev.get('unidade_default') or 'lb'
     page_tmpl = Template(FOR_LOAD_TEAM_SUMMARY_TMPL, autoescape=True)
     page = page_tmpl.render(
         ev=ev, wkt=wkt, atletas=atletas, unidade=unidade,

@@ -374,6 +374,22 @@ def _detectar_directives(full: str, lines: list[str], wkt: Workout) -> None:
         n = _safe_int(m_relay.group(1))
         if n is not None: wkt["rounds_per_atleta"] = n
 
+    # N rounds for time: 'X rounds for time of:' / 'X rounds por tempo:' /
+    # 'For time, X rounds of:'. Atleta faz a sequência completa X vezes,
+    # score = tempo total. Marca wkt.rounds_fixos pra render mostrar banner
+    # + calcular acumulado total (reps × X).
+    m_rounds = (
+        re.search(r'(\d+)\s+rounds?\s+for\s+time', full, re.I)
+        or re.search(r'(\d+)\s+rounds?\s+por\s+tempo', full, re.I)
+        or re.search(r'for\s+time[,\s]+(\d+)\s+rounds?', full, re.I)
+        or re.search(r'por\s+tempo[,\s]+(\d+)\s+rounds?', full, re.I)
+    )
+    if m_rounds:
+        n = _safe_int(m_rounds.group(1))
+        if n is not None and 2 <= n <= 30:   # sanity cap
+            wkt["rounds_fixos"] = n
+            wkt["tipo"] = "for_time"
+
     # EMOM (`every X minutes, for Y rounds`) — usa scorecard AMRAP
     m_emom = re.search(r'every\s+(\d+(?::\d+)?)\s*minutes?\s*,?\s*for\s+(\d+)\s+rounds?', full, re.I)
     if m_emom:

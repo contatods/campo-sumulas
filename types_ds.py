@@ -67,6 +67,7 @@ class Workout(TypedDict, total=False):
     n_atletas_time: int           # override do default de modalidade (3 trio, 4 quarteto)
     # Relay / EMOM / Tiebreak
     rounds_per_atleta: int        # For Time relay (N rounds = N atletas em sequência)
+    rounds_fixos: int             # 'X rounds for time' — atleta repete sequência X vezes
     emom_janela: str              # ex '2:30' — janela de cada round EMOM
     emom_rounds: int              # nº de rounds EMOM
     tiebreak_por_round: bool      # mostra campo de tiebreak em cada round
