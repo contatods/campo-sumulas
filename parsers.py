@@ -87,6 +87,20 @@ _NOTA_LIKELY_RE = re.compile(
     r'before\s+(?:start|finishing)|after\s+(?:complet|finish))\b',
     re.IGNORECASE,
 )
+# Headers de seção/parte que NÃO são movimento. Aparecem em workouts longos
+# como Simple Dimension/Mind: 'Part 1 (0:00-6:00)', 'Stage 2', 'Bloco 1'.
+# Detecção: começa com palavra-header + número, opcionalmente seguido de
+# janela de tempo entre parênteses.
+_SECTION_HEADER_RE = re.compile(
+    r'^\s*(?:part|parte|stage|phase|fase|bloco|block|round|rodada|chapter|cap[íi]tulo)'
+    r'\s+\d+\b',
+    re.IGNORECASE,
+)
+# Linha que contém janela de tempo entre parênteses '(0:00-6:00)' ou '(0:00→6:00)'
+# — geralmente é header informativo, não movimento.
+_TIME_WINDOW_RE = re.compile(
+    r'\(\s*\d{1,2}:\d{2}\s*[-→–—]\s*\d{1,2}:\d{2}\s*\)',
+)
 
 
 # Extrai carga no fim do nome do movimento. Dois formatos:
@@ -491,10 +505,14 @@ def _tentar_flex_mov(line_clean: str, has_seps: bool,
     if re.match(r'^\d', line_clean.strip()): return None   # tem reps — não é flex
     nome_raw = line_clean.strip()
     palavras = nome_raw.split()
-    # 1-5 palavras; sem pontuação final (frases têm); sem bullet de lista
+    # 1-5 palavras; sem pontuação final (frases têm); sem bullet de lista;
+    # não pode ser header de seção tipo 'Part 1 (0:00-6:00)' nem ter janela
+    # de tempo entre parens (sinal forte de header informativo).
     if not (1 <= len(palavras) <= 5
             and not nome_raw.endswith(('.', ':', '!', '?', ';'))
             and not nome_raw.startswith(('-', '*', '•', '→'))
+            and not _SECTION_HEADER_RE.match(nome_raw)
+            and not _TIME_WINDOW_RE.search(nome_raw)
             and not _FRASE_NAO_MOVIMENTO_RE.search(nome_raw)
             and not _NOTA_LIKELY_RE.search(nome_raw)):
         return None
