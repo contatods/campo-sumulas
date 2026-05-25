@@ -969,7 +969,7 @@ body{
 
 
 MOV_TABLE_MACRO = r"""
-{% macro mov_table(movimentos, num, goal_reps=0, rounds_fixos=1) %}
+{% macro mov_table(movimentos, num, goal_reps=0) %}
 {% set has_lbl = movimentos | selectattr('label','defined') | selectattr('label') | list | length > 0 %}
 <div class="mov-wrap">
   <div class="mov-hdr">
@@ -985,17 +985,22 @@ MOV_TABLE_MACRO = r"""
         <span class="atleta-sep-pos">Atleta {{ mov.atleta_header }}</span>
         <div class="atleta-sep-nome"></div>
       </div>
+    {% elif mov.round_header is defined %}
+      {# Header 'Round N' antes de cada repetição em 'N rounds for time'.
+         Reusa visual do atleta_header (banner com badge + linha pra tempo) — pode
+         servir pra juiz anotar split time do round. #}
+      <div class="atleta-sep-row">
+        <span class="atleta-sep-pos">Round {{ mov.round_header }}</span>
+        <div class="atleta-sep-nome"></div>
+      </div>
     {% elif mov.separador is defined and mov.separador %}
       <div class="sep-row"><span class="sep-txt">{{ mov.separador | upper }}</span></div>
     {% elif mov.secao is defined and mov.secao %}
       <div class="secao-row"><span class="secao-txt">{{ mov.secao | upper }}</span></div>
     {% elif mov.chegada is defined and mov.chegada %}
-      {# Acumulado final:
-         - Multiplica cum pelo nº de rounds fixos ('5 rounds for time' = ×5)
-         - Soma goal_reps (Simple Mind/Dim) + 1 (rep da chegada) #}
-      {% if rounds_fixos and rounds_fixos > 1 %}
-        {% set ns.cum = ns.cum * rounds_fixos %}
-      {% endif %}
+      {# Acumulado final: soma goal_reps (Simple Mind/Dim) + 1 (rep chegada).
+         Para 'N rounds for time', mov_table já recebe a lista expandida com
+         N repetições — ns.cum naturalmente acumula a soma total. #}
       {% set ns.cum = ns.cum + (goal_reps or 0) + 1 %}
       <div class="mov-row chegada-inline">
         {% if has_lbl %}<div class="mr-lbl">—</div>{% endif %}
@@ -1646,12 +1651,12 @@ PAGE_TMPL_STR = r"""<div class="page">
       <span class="goal-banner-sub">distribuído livremente · juiz conta reps por bloco</span>
     </div>
   {% endif %}
-  {# 'N rounds for time' — atleta faz a sequência N vezes, score = tempo total.
-     Banner deixa claro pro juiz e o acumulado no final do mov_table é × N. #}
+  {# 'N rounds for time' — expande a tabela N vezes com header 'Round N' antes
+     de cada repetição. Cumulativo atravessa rounds. Score = tempo total. #}
   {% if wkt.rounds_fixos and wkt.rounds_fixos > 1 %}
     <div class="goal-banner">
       {{ wkt.rounds_fixos }} Rounds For Time
-      <span class="goal-banner-sub">repete a sequência {{ wkt.rounds_fixos }} vezes · score = tempo total</span>
+      <span class="goal-banner-sub">{{ wkt.rounds_fixos }} repetições · score = tempo total</span>
     </div>
   {% endif %}
   {# Relay (rounds_per_atleta): workout único de tempo contínuo. A info do
@@ -1669,8 +1674,19 @@ PAGE_TMPL_STR = r"""<div class="page">
     {% endfor %}
     {% set ns_relay.out = ns_relay.out + [{'chegada': true}] %}
     {{ mov_table(ns_relay.out, wkt.numero) }}
+  {% elif wkt.rounds_fixos and wkt.rounds_fixos > 1 %}
+    {# 'N rounds for time' — expande mov_table N vezes com header 'Round N'
+       antes de cada repetição. Cumulativo natural atravessa rounds.
+       Visual = juiz marca cada round individualmente. Score = tempo total. #}
+    {% set _base_movs = wkt.movimentos | rejectattr('chegada','defined') | list %}
+    {% set ns_rd = namespace(out=[]) %}
+    {% for r in range(1, wkt.rounds_fixos + 1) %}
+      {% set ns_rd.out = ns_rd.out + [{'round_header': r}] + _base_movs %}
+    {% endfor %}
+    {% set ns_rd.out = ns_rd.out + [{'chegada': true}] %}
+    {{ mov_table(ns_rd.out, wkt.numero) }}
   {% else %}
-    {{ mov_table(wkt.movimentos, wkt.numero, goal_reps=(wkt.goal_reps | default(0)), rounds_fixos=(wkt.rounds_fixos | default(1))) }}
+    {{ mov_table(wkt.movimentos, wkt.numero, goal_reps=(wkt.goal_reps | default(0))) }}
   {% endif %}
 {% endif %}
 
