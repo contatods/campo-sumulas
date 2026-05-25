@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.33.0'
+VERSION = '1.34.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -473,14 +473,35 @@ class SumulaHandler(BaseHTTPRequestHandler):
                     baterias = cat.get('baterias', []) or []
 
                     # Sobrescreve categoria e data: a súmula sempre carrega a
-                    # categoria do workout e a data do dia em que ele roda.
+                    # categoria do workout e a data/dia em que ele roda.
+                    # Header mostra '{dia.label} {data}' quando os dois existem,
+                    # garantindo que organizador veja em qual dia o workout
+                    # está (ex: 'SÁBADO 30/05/2026').
+                    data_combinada = ' '.join(
+                        filter(None, [dia_label, dia_data or ev.get('data', '')])
+                    ).strip()
                     ev_local = {
                         **ev,
                         'categoria': cat_nome,
-                        'data':      dia_data or ev.get('data', ''),
+                        'data':      data_combinada,
                     }
+                    # Pre-calcula: alguma bateria deste DIA roda este workout?
+                    # Se baterias têm cronograma definido e NENHUMA roda este wkt,
+                    # significa que o workout não acontece neste dia — pula em vez
+                    # de gerar súmula em branco que confunde o organizador.
+                    baterias_com_cron = [b for b in baterias if b.get('workouts_que_rodam')]
+                    algum_sem_cron = len(baterias_com_cron) < len(baterias)
 
                     for wkt_pos, wkt in enumerate(workouts, start=1):
+                        # Skip se cronograma definido e nenhuma bateria do dia roda
+                        # este wkt. Baterias sem cronograma rodam tudo (compat).
+                        roda_este_wkt = (
+                            algum_sem_cron
+                            or any(wkt_pos in b['workouts_que_rodam']
+                                   for b in baterias_com_cron)
+                        )
+                        if baterias and not roda_este_wkt:
+                            continue
                         # Junta todas as alocações de baterias que rodam este workout
                         # (workouts_que_rodam contém a posição 1-based do workout)
                         competidores: list[dict] = []
