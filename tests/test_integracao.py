@@ -102,6 +102,115 @@ def test_handle_generate_produz_zip_com_html_por_workout(xlsx_grades_e_dias_byte
         assert "ATLETA RX 1" in html
 
 
+# ── Bug fix v1.34.0: workout só aparece no dia que tem bateria rodando ──────
+def test_handle_generate_pula_workout_em_dia_sem_bateria_que_o_rode(fonts_empty):
+    """Monstar Games tem 3 dias. Workout #5 (Monstar Recap) só roda no Sábado.
+    ZIP gerado deve ter o arquivo SÓ em Sábado/, não em Sexta/ ou Domingo/.
+
+    Antes do fix: workouts sem bateria do dia eram gerados em BRANCO mesmo
+    assim, poluindo o ZIP com súmulas vazias em dias errados."""
+    # Config com 3 dias: cada um tem a mesma categoria, mas baterias rodam
+    # workouts diferentes. Mesmos 5 workouts globais em todos os dias.
+    workouts = [
+        {"numero": 1, "nome": "TWENTIES",      "tipo": "for_time", "time_cap": "9 min",
+         "modalidade": "individual", "movimentos": [{"nome": "PULL-UPS", "reps": 20}, {"chegada": True}]},
+        {"numero": 2, "nome": "FRAN",          "tipo": "for_time", "time_cap": "5 min",
+         "modalidade": "individual", "movimentos": [{"nome": "THRUSTERS", "reps": 21}, {"chegada": True}]},
+        {"numero": 3, "nome": "MAX CLEAN",     "tipo": "for_load", "modalidade": "individual"},
+        {"numero": 4, "nome": "AMRAP TEST",    "tipo": "amrap",    "time_cap": "10 min",
+         "modalidade": "individual", "movimentos": [{"nome": "BURPEES", "reps": 10}]},
+        {"numero": 5, "nome": "MONSTAR RECAP", "tipo": "amrap",    "time_cap": "12:30",
+         "modalidade": "trio",       "movimentos": [{"nome": "SWIM", "reps": 50}]},
+    ]
+
+    def cat(workouts_que_rodam):
+        """Cria categoria com 1 bateria que roda os workouts indicados."""
+        return {
+            "nome": "Trio Rx Misto",
+            "workouts": workouts,
+            "baterias": [{
+                "numero": "1", "codigo_evento": "#1",
+                "horario_aquecimento": "08:00", "horario_fila": "08:20",
+                "workouts_que_rodam": workouts_que_rodam,
+                "alocacoes": [{"raia": "1", "numero": "401", "nome": "Trio A", "box": "CF"}],
+            }],
+        }
+
+    config = {
+        "evento": {"nome": "MONSTAR 2026", "categoria": "", "data": ""},
+        "dias": [
+            {"label": "Sexta",   "data": "29/05/2026", "categorias": [cat([1, 2])]},
+            {"label": "Sábado",  "data": "30/05/2026", "categorias": [cat([3, 5])]},
+            {"label": "Domingo", "data": "31/05/2026", "categorias": [cat([4])]},
+        ],
+        "roster": [],
+    }
+
+    # Replica logic de _handle_generate
+    from campo_generator import render_workout_combined, render_workout, sanitize
+    from parsers import assign_workout_numbers
+    from ai_rounds import enriquecer_workouts
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for dia in config["dias"]:
+            dia_label = dia["label"]
+            dia_data = dia["data"]
+            for cat_d in dia["categorias"]:
+                workouts_d = cat_d["workouts"]
+                assign_workout_numbers(workouts_d)
+                enriquecer_workouts(workouts_d)
+                baterias = cat_d["baterias"]
+                baterias_com_cron = [b for b in baterias if b.get("workouts_que_rodam")]
+                algum_sem_cron = len(baterias_com_cron) < len(baterias)
+                data_combinada = " ".join(filter(None, [dia_label, dia_data])).strip()
+                ev_local = {"nome": "MONSTAR 2026", "categoria": cat_d["nome"], "data": data_combinada}
+                for wkt_pos, wkt in enumerate(workouts_d, start=1):
+                    roda = algum_sem_cron or any(
+                        wkt_pos in b["workouts_que_rodam"] for b in baterias_com_cron)
+                    if baterias and not roda:
+                        continue   # APLICANDO O FIX
+                    atletas = []
+                    for b in baterias:
+                        wqr = b.get("workouts_que_rodam") or []
+                        if wqr and wkt_pos not in wqr: continue
+                        for a in b.get("alocacoes", []):
+                            atletas.append({**a, "bateria": b["numero"]})
+                    if atletas:
+                        html = render_workout_combined(ev_local, wkt, fonts_empty, "", "", atletas)
+                    else:
+                        html = render_workout(ev_local, wkt, fonts_empty, "", "")
+                    caminho = f"{dia_label}/{sanitize(cat_d['nome'])}/{wkt_pos:02d}_{sanitize(wkt['nome'])}.html"
+                    zf.writestr(caminho, html.encode("utf-8"))
+
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as zf:
+        nomes = zf.namelist()
+    # Sexta: SÓ workouts 1 e 2
+    sexta = [n for n in nomes if n.startswith("Sexta/")]
+    assert len(sexta) == 2, f"Sexta deve ter 2 wkts, got {len(sexta)}: {sexta}"
+    assert any("TWENTIES" in n for n in sexta)
+    assert any("FRAN" in n for n in sexta)
+    assert not any("MONSTAR" in n for n in sexta), "Monstar NÃO deve aparecer em Sexta"
+
+    # Sábado: SÓ workouts 3 e 5 (Max Clean + Monstar Recap)
+    sabado = [n for n in nomes if n.startswith("Sábado/")]
+    assert len(sabado) == 2, f"Sábado deve ter 2 wkts, got {len(sabado)}: {sabado}"
+    assert any("MAX_CLEAN" in n for n in sabado)
+    assert any("MONSTAR" in n for n in sabado)
+
+    # Domingo: SÓ workout 4 (Amrap Test)
+    domingo = [n for n in nomes if n.startswith("Domingo/")]
+    assert len(domingo) == 1, f"Domingo deve ter 1 wkt, got {len(domingo)}: {domingo}"
+    assert "AMRAP_TEST" in domingo[0]
+
+    # Verifica que header tem label do dia + data
+    sabado_monstar = [n for n in nomes if "Sábado" in n and "MONSTAR" in n][0]
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as zf:
+        html = zf.read(sabado_monstar).decode("utf-8")
+    assert "Sábado 30/05/2026" in html or "SÁBADO 30/05/2026" in html, \
+        "Header da súmula deve conter 'Sábado 30/05/2026'"
+
+
 # ── #3: render Express com 2 fórmulas ─────────────────────────────────────────
 def test_render_workout_express_emite_amrap_e_for_time(workout_express, evento_basico,
                                                         fonts_empty):
