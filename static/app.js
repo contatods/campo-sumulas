@@ -1137,6 +1137,8 @@ function novoWorkout(catIdx) {
   document.getElementById('edNome').value = '';
   document.getElementById('edTipo').value = 'for_time';
   document.getElementById('edTimeCap').value = '';
+  document.getElementById('edTiebreak').value = '';
+  document.getElementById('edTiebreakPorRound').checked = false;
   document.getElementById('edDescricao').value = '';
   setExpressJanela('f1', '', '');
   setExpressJanela('f2', '', '');
@@ -1158,6 +1160,10 @@ function editarWorkout(ci, wi) {
   document.getElementById('edNome').value = w.nome || '';
   document.getElementById('edTipo').value = w.tipo || 'for_time';
   document.getElementById('edTimeCap').value = w.time_cap || '';
+  // Tiebreak: por round (AMRAP) salvo em wkt.tiebreak_por_round + descrição
+  // opcional em wkt.tiebreak. For Time só usa wkt.tiebreak.
+  document.getElementById('edTiebreak').value = w.tiebreak || '';
+  document.getElementById('edTiebreakPorRound').checked = !!w.tiebreak_por_round;
   document.getElementById('edDescricao').value = (w.descricao || []).join('\n');
   if (w.tipo === 'express') {
     const j1 = parseJanela((w.formula1 || {}).janela);
@@ -1213,6 +1219,11 @@ function onTipoChange() {
   // Time cap não faz sentido pra For Load
   const tcWrap = document.getElementById('edTimeCap').closest('.field');
   if (tcWrap) tcWrap.style.display = t === 'for_load' ? 'none' : '';
+  // Tiebreak: esconde linha inteira em For Load. Checkbox 'por round' só em AMRAP.
+  const tbRow = document.getElementById('edTbRow');
+  if (tbRow) tbRow.style.display = t === 'for_load' ? 'none' : '';
+  const tbPorRoundField = document.getElementById('edTbPorRoundField');
+  if (tbPorRoundField) tbPorRoundField.style.display = t === 'amrap' ? '' : 'none';
   if (t === 'express') switchExpressTab('f1');
   // Quando vai pra For Load, popula defaults se vazio
   if (t === 'for_load') _preencherDefaultsForLoad();
@@ -1320,6 +1331,8 @@ function _lerFormWorkout() {
     tipo:    document.getElementById('edTipo').value,
     timeCap: document.getElementById('edTimeCap').value.trim(),
     desc:    document.getElementById('edDescricao').value.split('\n').map(s=>s.trim()).filter(Boolean),
+    tiebreak: document.getElementById('edTiebreak').value.trim(),
+    tiebreakPorRound: document.getElementById('edTiebreakPorRound').checked,
   };
 }
 
@@ -1362,6 +1375,21 @@ function _popularCamposGenericos(wkt, form) {
   wkt.estilo    = form.tipo;
   wkt.time_cap  = form.timeCap;
   wkt.descricao = form.desc;
+  // Tiebreak: campo livre + flag 'por round' (AMRAP/EMOM apenas).
+  // For Load NUNCA usa tiebreak — limpa qualquer resíduo.
+  if (form.tipo === 'for_load') {
+    delete wkt.tiebreak;
+    delete wkt.tiebreak_por_round;
+  } else {
+    if (form.tiebreak) wkt.tiebreak = form.tiebreak;
+    else delete wkt.tiebreak;
+    // Por round só pra amrap (EMOM é tipo='amrap' com emom_janela)
+    if (form.tipo === 'amrap' && form.tiebreakPorRound) {
+      wkt.tiebreak_por_round = true;
+    } else {
+      delete wkt.tiebreak_por_round;
+    }
+  }
 }
 
 function _popularCamposPorTipo(wkt, tipo) {

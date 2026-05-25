@@ -110,6 +110,21 @@
         </div>
       </div>
 
+      <!-- Tiebreak (opcional) — For Time + AMRAP/EMOM. For Load esconde via onTipoChange -->
+      <div class="field-row" id="edTbRow">
+        <div class="field" style="flex:1">
+          <label>Tiebreak <span class="field-help" style="font-weight:400;text-transform:none;letter-spacing:0">(critério de desempate, opcional)</span></label>
+          <input id="edTiebreak" type="text" placeholder="Ex: tempo ao acabar as 21 Pull-Ups · tempo no fim de cada round">
+        </div>
+        <div class="field w100" id="edTbPorRoundField" style="display:none">
+          <label>Por round?</label>
+          <label class="ed-opt" style="margin-top:4px">
+            <input type="checkbox" id="edTiebreakPorRound">
+            <span>Cada round</span>
+          </label>
+        </div>
+      </div>
+
       <div class="field-row" id="edPathRow">
         <div class="field">
           <label>Dia</label>
