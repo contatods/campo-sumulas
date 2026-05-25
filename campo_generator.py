@@ -1173,12 +1173,10 @@ SCORE_BOX_MACRO = r"""
     <span class="sb-lbl-tag">AMRAP</span>
     <span class="sb-lbl-name">Pontuação</span>
   </div>
+  {# Pontuação AMRAP/EMOM SEMPRE em REPS TOTAIS — nunca rounds. Regra fixa
+     do produto: facilita comparação entre atletas e tiebreak. #}
   <div class="sb-field sb-field-tempo">
-    <span class="sb-field-lbl">Rounds</span>
-    <div class="sb-field-line"></div>
-  </div>
-  <div class="sb-field sb-field-reps">
-    <span class="sb-field-lbl">Reps Extras</span>
+    <span class="sb-field-lbl">Reps Totais</span>
     <div class="sb-field-line"></div>
   </div>
   {% if tb_text %}
