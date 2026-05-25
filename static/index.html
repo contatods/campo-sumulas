@@ -125,6 +125,28 @@
         </div>
       </div>
 
+      <!-- Progressão de reps por round (AMRAP/EMOM). Aplicada aos movs com PG marcado. -->
+      <div class="field-row" id="edProgRow" style="display:none">
+        <div class="field w100">
+          <label>Reps +/round <span class="field-help" style="font-weight:400;text-transform:none;letter-spacing:0">(quanto soma)</span></label>
+          <input id="edRepsDeltaPorRound" type="number" min="0" max="50" value="0" placeholder="0">
+        </div>
+        <div class="field w100">
+          <label>Último round</label>
+          <label class="ed-opt" style="margin-top:4px">
+            <input type="checkbox" id="edUltimoRoundMax">
+            <span>MAX reps</span>
+          </label>
+        </div>
+        <div class="field" style="flex:1">
+          <label style="visibility:hidden">_</label>
+          <div class="field-help" style="margin-top:4px;line-height:1.4">
+            Marque <strong>PG</strong> ao lado de cada movimento que progride. Sem PG, o mov fica constante.
+            Ex: <em>10 → 12 → 14 → 16 → MAX</em> com delta=2 + último MAX.
+          </div>
+        </div>
+      </div>
+
       <div class="field-row" id="edPathRow">
         <div class="field">
           <label>Dia</label>

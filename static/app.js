@@ -1139,6 +1139,8 @@ function novoWorkout(catIdx) {
   document.getElementById('edTimeCap').value = '';
   document.getElementById('edTiebreak').value = '';
   document.getElementById('edTiebreakPorRound').checked = false;
+  document.getElementById('edRepsDeltaPorRound').value = 0;
+  document.getElementById('edUltimoRoundMax').checked = false;
   document.getElementById('edDescricao').value = '';
   setExpressJanela('f1', '', '');
   setExpressJanela('f2', '', '');
@@ -1164,6 +1166,9 @@ function editarWorkout(ci, wi) {
   // opcional em wkt.tiebreak. For Time só usa wkt.tiebreak.
   document.getElementById('edTiebreak').value = w.tiebreak || '';
   document.getElementById('edTiebreakPorRound').checked = !!w.tiebreak_por_round;
+  // Progressão (AMRAP/EMOM): delta + último round MAX
+  document.getElementById('edRepsDeltaPorRound').value = w.reps_delta_por_round || 0;
+  document.getElementById('edUltimoRoundMax').checked = !!w.ultimo_round_max;
   document.getElementById('edDescricao').value = (w.descricao || []).join('\n');
   if (w.tipo === 'express') {
     const j1 = parseJanela((w.formula1 || {}).janela);
@@ -1224,6 +1229,9 @@ function onTipoChange() {
   if (tbRow) tbRow.style.display = t === 'for_load' ? 'none' : '';
   const tbPorRoundField = document.getElementById('edTbPorRoundField');
   if (tbPorRoundField) tbPorRoundField.style.display = t === 'amrap' ? '' : 'none';
+  // Progressão: SÓ AMRAP/EMOM (For Time não tem rounds)
+  const progRow = document.getElementById('edProgRow');
+  if (progRow) progRow.style.display = t === 'amrap' ? '' : 'none';
   if (t === 'express') switchExpressTab('f1');
   // Quando vai pra For Load, popula defaults se vazio
   if (t === 'for_load') _preencherDefaultsForLoad();
@@ -1320,6 +1328,7 @@ function salvarWorkout() {
   const { wkt, moveu } = _obterOuCriarWorkout(destino);
   _popularCamposGenericos(wkt, form);
   _popularCamposPorTipo(wkt, form.tipo);
+  _aplicarProgressaoReps(wkt);   // computa mov.reps_por_round nos PG-marcados
   _aposSalvarWorkout(moveu);
 }
 
@@ -1333,6 +1342,8 @@ function _lerFormWorkout() {
     desc:    document.getElementById('edDescricao').value.split('\n').map(s=>s.trim()).filter(Boolean),
     tiebreak: document.getElementById('edTiebreak').value.trim(),
     tiebreakPorRound: document.getElementById('edTiebreakPorRound').checked,
+    repsDelta:        parseInt(document.getElementById('edRepsDeltaPorRound').value, 10) || 0,
+    ultimoRoundMax:   document.getElementById('edUltimoRoundMax').checked,
   };
 }
 
@@ -1390,6 +1401,40 @@ function _popularCamposGenericos(wkt, form) {
       delete wkt.tiebreak_por_round;
     }
   }
+  // Progressão de reps por round — só AMRAP/EMOM, e só se delta > 0.
+  // reps_por_round de cada mov é computado DEPOIS em _aplicarProgressaoReps
+  // (movimentos só são populados em _popularCamposPorTipo).
+  if (form.tipo === 'amrap' && form.repsDelta > 0) {
+    wkt.reps_delta_por_round = form.repsDelta;
+    if (form.ultimoRoundMax) wkt.ultimo_round_max = true;
+    else delete wkt.ultimo_round_max;
+  } else {
+    delete wkt.reps_delta_por_round;
+    delete wkt.ultimo_round_max;
+  }
+}
+
+function _aplicarProgressaoReps(wkt) {
+  // Pre-computa mov.reps_por_round dos movs com progressivo=true. Espelha
+  // o cálculo do parser Python (_aplicar_progressao_reps em parsers.py).
+  if (!Array.isArray(wkt.movimentos)) return;
+  const delta = wkt.reps_delta_por_round || 0;
+  if (!delta) {
+    wkt.movimentos.forEach(m => { delete m.reps_por_round; });
+    return;
+  }
+  const ultimoMax = !!wkt.ultimo_round_max;
+  const nRounds = wkt.emom_rounds || wkt.n_rounds || 5;
+  wkt.movimentos.forEach(m => {
+    if (m.chegada || m.separador) return;
+    if (!m.progressivo) { delete m.reps_por_round; return; }
+    const base = parseInt(m.reps, 10);
+    if (isNaN(base)) return;
+    const seq = [];
+    for (let i = 0; i < nRounds; i++) seq.push(base + i * delta);
+    if (ultimoMax && seq.length) seq[seq.length - 1] = 'MAX';
+    m.reps_por_round = seq;
+  });
 }
 
 function _popularCamposPorTipo(wkt, tipo) {
@@ -1497,6 +1542,9 @@ function getMovTableArray(section) {
       // Tiebreak: checkbox 'TB' marca o mov como checkpoint inline
       const tbBox = row.querySelector('.mi-tb');
       if (tbBox && tbBox.checked) mov.tiebreak = true;
+      // Progressivo: checkbox 'PG' marca mov pra ter reps crescentes por round
+      const pgBox = row.querySelector('.mi-pg');
+      if (pgBox && pgBox.checked) mov.progressivo = true;
       arr.push(mov);
     }
   });
@@ -1534,6 +1582,10 @@ function appendMovRow(section, mov) {
       <label class="mi-tb-wrap" title="Tiebreak: insere campo escrevível após este movimento" aria-label="Tiebreak após este movimento">
         <input type="checkbox" class="mi-tb" ${mov.tiebreak ? 'checked' : ''}>
         <span>TB</span>
+      </label>
+      <label class="mi-tb-wrap mi-pg-wrap" title="Progressivo: reps deste movimento crescem por round (AMRAP/EMOM)" aria-label="Movimento progressivo">
+        <input type="checkbox" class="mi-pg" ${mov.progressivo ? 'checked' : ''}>
+        <span>PG</span>
       </label>
       <div class="mi-ctrl">${ctrlBtns(section)}</div>`;
   }
