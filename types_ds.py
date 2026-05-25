@@ -26,6 +26,8 @@ class Movimento(TypedDict, total=False):
     label: str
     chegada: bool       # marca a linha de chegada/finish (For Time)
     separador: str      # marca um "then..." entre blocos
+    secao: str          # header informativo (ex: 'PART 1 (00:00-06:00)') —
+                        # renderiza como banner, não conta reps
     paralelo: bool      # executado simultaneamente com o próximo movimento
                         # (ex: SkiErg ‖ Double-Unders no Simple Dimension)
     progressivo: bool   # reps progridem por round (sufixo '*' no Excel)

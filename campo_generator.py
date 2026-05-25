@@ -447,6 +447,20 @@ body{
   color:rgba(255,255,255,.85);letter-spacing:.22em;text-transform:uppercase;
 }
 
+/* Seção informativa: header tipo 'PART 1 (00:00-06:00)'. Não é movimento
+   nem 'then...' — é divisão temporal/lógica do workout. Mais prominente
+   que .sep-row (banner alto, fundo paper). */
+.secao-row{
+  display:flex;align-items:center;justify-content:center;
+  min-height:7mm;background:var(--paper);
+  border-top:1.5px solid var(--ink);border-bottom:1px solid var(--rule);
+  padding:1mm 3mm;
+}
+.secao-txt{
+  font-size:8pt;font-weight:900;color:var(--ink);
+  letter-spacing:.14em;text-transform:uppercase;
+}
+
 /* Tiebreak checkpoint inline (For Time multi-checkpoint): linha escrevível
    após o mov marcado. Sem coluna Reps/Acumulado — só label + linha branca. */
 .mov-row-tb{
@@ -973,6 +987,8 @@ MOV_TABLE_MACRO = r"""
       </div>
     {% elif mov.separador is defined and mov.separador %}
       <div class="sep-row"><span class="sep-txt">{{ mov.separador | upper }}</span></div>
+    {% elif mov.secao is defined and mov.secao %}
+      <div class="secao-row"><span class="secao-txt">{{ mov.secao | upper }}</span></div>
     {% elif mov.chegada is defined and mov.chegada %}
       {# Se workout tem goal_reps (Simple Mind/Dim), soma as reps do alvo
          no acumulado final: cum = cum_prescritos + goal_reps + chegada. #}

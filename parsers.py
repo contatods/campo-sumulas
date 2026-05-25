@@ -470,6 +470,15 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
         if any(ll.startswith(p) for p in _SKIP_PREFIXES): continue
         if _DIRECTIVE_GOAL_RE.match(line): continue   # 'Goal:' já capturada
 
+        # Headers informativos ('Part 1 (00:00-06:00)', 'Stage 2', linha só com
+        # janela de tempo) — NÃO são movimento, mas merecem aparecer na súmula
+        # como banner. Criados como {secao: texto} pra render renderizar.
+        s_clean = line.strip()
+        if (_SECTION_HEADER_RE.match(s_clean)
+                or (not re.match(r'^\d', s_clean) and _TIME_WINDOW_RE.search(s_clean))):
+            movs.append({"secao": s_clean.upper()})
+            continue
+
         # Marca progressivo + remove markers do nome
         s_strip = line.strip()
         is_progressivo = bool(_MARKER_END_RE.search(s_strip)) or bool(_MARKER_INLINE_RE.search(s_strip))

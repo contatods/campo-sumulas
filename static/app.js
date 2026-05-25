@@ -1527,6 +1527,9 @@ function getMovTableArray(section) {
     const t = row.dataset.type;
     if (t === 'sep') {
       arr.push({ separador: row.querySelector('.mi-sep-input').value.trim() || 'then...' });
+    } else if (t === 'secao') {
+      const txt = row.querySelector('.mi-secao-input').value.trim();
+      if (txt) arr.push({ secao: txt.toUpperCase() });
     } else if (t === 'chegada') {
       arr.push({ chegada: true });
     } else {
@@ -1567,6 +1570,14 @@ function appendMovRow(section, mov) {
     row.dataset.type = 'sep';
     row.innerHTML = `<input class="mi-sep-input" value="${esc(mov.separador || 'then...')}"
         placeholder="then..." style="flex:1;font-style:italic;color:var(--text3)">
+      <div class="mi-ctrl">${ctrlBtns(section)}</div>`;
+  } else if (mov.secao !== undefined) {
+    row.className = 'mov-row secao-row';
+    row.dataset.type = 'secao';
+    row.innerHTML = `<span class="mi-secao-mark">§</span>
+      <input class="mi-secao-input" value="${esc(mov.secao || '')}"
+        placeholder="Ex: PART 1 (00:00-06:00)"
+        style="flex:1;font-weight:700;letter-spacing:.05em;text-transform:uppercase">
       <div class="mi-ctrl">${ctrlBtns(section)}</div>`;
   } else {
     row.className = 'mov-row';
@@ -1614,6 +1625,14 @@ function addMov(section) {
 }
 
 function addSep(section) { appendMovRow(section, { separador: 'then...' }); }
+
+function addSecao(section) {
+  appendMovRow(section, { secao: 'PART 1 (00:00-06:00)' });
+  // Foca o campo recém-adicionado pra editar
+  const body = document.getElementById(bodyId(section));
+  const last = body.lastElementChild;
+  if (last) { const inp = last.querySelector('.mi-secao-input'); if (inp) { inp.focus(); inp.select(); } }
+}
 
 function addChegada(section) {
   const body = document.getElementById(bodyId(section));
