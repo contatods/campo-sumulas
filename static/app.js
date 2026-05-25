@@ -1494,6 +1494,9 @@ function getMovTableArray(section) {
       else if (repsEl.value.trim()) mov.reps = repsEl.value.trim();
       const label = row.querySelector('.mi-label').value.trim();
       if (label) mov.label = label;
+      // Tiebreak: checkbox 'TB' marca o mov como checkpoint inline
+      const tbBox = row.querySelector('.mi-tb');
+      if (tbBox && tbBox.checked) mov.tiebreak = true;
       arr.push(mov);
     }
   });
@@ -1528,6 +1531,10 @@ function appendMovRow(section, mov) {
         <button class="rs-btn" tabindex="-1" onclick="repsStep(this,+1)">+</button>
       </div>
       <input class="mi-label" value="${esc(mov.label || '')}" placeholder="Carga / variante" style="width:72px;font-size:10.5px">
+      <label class="mi-tb-wrap" title="Tiebreak: insere campo escrevível após este movimento" aria-label="Tiebreak após este movimento">
+        <input type="checkbox" class="mi-tb" ${mov.tiebreak ? 'checked' : ''}>
+        <span>TB</span>
+      </label>
       <div class="mi-ctrl">${ctrlBtns(section)}</div>`;
   }
   body.appendChild(row);

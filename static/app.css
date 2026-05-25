@@ -182,6 +182,14 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .mov-row input:focus{border-color:var(--orange-edge)}
 .mov-row .mi-nome{flex:1}
 .mov-row .mi-label{width:72px;font-size:10.5px}
+/* Checkbox 'TB' por linha de movimento — marca como checkpoint de tiebreak.
+   Render insere linha 'Tiebreak · ___ (m:s)' escrevível após o mov. */
+.mi-tb-wrap{display:flex;align-items:center;gap:3px;flex-shrink:0;cursor:pointer;
+  padding:0 4px;color:var(--text3);font-size:9px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;user-select:none}
+.mi-tb-wrap:hover{color:var(--orange)}
+.mi-tb-wrap input{cursor:pointer;accent-color:var(--orange);margin:0}
+.mi-tb-wrap input:checked + span{color:var(--orange)}
 .mi-reps-stepper{display:flex;align-items:center;width:70px;flex-shrink:0;
   border:1px solid var(--border3);border-radius:var(--radius);background:var(--surface3);
   overflow:hidden;height:24px}

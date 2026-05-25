@@ -30,6 +30,8 @@ class Movimento(TypedDict, total=False):
                         # (ex: SkiErg ‖ Double-Unders no Simple Dimension)
     progressivo: bool   # reps progridem por round (sufixo '*' no Excel)
     reps_por_round: list[Union[int, str]]   # progressão de reps (ex: [10,12,14,16,'MAX'])
+    tiebreak: bool      # checkpoint inline — render insere linha 'TIEBREAK · ___'
+                        # após este mov (For Time multi-checkpoint)
 
 
 class Formula(TypedDict, total=False):

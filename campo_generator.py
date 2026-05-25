@@ -447,6 +447,25 @@ body{
   color:rgba(255,255,255,.85);letter-spacing:.22em;text-transform:uppercase;
 }
 
+/* Tiebreak checkpoint inline (For Time multi-checkpoint): linha escrevível
+   após o mov marcado. Sem coluna Reps/Acumulado — só label + linha branca. */
+.mov-row-tb{
+  display:flex;align-items:center;min-height:6mm;
+  background:var(--paper);border-top:1px dashed var(--mid);
+}
+.mr-tb-lbl{
+  flex:0 0 auto;padding:1mm 2.5mm;
+  font-size:7pt;font-weight:700;color:var(--ink);
+  letter-spacing:.1em;text-transform:uppercase;
+  border-left:1px solid var(--rule);
+}
+.mr-tb-unit{font-size:6pt;font-weight:400;color:var(--ghost);letter-spacing:.04em}
+.mr-tb-line{
+  flex:1;margin:1mm 3mm 1mm 2mm;
+  min-height:4mm;background:var(--w);
+  border:1.5px solid var(--ink);border-radius:1.5px;
+}
+
 /* Movimentos em paralelo — chave visual P&B safe (símbolo bold + fundo) */
 .mov-row-paralelo{background:var(--field)!important}
 .mov-row-paralelo .mr-name{position:relative}
@@ -984,6 +1003,14 @@ MOV_TABLE_MACRO = r"""
           <div class="mr-cum mr-cum-empty"><div class="mr-cum-empty-box"></div></div>
         {% endif %}
       </div>
+      {# Checkpoint de tiebreak: linha extra escrevível após o mov marcado #}
+      {% if mov.tiebreak %}
+      <div class="mov-row mov-row-tb">
+        {% if has_lbl %}<div class="mr-lbl">—</div>{% endif %}
+        <div class="mr-name mr-tb-lbl">Tiebreak <span class="mr-tb-unit">(m:s)</span></div>
+        <div class="mr-tb-line"></div>
+      </div>
+      {% endif %}
     {% endif %}
   {% endfor %}
 </div>
