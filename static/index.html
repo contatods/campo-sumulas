@@ -466,6 +466,7 @@
       <button class="cfg-tab" data-ajuda-tab="importar" onclick="ajudaTab('importar')">Importar Excel</button>
       <button class="cfg-tab" data-ajuda-tab="editar" onclick="ajudaTab('editar')">Editar workouts</button>
       <button class="cfg-tab" data-ajuda-tab="gerar" onclick="ajudaTab('gerar')">Gerar súmulas</button>
+      <button class="cfg-tab" data-ajuda-tab="ia" onclick="ajudaTab('ia')">Assistente & IA</button>
       <button class="cfg-tab" data-ajuda-tab="eventos" onclick="ajudaTab('eventos')">Eventos salvos</button>
       <button class="cfg-tab" data-ajuda-tab="backup" onclick="ajudaTab('backup')">Backup</button>
       <button class="cfg-tab" data-ajuda-tab="reset" onclick="ajudaTab('reset')">Reset</button>
@@ -485,6 +486,17 @@
       <h3>Tudo é salvo automaticamente</h3>
       <p>O canto superior direito mostra <code>✓ salvo HH:MM</code> sempre que o estado é gravado no navegador. Se der F5 ou fechar a aba, ao voltar tá tudo lá. Não precisa de botão "salvar".</p>
       <p class="cfg-hint">Quer um backup externo? Veja a aba <strong>Backup</strong>.</p>
+
+      <h3>O que mudou nas últimas versões</h3>
+      <ul>
+        <li><strong>Numeração contínua por categoria</strong> — workouts da mesma categoria contam em sequência atravessando dias (Sexta 1,2,3 · Sábado 4,5 · Domingo 6,7).</li>
+        <li><strong>Banner "Aguardando balizamento"</strong> nas súmulas em que a categoria ainda não tem atletas alocados — gera com nomes do roster e raia/bateria em branco (só no escopo categoria).</li>
+        <li><strong>Pré-evento</strong> — gera súmulas para atletas inscritos que ainda não têm bateria/raia.</li>
+        <li><strong>Seções informativas</strong> (Part 1 (0:00–6:00), Stage, Bloco) viram banners — não somem como linha de movimento.</li>
+        <li><strong>"N rounds for time"</strong> expande a tabela com cabeçalhos de round.</li>
+        <li><strong>For Load</strong>: libras é default, régua de anilhas marcáveis.</li>
+        <li><strong>Chat assistente + atalhos IA</strong> — veja a aba <strong>Assistente & IA</strong>.</li>
+      </ul>
     </div>
 
     <div class="cfg-pane ajuda-pane" id="ajudaPaneImportar" style="display:none">
@@ -523,33 +535,59 @@
       </ul>
       <h3>Tipos de workout</h3>
       <ul>
-        <li><strong>For Time</strong> — atleta completa tudo o mais rápido possível, com time cap</li>
+        <li><strong>For Time</strong> — atleta completa tudo o mais rápido possível, com time cap. <em>"N rounds for time"</em> repete a tabela N vezes com header de round.</li>
         <li><strong>AMRAP</strong> — máximo de rounds em N minutos</li>
-        <li><strong>Express</strong> — 2 fórmulas encadeadas (AMRAP + For Time)</li>
-        <li><strong>For Load</strong> — N tentativas pra estabelecer carga máxima. Tem régua de anilhas marcáveis</li>
+        <li><strong>Express</strong> — 2 fórmulas encadeadas (AMRAP + For Time); ocupa 2 slots de numeração</li>
+        <li><strong>For Load</strong> — N tentativas pra estabelecer carga máxima. Régua de anilhas marcáveis; libras é unidade default</li>
       </ul>
+      <h3>Numeração dos workouts</h3>
+      <p>Dentro de uma <strong>mesma categoria</strong>, a numeração é <strong>contínua atravessando os dias</strong>: Elite Masc na Sexta 1, 2, 3 → Sábado 4, 5 → Domingo 6, 7. Categorias distintas têm contagens independentes. Express ocupa 2 slots (ex: 4 + 5).</p>
+      <h3>Seções dentro do workout</h3>
+      <p>Linhas como <code>Part 1 (0:00–6:00)</code>, <code>Stage 2</code>, <code>Bloco A</code> são reconhecidas como <strong>seções informativas</strong> e viram banners na súmula — não somem nem viram movimentos.</p>
+      <p>Pra adicionar manualmente na tabela de movimentos: botão <code>§ Seção</code>. Use pra dividir AMRAP/For Time em partes com janelas de tempo.</p>
       <h3>Para criar/editar</h3>
       <ol>
         <li>Passe o mouse sobre o workout pra ver botões de ação</li>
         <li><code>✎ Editar</code> abre o painel direito com todos os campos</li>
         <li>Pode mover entre dias/categorias no próprio editor</li>
-        <li><strong>Notas adicionais</strong>: campo livre que aparece acima da tabela. Use pro "Time cap: 10 min" ou regras especiais</li>
+        <li><strong>Tiebreak</strong>: critério de desempate opcional (ex: "tempo no minuto 5"). Vira box dedicado na súmula</li>
+        <li><strong>Progressão</strong> em For Time: <em>reps por round</em> + <em>incremento</em> (ex: 5 reps começando, +2 por round). Sistema gera a tabela com a soma correta</li>
+        <li><strong>Notas adicionais</strong>: texto livre acima da tabela. Use pro time cap, regras especiais, observações</li>
       </ol>
       <h3>IA (quando ativa)</h3>
-      <p>Botão <code>💡</code> ao lado de Time Cap sugere um valor com base nos movimentos. Em AMRAP, n° de rounds é estimado automaticamente.</p>
+      <ul>
+        <li><code>💡</code> ao lado de <strong>Time Cap</strong> — sugere um valor com base nos movimentos.</li>
+        <li><code>💡 gerar</code> em <strong>Notas adicionais</strong> — escreve uma descrição enxuta a partir da tabela.</li>
+        <li>Em AMRAP, o n° de rounds é estimado automaticamente.</li>
+      </ul>
+      <p class="cfg-hint">Mais detalhes na aba <strong>Assistente & IA</strong>.</p>
     </div>
 
     <div class="cfg-pane ajuda-pane" id="ajudaPaneGerar" style="display:none">
       <h3>Baixar súmulas</h3>
-      <p>No canto inferior esquerdo, o botão <code>⬇ Gerar súmulas</code> tem 4 escopos:</p>
+      <p>O botão primário <code>⬇ Gerar categoria selecionada</code> fica na sidebar. Os outros escopos ficam atrás do <code>outros escopos ▾</code>:</p>
       <table class="ajuda-tab-table">
         <tbody>
-          <tr><td><strong>Categoria selecionada</strong></td><td>(default) só a categoria do dropdown atual</td></tr>
+          <tr><td><strong>Categoria selecionada</strong></td><td>(default, primário) só a categoria do dropdown atual — é o uso real recomendado</td></tr>
           <tr><td><strong>Dia atual</strong></td><td>todas as categorias do dia ativo</td></tr>
-          <tr><td><strong>Evento inteiro</strong></td><td>todos os dias e categorias</td></tr>
-          <tr><td><strong>Sem nomes</strong></td><td>súmulas em branco (sem atletas) — pra fotocópia</td></tr>
+          <tr><td><strong>Evento todo</strong></td><td>todos os dias e categorias</td></tr>
+          <tr><td><strong>Pré-evento (não alocados)</strong></td><td>atletas inscritos no roster mas ainda sem bateria/raia — pasta por categoria, sem dia</td></tr>
+          <tr><td><strong>Incluir competidores</strong> (checkbox)</td><td>se desmarcado, súmulas saem em branco (sem nome/box/número) — pra fotocópia</td></tr>
         </tbody>
       </table>
+      <p class="cfg-hint">⚠ Escopo <strong>Evento todo</strong> ou <strong>Dia atual</strong> pode estourar timeout em evento grande (Monstar = ~3500 páginas). Acima de 1500 páginas o sistema pede confirmação. <strong>Fluxo recomendado: gerar por categoria.</strong></p>
+
+      <h3>Aguardando balizamento</h3>
+      <p>Quando uma categoria já tem baterias criadas mas nenhum atleta alocado (caso típico de finais que dependem do resultado do dia anterior), a súmula sai com:</p>
+      <ul>
+        <li>Banner <code>⏳ Aguardando balizamento</code> no topo</li>
+        <li><strong>No escopo categoria</strong>: nomes do roster da categoria já preenchidos, com <em>raia</em> e <em>bateria</em> em branco pro juiz preencher à mão</li>
+        <li><strong>No escopo evento/dia</strong>: 1 página em branco com o banner (pra não explodir o tamanho do ZIP)</li>
+      </ul>
+
+      <h3>Numeração dos workouts</h3>
+      <p>Contínua dentro da categoria atravessando os dias. Ex: gerar só Domingo de Elite Masc traz o badge <strong>6, 7</strong> se a categoria já teve 5 workouts em Sexta+Sábado. Express ocupa 2 slots.</p>
+
       <h3>Estrutura do ZIP</h3>
       <pre><code>Sábado/
   Scaled_Masculino/
@@ -560,6 +598,34 @@
       <p class="cfg-hint">Em For Load com modalidade dupla/time, cada página representa o time inteiro (no modelo atual cada dupla é 1 entrada no Excel). A "MELHOR CARGA" da página é o resultado da equipe.</p>
       <h3>Imprimir</h3>
       <p>Abra o HTML no browser → Ctrl+P (Cmd+P no Mac) → "Salvar como PDF" ou imprimir direto. Cada atleta vira uma folha A4 separada (page-break-after automático).</p>
+    </div>
+
+    <div class="cfg-pane ajuda-pane" id="ajudaPaneIA" style="display:none">
+      <h3>Quando a IA está disponível</h3>
+      <p>Se o servidor tem chave Anthropic configurada (<code>ANTHROPIC_API_KEY</code>), aparece o indicador <strong>IA</strong> no header e o botão <code>💬</code> de chat fica ativo. Sem chave, a interface funciona normal — só os atalhos IA ficam ocultos.</p>
+
+      <h3>Atalhos no editor de workout</h3>
+      <ul>
+        <li><code>💡</code> ao lado de <strong>Time Cap</strong> — sugere um cap razoável com base nos movimentos e reps.</li>
+        <li><code>💡 gerar</code> em <strong>Notas adicionais</strong> — escreve uma descrição enxuta do workout a partir da tabela de movimentos.</li>
+      </ul>
+
+      <h3>Validação do evento</h3>
+      <p>Ao importar Excel o sistema mostra avisos (atleta sem categoria, bateria sem workout, número fora de faixa etc). O botão <code>🤖 Explicar com IA</code> abaixo da lista pede pra IA explicar cada aviso em PT-BR e sugerir o que conferir antes de gerar súmulas.</p>
+
+      <h3>Chat assistente</h3>
+      <p>Botão flutuante <code>💬</code> no canto inferior direito. Faz perguntas livres sobre o evento carregado:</p>
+      <ul>
+        <li>"Quem está na raia 3 da bateria 5 do Sábado?"</li>
+        <li>"Quantos atletas Elite Masc na Sexta?"</li>
+        <li>"Quais workouts a Rx Feminino faz no Domingo?"</li>
+        <li>"Qual o cronograma de baterias do Sábado de manhã?"</li>
+        <li>"Tem atleta inscrito sem bateria?"</li>
+      </ul>
+      <p>O assistente lê toda a estrutura do evento — dias, categorias, workouts, baterias, alocações, roster — e responde com os dados reais.</p>
+
+      <h3>Limite de uso</h3>
+      <p class="cfg-hint">60 chamadas/minuto somando <strong>todos</strong> os atalhos IA + chat. Se atingir, espera ~1 minuto e tenta de novo. O contador é por instância do servidor.</p>
     </div>
 
     <div class="cfg-pane ajuda-pane" id="ajudaPaneEventos" style="display:none">

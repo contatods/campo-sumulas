@@ -136,7 +136,7 @@ function ajudaTab(t) {
   document.querySelectorAll('[data-ajuda-tab]').forEach(b => {
     b.classList.toggle('active', b.dataset.ajudaTab === t);
   });
-  ['visao','importar','editar','gerar','eventos','backup','reset'].forEach(name => {
+  ['visao','importar','editar','gerar','ia','eventos','backup','reset'].forEach(name => {
     const pane = document.getElementById('ajudaPane' + name.charAt(0).toUpperCase() + name.slice(1));
     if (pane) pane.style.display = (name === t) ? '' : 'none';
   });
