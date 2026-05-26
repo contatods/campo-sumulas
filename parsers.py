@@ -1186,6 +1186,29 @@ def assign_workout_numbers(workouts: list[Workout]) -> list[Workout]:
     return workouts
 
 
+def assign_workout_numbers_global(dias: list) -> None:
+    """Numera workouts em sequência CONTÍNUA por categoria, atravessando dias.
+
+    Ex: Elite Masc com 3 wkts na Sexta + 2 no Sábado vira 1,2,3 e 4,5 — em vez
+    de reiniciar 1,2 no Sábado. Mantém regra de Express (ocupa 2 slots).
+    Mutação in-place nos wkt['numero'] / wkt['numero_f2'] de cada dia.
+    """
+    counters: dict[str, int] = {}
+    for dia in dias or []:
+        for cat in (dia.get('categorias') or []):
+            nome = (cat.get('nome') or '').strip()
+            counter = counters.get(nome, 1)
+            for wkt in (cat.get('workouts') or []):
+                wkt['numero'] = counter
+                if wkt.get('tipo') == 'express':
+                    wkt['numero_f2'] = counter + 1
+                    counter += 2
+                else:
+                    wkt.pop('numero_f2', None)
+                    counter += 1
+            counters[nome] = counter
+
+
 # ── Excel multi-dia (formato real do evento) ──────────────────────────────────
 # Formato esperado:
 #   - Aba `Workouts`: grade dia (col A) × categoria (cols B+); cada célula é

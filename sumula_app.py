@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.41.2'
+VERSION = '1.42.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -194,7 +194,7 @@ def _resolve_logo(value):
     return img_b64(value)    # caminho local
 
 # ── Imports dos módulos extraídos ──────────────────────────────────────────────
-from parsers import parse_excel, parse_pdf, assign_workout_numbers, _atleta_sort_key
+from parsers import parse_excel, parse_pdf, assign_workout_numbers, assign_workout_numbers_global, _atleta_sort_key
 from ai_rounds import (enriquecer_workouts, AI_ATIVO,
                        sugerir_time_cap, auto_descricao,
                        validar_evento, resumo_evento, chat_evento,
@@ -430,6 +430,12 @@ class SumulaHandler(BaseHTTPRequestHandler):
         logo_evt = ev.get('logo_evento', '')
         incluir_competidores = bool(body.get('incluir_competidores', True))
 
+        # Numeração contínua por categoria ATRAVÉS dos dias (Elite Masc:
+        # Sexta 1,2,3 → Sábado 4,5 → Domingo 6,7). Roda ANTES de filtrar por
+        # dia_idx/cat_idx pra ver a sequência inteira; workouts são mutados in-
+        # place, então filtros depois mantêm os números corretos.
+        assign_workout_numbers_global(dias)
+
         # Filtra dias se vier dia_idx
         dia_idx = body.get('dia_idx')
         if dia_idx is not None:
@@ -474,7 +480,8 @@ class SumulaHandler(BaseHTTPRequestHandler):
                     if not workouts:
                         continue
                     _validate_workout_tipos(workouts)
-                    assign_workout_numbers(workouts)
+                    # Numeração: já feita globalmente por categoria via
+                    # assign_workout_numbers_global() lá em cima.
                     enriquecer_workouts(workouts)
                     baterias = cat.get('baterias', []) or []
 

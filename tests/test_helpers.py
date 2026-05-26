@@ -1,5 +1,5 @@
 """Funções puras: ordenação, numeração, parsers de duração e estimativa de rounds."""
-from parsers import _atleta_sort_key, assign_workout_numbers
+from parsers import _atleta_sort_key, assign_workout_numbers, assign_workout_numbers_global
 from ai_rounds import _extrair_minutos, _estimar_rounds_algoritmico
 
 
@@ -23,6 +23,45 @@ def test_assign_workout_numbers_express_ocupa_dois_slots():
     # workouts não-express não devem ter numero_f2
     assert "numero_f2" not in workouts[0]
     assert "numero_f2" not in workouts[2]
+
+
+def test_assign_workout_numbers_global_continua_por_categoria_atraves_dias():
+    """Elite Masc: 3 wkts na Sexta → 4,5 no Sábado → 6 no Domingo (contínuo).
+    Rx Masc (categoria diferente) reinicia em 1."""
+    dias = [
+        {"label": "Sexta", "categorias": [
+            {"nome": "Elite Masc", "workouts": [
+                {"nome": "W1", "tipo": "for_time"},
+                {"nome": "W2", "tipo": "amrap"},
+                {"nome": "W3", "tipo": "for_load"},
+            ]},
+            {"nome": "Rx Masc", "workouts": [
+                {"nome": "X1", "tipo": "for_time"},
+            ]},
+        ]},
+        {"label": "Sábado", "categorias": [
+            {"nome": "Elite Masc", "workouts": [
+                {"nome": "W4", "tipo": "for_time"},
+                {"nome": "W5", "tipo": "express"},
+            ]},
+        ]},
+        {"label": "Domingo", "categorias": [
+            {"nome": "Elite Masc", "workouts": [
+                {"nome": "W7", "tipo": "for_time"},
+            ]},
+        ]},
+    ]
+    assign_workout_numbers_global(dias)
+    # Sexta Elite
+    assert [w["numero"] for w in dias[0]["categorias"][0]["workouts"]] == [1, 2, 3]
+    # Sexta Rx — categoria distinta, reinicia
+    assert dias[0]["categorias"][1]["workouts"][0]["numero"] == 1
+    # Sábado Elite — continua após Sexta (3) → 4 e 5 (W5 é express → ocupa 5+6)
+    assert dias[1]["categorias"][0]["workouts"][0]["numero"] == 4
+    assert dias[1]["categorias"][0]["workouts"][1]["numero"] == 5
+    assert dias[1]["categorias"][0]["workouts"][1]["numero_f2"] == 6
+    # Domingo Elite — após Express ocupar 5+6, próximo é 7
+    assert dias[2]["categorias"][0]["workouts"][0]["numero"] == 7
 
 
 def test_extrair_minutos_aceita_formatos_comuns():
