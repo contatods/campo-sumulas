@@ -491,6 +491,30 @@ body{
   content:''; /* keep alignment, sem alterar */
 }
 
+/* Banner 'Aguardando balizamento': fica logo após o header do workout.
+   Visual P&B-safe: borda dupla preta + padrão tracejado nas laterais. */
+.aguardando-banner{
+  display:flex;align-items:center;gap:3mm;
+  margin:0 0 1.5mm 0;padding:2mm 3mm;
+  border:1.5px solid var(--ink);
+  background:var(--paper);
+  background-image:repeating-linear-gradient(45deg,
+    transparent 0,transparent 4px,
+    var(--rule) 4px,var(--rule) 5px);
+}
+.aguardando-mark{
+  font-size:13pt;flex-shrink:0;line-height:1;
+}
+.aguardando-txt{
+  font-size:9pt;font-weight:900;color:var(--ink);
+  letter-spacing:.08em;text-transform:uppercase;flex:1;
+}
+.aguardando-sub{
+  font-size:6.5pt;font-weight:400;color:var(--mid);
+  letter-spacing:.04em;text-transform:none;display:block;line-height:1.3;
+  margin-top:0.5mm;
+}
+
 /* Banner Alvo no topo do mov_table — For Time com Goal (Simple Mind/Dim) */
 .goal-banner{
   background:var(--ink);color:var(--w);
@@ -1605,6 +1629,16 @@ PAGE_TMPL_STR = r"""<div class="page">
   </div>
   {% endif %}
 </div>
+
+{# Banner pré-balizamento: bateria existe mas atletas ainda não definidos
+   (depende do resultado do dia anterior). Backend seta ev.aguardando_balizamento
+   antes de chamar render. Avisa juiz de forma clara e visível. #}
+{% if ev.aguardando_balizamento %}
+<div class="aguardando-banner" role="status">
+  <span class="aguardando-mark">⏳</span>
+  <span class="aguardando-txt">Aguardando balizamento <span class="aguardando-sub">— atletas e raias serão definidos após o resultado do dia anterior</span></span>
+</div>
+{% endif %}
 
 {# ── WORKOUT CONTENT ── #}
 {% if tipo == 'express' %}

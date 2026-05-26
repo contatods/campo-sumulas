@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.39.0'
+VERSION = '1.40.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -535,10 +535,26 @@ class SumulaHandler(BaseHTTPRequestHandler):
                         nome_arq = f"{wkt_pos:02d}_{sanitize(wkt.get('nome', 'wkt'))}.html"
                         caminho  = f"{dia_pasta}/{cat_pasta}/{nome_arq}"
 
+                        # Detecta "aguardando balizamento": existem baterias que
+                        # rodam este wkt MAS nenhuma tem atleta alocado ainda.
+                        # Caso típico do Domingo no Monstar — balizamento depende
+                        # do resultado do dia anterior. Súmula sai em branco com
+                        # banner avisando o juiz.
+                        bat_que_rodam = [
+                            b for b in baterias
+                            if not b.get('workouts_que_rodam')
+                            or wkt_pos in b.get('workouts_que_rodam', [])
+                        ]
+                        aguardando = (
+                            bool(bat_que_rodam) and not atletas
+                            and any(b.get('workouts_que_rodam') for b in bat_que_rodam)
+                        )
+                        ev_render = {**ev_local, 'aguardando_balizamento': aguardando} if aguardando else ev_local
+
                         if incluir_competidores and atletas:
-                            html = render_workout_combined(ev_local, wkt, FONTS, logo, logo_evt, atletas)
+                            html = render_workout_combined(ev_render, wkt, FONTS, logo, logo_evt, atletas)
                         else:
-                            html = render_workout(ev_local, wkt, FONTS, logo, logo_evt)
+                            html = render_workout(ev_render, wkt, FONTS, logo, logo_evt)
                         zf.writestr(caminho, html.encode('utf-8'))
                         # 'render_for_load_team_summary' fica disponível mas
                         # não é auto-acionado: no modelo atual dupla/time = 1
