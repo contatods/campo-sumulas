@@ -971,8 +971,41 @@ def _parse_atletas(wb) -> dict[str, list[Atleta]]:
     return resultado
 
 
+_DIAS_SEMANA_NORM = {
+    # PT-BR (com e sem acento)
+    'sexta': 'sexta', 'sábado': 'sábado', 'sabado': 'sábado', 'domingo': 'domingo',
+    'segunda': 'segunda', 'terça': 'terça', 'terca': 'terça',
+    'quarta': 'quarta', 'quinta': 'quinta',
+    # EN
+    'friday': 'sexta', 'saturday': 'sábado', 'sunday': 'domingo',
+    'monday': 'segunda', 'tuesday': 'terça', 'wednesday': 'quarta', 'thursday': 'quinta',
+    # Curtos comuns
+    'sex': 'sexta', 'sáb': 'sábado', 'sab': 'sábado', 'dom': 'domingo',
+}
+
+
+def _extrair_dia_de_celula(col_a: str) -> tuple[str, str]:
+    """Lê coluna A de uma linha de workout grade ('Sexta\\n29/05/2026') e
+    retorna (dia_normalizado, data). Vazio se não bater num dia conhecido."""
+    if not col_a: return ('', '')
+    primeira_linha = str(col_a).split('\n')[0].strip().lower()
+    if not primeira_linha: return ('', '')
+    # Pega só a palavra do dia (ignora data colada tipo 'Sexta 29/05')
+    palavra = re.split(r'[\s,/\-]+', primeira_linha)[0]
+    dia_norm = _DIAS_SEMANA_NORM.get(palavra, '')
+    if not dia_norm: return ('', '')
+    # Tenta extrair data (formato BR ou ISO)
+    m_data = re.search(r'(\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2})', str(col_a))
+    data = m_data.group(1) if m_data else ''
+    return (dia_norm, data)
+
+
 def _parse_excel_grade(wb, sname: str) -> dict[str, Any]:
-    """Parseia formato grade: col=categoria, linha=workout."""
+    """Parseia formato grade: col=categoria, linha=workout.
+
+    Coluna A (opcional) pode conter o dia + data da linha — workouts ganham
+    `_dia_label` e `_dia_data` pra filtragem posterior no shape multi-dia.
+    """
     ws = wb[sname]
     rows = list(ws.iter_rows(values_only=True))
     if not rows: return {"erro": "Planilha vazia"}
@@ -999,6 +1032,12 @@ def _parse_excel_grade(wb, sname: str) -> dict[str, Any]:
             if arena:
                 wkt['arena'] = arena
             wkt['modalidade'] = modalidade   # inferido do nome da categoria
+            # Coluna A: dia + data desta linha. Se presente, marca o wkt
+            # pra filtragem por dia no shape multi-dia.
+            dia_label, dia_data = _extrair_dia_de_celula(str(row[0]) if row[0] else '')
+            if dia_label:
+                wkt['_dia_label'] = dia_label
+                if dia_data: wkt['_dia_data'] = dia_data
             workouts.append(wkt)
         if workouts:
             por_categoria[cat_nome] = workouts
@@ -2026,6 +2065,8 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
     dias_resultado: list[dict[str, Any]] = []
     avisos_import: list[dict[str, str]] = []
     for dia_label in dias_detectados:
+        # dia_norm pra comparar com wkt._dia_label (sempre normalizado)
+        dia_norm_atual = _DIAS_SEMANA_NORM.get(dia_label.strip().lower(), dia_label.strip().lower())
         sname_dia = nomes_lower[dia_label.lower()]
         sname_mont = nomes_lower.get(f"{dia_label.lower()} - montagem")
         cronograma = _parse_cronograma_dia(wb[sname_dia])
@@ -2162,9 +2203,16 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                     'alocacoes': aloc,
                 })
 
+            # Filtra workouts deste dia: só os que têm _dia_label batendo
+             # com o dia atual. Workouts sem _dia_label (parser não detectou)
+             # vão pra todos os dias (compat com Excels que não usam coluna A).
+            workouts_do_dia = [
+                w for w in workouts
+                if not w.get('_dia_label') or w.get('_dia_label') == dia_norm_atual
+            ]
             cats_resultado.append({
                 'nome':      cat_grade,
-                'workouts':  workouts,
+                'workouts':  workouts_do_dia,
                 'baterias':  baterias_full,
             })
 
