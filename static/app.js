@@ -1069,6 +1069,22 @@ function gerarZIPEscopo(escopo) {
   const totalWkts = (config.dias || []).reduce((sum, d) =>
     sum + (d.categorias || []).reduce((s, c) => s + (c.workouts || []).length, 0), 0);
   if (!totalWkts) return;
+  // Eventos grandes (evento/dia) podem estourar timeout do servidor cloud e
+  // gerar um ZIP que o navegador não consegue baixar. Confirma com o usuário
+  // pra evitar "parecer que o download falhou".
+  if (escopo !== 'cat') {
+    const incluir = document.getElementById('chkIncluirCompetidores');
+    const compOn = !incluir || incluir.checked;
+    const nPag = _contagemPaginas(escopo, compOn);
+    if (nPag > 1500) {
+      const ok = confirm(
+        `Este escopo gera ~${nPag.toLocaleString('pt-BR')} páginas. ` +
+        `Em servidor cloud pode estourar o tempo limite ou criar um ZIP grande ` +
+        `demais pro navegador baixar.\n\nRecomendamos gerar por categoria.\n\nContinuar mesmo assim?`
+      );
+      if (!ok) return;
+    }
+  }
   const payload = _buildPayloadGerar(escopo);
   if (!payload) return;
   const btnIdMap = { evento: 'btnGerarEvento', dia: 'btnGerarDia', cat: 'btnGerarCat' };

@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.41.0'
+VERSION = '1.41.1'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -456,6 +456,11 @@ class SumulaHandler(BaseHTTPRequestHandler):
             # Substitui as categorias do (único) dia restante por só a escolhida
             dias = [{**dias[0], 'categorias': [cats_do_dia[cat_idx]]}]
 
+        # Roster fill em "aguardando balizamento" só quando geração é por
+        # categoria. Em evento/dia inteiro multiplicaria páginas (ex.: Monstar
+        # ~3500 páginas / ~200 MB) e estouraria o tamanho do ZIP e o timeout.
+        roster_fill_aguardando = cat_idx is not None
+
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
             for dia in dias:
@@ -551,8 +556,9 @@ class SumulaHandler(BaseHTTPRequestHandler):
                         )
                         # Quando aguardando, popula atletas do ROSTER da categoria
                         # (matched via _dia_label/categoria) com raia/bateria em
-                        # branco. Juiz preenche após balizamento. Default: ON.
-                        if aguardando and incluir_competidores and roster:
+                        # branco. Juiz preenche após balizamento. Só roda em
+                        # escopo categoria — ver roster_fill_aguardando.
+                        if aguardando and incluir_competidores and roster and roster_fill_aguardando:
                             atletas = [
                                 {'nome': r.get('nome', ''), 'box': r.get('box', ''),
                                  'raia': '', 'bateria': '', 'numero': r.get('numero', '')}
