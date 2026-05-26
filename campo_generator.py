@@ -1751,6 +1751,14 @@ PAGE_TMPL_STR = r"""<div class="page">
 """
 
 
+# Templates compilados uma vez no import — recompilar a cada página de atleta
+# custava ~115ms × N na produção (80 páginas = ~9s só de Jinja compile).
+_PAGE_TMPL = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + SCORE_BOX_MACRO
+                      + FOR_LOAD_TABLE_MACRO + PAGE_TMPL_STR, autoescape=True)
+_DOC_TMPL = Template(DOC_TMPL_STR, autoescape=True)
+_FOR_LOAD_TEAM_SUMMARY_PAGE_TMPL = Template(FOR_LOAD_TEAM_SUMMARY_TMPL, autoescape=True)
+
+
 def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
     # autoescape: nomes de evento/atleta/box/movimento são input do usuário e
     # podem conter `<`, `>`, `&` ou aspas — escapar previne quebra de layout e
@@ -1809,20 +1817,16 @@ def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
         wkt = dict(wkt)
         wkt['descricao'] = _truncar_descricao_em_notas(wkt['descricao'])
 
-    tmpl = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + SCORE_BOX_MACRO
-                    + FOR_LOAD_TABLE_MACRO + PAGE_TMPL_STR,
-                    autoescape=True)
-    return tmpl.render(ev=ev, wkt=wkt,
-                       logo_src=logo_src, logo_evento_src=logo_evento_src,
-                       atleta=atleta)
+    return _PAGE_TMPL.render(ev=ev, wkt=wkt,
+                             logo_src=logo_src, logo_evento_src=logo_evento_src,
+                             atleta=atleta)
 
 
 def render_workout(ev, wkt, fonts, logo_src, logo_evento="", atleta=None):
     """Renderiza uma súmula HTML completa (1 página) para um workout."""
     logo_evt_src = logo_evento or ""
     page = _render_page(ev, wkt, logo_src, logo_evt_src, atleta)
-    doc = Template(DOC_TMPL_STR, autoescape=True)
-    return doc.render(wkt=wkt, fonts=fonts, css=CSS, pages=[page])
+    return _DOC_TMPL.render(wkt=wkt, fonts=fonts, css=CSS, pages=[page])
 
 
 def render_for_load_team_summary(ev, wkt, fonts, logo_src, logo_evento, atletas):
@@ -1833,13 +1837,11 @@ def render_for_load_team_summary(ev, wkt, fonts, logo_src, logo_evento, atletas)
     as páginas individuais dos atletas no ZIP.
     """
     unidade = wkt.get('unidade') or ev.get('unidade_default') or 'lb'
-    page_tmpl = Template(FOR_LOAD_TEAM_SUMMARY_TMPL, autoescape=True)
-    page = page_tmpl.render(
+    page = _FOR_LOAD_TEAM_SUMMARY_PAGE_TMPL.render(
         ev=ev, wkt=wkt, atletas=atletas, unidade=unidade,
         logo_src=logo_src, logo_evento_src=logo_evento or '',
     )
-    doc = Template(DOC_TMPL_STR, autoescape=True)
-    return doc.render(wkt=wkt, fonts=fonts, css=CSS, pages=[page])
+    return _DOC_TMPL.render(wkt=wkt, fonts=fonts, css=CSS, pages=[page])
 
 
 def render_workout_combined(ev, wkt, fonts, logo_src, logo_evento, atletas):
@@ -1849,5 +1851,4 @@ def render_workout_combined(ev, wkt, fonts, logo_src, logo_evento, atletas):
     """
     logo_evt_src = logo_evento or ""
     pages = [_render_page(ev, wkt, logo_src, logo_evt_src, a) for a in atletas]
-    doc = Template(DOC_TMPL_STR, autoescape=True)
-    return doc.render(wkt=wkt, fonts=fonts, css=CSS, pages=pages)
+    return _DOC_TMPL.render(wkt=wkt, fonts=fonts, css=CSS, pages=pages)
