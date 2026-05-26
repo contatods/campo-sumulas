@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.40.0'
+VERSION = '1.41.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -425,6 +425,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
             raise BadRequest("config.dias deve ser lista não-vazia")
 
         ev       = cfg.get('evento', {}) or {}
+        roster   = cfg.get('roster') or []
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
         logo_evt = ev.get('logo_evento', '')
         incluir_competidores = bool(body.get('incluir_competidores', True))
@@ -538,8 +539,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
                         # Detecta "aguardando balizamento": existem baterias que
                         # rodam este wkt MAS nenhuma tem atleta alocado ainda.
                         # Caso típico do Domingo no Monstar — balizamento depende
-                        # do resultado do dia anterior. Súmula sai em branco com
-                        # banner avisando o juiz.
+                        # do resultado do dia anterior.
                         bat_que_rodam = [
                             b for b in baterias
                             if not b.get('workouts_que_rodam')
@@ -549,6 +549,16 @@ class SumulaHandler(BaseHTTPRequestHandler):
                             bool(bat_que_rodam) and not atletas
                             and any(b.get('workouts_que_rodam') for b in bat_que_rodam)
                         )
+                        # Quando aguardando, popula atletas do ROSTER da categoria
+                        # (matched via _dia_label/categoria) com raia/bateria em
+                        # branco. Juiz preenche após balizamento. Default: ON.
+                        if aguardando and incluir_competidores and roster:
+                            atletas = [
+                                {'nome': r.get('nome', ''), 'box': r.get('box', ''),
+                                 'raia': '', 'bateria': '', 'numero': r.get('numero', '')}
+                                for r in roster
+                                if (r.get('categoria') or '').strip() == cat_nome.strip()
+                            ]
                         ev_render = {**ev_local, 'aguardando_balizamento': aguardando} if aguardando else ev_local
 
                         if incluir_competidores and atletas:
