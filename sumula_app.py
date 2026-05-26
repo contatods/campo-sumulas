@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.42.1'
+VERSION = '1.43.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -545,7 +545,9 @@ class SumulaHandler(BaseHTTPRequestHandler):
                             for c in competidores
                         ]
 
-                        nome_arq = f"{wkt_pos:02d}_{sanitize(wkt.get('nome', 'wkt'))}.html"
+                        # Filename usa o numero GLOBAL por categoria (bate com badge da súmula).
+                        wkt_num_global = wkt.get('numero') or wkt_pos
+                        nome_arq = f"{wkt_num_global:02d}_{sanitize(wkt.get('nome', 'wkt'))}.html"
                         caminho  = f"{dia_pasta}/{cat_pasta}/{nome_arq}"
 
                         # Detecta "aguardando balizamento": existem baterias que
@@ -698,6 +700,9 @@ class SumulaHandler(BaseHTTPRequestHandler):
             self._send(400, 'application/json; charset=utf-8',
                        json.dumps({"error": result.get('erro', 'formato não reconhecido')}).encode('utf-8'))
             return
+        # Numeração contínua por categoria atravessando dias — já vem assignada
+        # pro frontend usar na sidebar e no editor, sem precisar recomputar.
+        assign_workout_numbers_global(result.get('dias') or [])
         self._send(200, 'application/json; charset=utf-8',
                    json.dumps(result, ensure_ascii=False).encode('utf-8'))
 

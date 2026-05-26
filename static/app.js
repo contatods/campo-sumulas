@@ -124,6 +124,31 @@ function fecharConfig() {
   setDialogOpen('configModal', false);
 }
 
+// Numera workouts em sequência contínua por categoria atravessando dias.
+// Mutação in-place em config.dias[*].categorias[*].workouts[*].numero (e
+// numero_f2 pro Express). Mesma lógica do backend assign_workout_numbers_global.
+function assignWorkoutNumbersGlobal() {
+  const dias = (config && config.dias) || [];
+  const counters = {};
+  for (const dia of dias) {
+    for (const cat of (dia.categorias || [])) {
+      const nome = (cat.nome || '').trim();
+      let counter = counters[nome] || 1;
+      for (const wkt of (cat.workouts || [])) {
+        wkt.numero = counter;
+        if (wkt.tipo === 'express') {
+          wkt.numero_f2 = counter + 1;
+          counter += 2;
+        } else {
+          delete wkt.numero_f2;
+          counter += 1;
+        }
+      }
+      counters[nome] = counter;
+    }
+  }
+}
+
 // ─── Modal de ajuda / manual ────────────────────────────────────────────────
 function abrirAjuda() {
   setDialogOpen('ajudaModal', true);
@@ -825,6 +850,9 @@ function removerCategoria(ci) {
 }
 
 function renderCategoriaDetalhe(cat, ci) {
+  // Garante que numero global (contínuo na categoria atravessando dias) está
+  // atualizado antes de renderizar — barato e idempotente.
+  assignWorkoutNumbersGlobal();
   const workouts = cat.workouts || [];
   const baterias = cat.baterias || [];
 
@@ -832,9 +860,11 @@ function renderCategoriaDetalhe(cat, ci) {
     ? workouts.map((w, wi) => {
         const isActive = previewPath && previewPath.dia === diaAtual && previewPath.cat === ci && previewPath.wkt === wi;
         const tipoLabel = TIPO_LABEL[w.tipo] || w.tipo;
+        const numDisplay = w.numero || (wi + 1);
+        const numStr = (w.tipo === 'express' && w.numero_f2) ? `${numDisplay}-${w.numero_f2}` : String(numDisplay);
         return `
         <div class="wkt-row${isActive ? ' active' : ''}" onclick="selectWorkout(${ci}, ${wi})">
-          <div class="wkt-row-num">${wi + 1}</div>
+          <div class="wkt-row-num">${numStr}</div>
           <div class="wkt-row-info">
             <div class="wkt-row-nome">${esc(w.nome || '—')}</div>
             <div class="wkt-row-tags"><span class="tag ${w.tipo}">${esc(tipoLabel)}</span>${w.time_cap ? ` <span class="tag">${esc(w.time_cap)}</span>` : ''}${w.arena ? ` <span class="tag">${esc(w.arena)}</span>` : ''}</div>
@@ -1174,7 +1204,10 @@ function editarWorkout(ci, wi) {
   const w = cats[ci] && cats[ci].workouts[wi];
   if (!w) return;
   editingPath = { dia: diaAtual, cat: ci, wkt: wi };
-  document.getElementById('edTitle').textContent = `Workout ${wi + 1} · ${esc(cats[ci].nome)}`;
+  assignWorkoutNumbersGlobal();
+  const wNum = w.numero || (wi + 1);
+  const wNumStr = (w.tipo === 'express' && w.numero_f2) ? `${wNum}-${w.numero_f2}` : String(wNum);
+  document.getElementById('edTitle').textContent = `Workout ${wNumStr} · ${esc(cats[ci].nome)}`;
   document.getElementById('edNome').value = w.nome || '';
   document.getElementById('edTipo').value = w.tipo || 'for_time';
   document.getElementById('edTimeCap').value = w.time_cap || '';
