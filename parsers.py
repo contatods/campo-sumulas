@@ -1612,6 +1612,36 @@ def _workout_numero_de_codigo(codigo: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _workouts_que_rodam_da_bateria(codigo_evento: str, workouts: list[dict]) -> list[int]:
+    """Mapeia o codigo_evento de uma bateria pra lista de posições 1-based
+    de workouts da categoria. Aceita 3 formas:
+      1. Nº direto: '#1', '#2 & #3', 'WKT 4'  → match por número
+      2. Nome do workout entre aspas: '"Simple Dimension"'  → match por nome
+      3. Misto: '"Simple Dimension" & "Spin"'  → split por & + match por nome
+    Retorna [] se nada bateu.
+    """
+    if not codigo_evento or not workouts:
+        return []
+    # Split em '&' pra suportar baterias mistas (workout A & workout B)
+    partes = _split_codigo_evento(codigo_evento) or [codigo_evento]
+    posicoes: list[int] = []
+    for p in partes:
+        # Forma 1: '#N' / 'WKT N'
+        n = _workout_numero_de_codigo(p)
+        if n is not None:
+            if n not in posicoes: posicoes.append(n)
+            continue
+        # Forma 2: nome do workout (entre aspas ou não) — match case-insensitive
+        nome_busca = p.strip().strip('"“”\'').upper()
+        if not nome_busca: continue
+        for idx, w in enumerate(workouts, start=1):
+            nome_w = (w.get('nome', '') or '').strip().upper()
+            if nome_w and nome_w == nome_busca:
+                if idx not in posicoes: posicoes.append(idx)
+                break
+    return posicoes
+
+
 def _roster_individuais(wb) -> list[dict[str, str]]:
     """Lê a aba `Atletas` (roster informativo): número, nome, box."""
     if 'Atletas' not in wb.sheetnames:
@@ -2101,6 +2131,14 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             ):
                 continue
 
+            # Workouts deste DIA específico (filtra wkts da grade pelo _dia_label).
+            # Usado tanto pra match de codigo_evento (nome do workout) quanto pra
+            # popular cats_resultado.
+            workouts_do_dia = [
+                w for w in workouts
+                if not w.get('_dia_label') or w.get('_dia_label') == dia_norm_atual
+            ]
+
             baterias_da_cat = [
                 b for b in cronograma
                 if _bateria_casa_categoria(b.get('categoria', ''), cat_grade_norm,
@@ -2189,13 +2227,12 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                             })
 
                 codigo_final = b.get('codigo_evento') or codigo_montagem
-                codigos_finais = _split_codigo_evento(codigo_final) or (
-                    [codigo_final] if codigo_final else []
-                )
-                workouts_que_rodam = [
-                    n for n in (_workout_numero_de_codigo(c) for c in codigos_finais)
-                    if n is not None
-                ]
+                # workouts_do_dia já está filtrado por dia (após v1.38). Mapeia
+                # codigo_evento → posição 1-based no array de workouts da cat.
+                # Suporta '#N', 'WKT N' e nome do workout entre aspas
+                # ('"Simple Dimension"') — comum no formato Monstar.
+                workouts_que_rodam = _workouts_que_rodam_da_bateria(
+                    codigo_final, workouts_do_dia)
                 baterias_full.append({
                     **b,
                     'codigo_evento': codigo_final,
@@ -2203,13 +2240,6 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                     'alocacoes': aloc,
                 })
 
-            # Filtra workouts deste dia: só os que têm _dia_label batendo
-             # com o dia atual. Workouts sem _dia_label (parser não detectou)
-             # vão pra todos os dias (compat com Excels que não usam coluna A).
-            workouts_do_dia = [
-                w for w in workouts
-                if not w.get('_dia_label') or w.get('_dia_label') == dia_norm_atual
-            ]
             cats_resultado.append({
                 'nome':      cat_grade,
                 'workouts':  workouts_do_dia,
