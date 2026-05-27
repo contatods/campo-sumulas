@@ -1088,15 +1088,15 @@ MOV_TABLE_MACRO = r"""
         {% if tb_col %}<div class="mr-tb"></div>{% endif %}
       </div>
     {% elif mov.goal %}
-      {# Linha do movimento alvo (goal): badge + nome + carga, SEM caixa
-         por instância. Juiz registra o total agregado no score box. Cum
-         não soma — o workout encerra ao bater o goal total. #}
+      {# Linha do movimento alvo (goal): badge + nome + carga, com caixa
+         branca de reps ATIVA — juiz conta reps daquela PART durante o
+         workout. Total agregado das PARTs também vai no score box do rodapé. #}
       <div class="mov-row mov-row-goal">
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
           <span class="mr-goal-badge">🎯 GOAL</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
         </div>
-        <div class="mr-reps mr-cum-dash">—</div>
+        <div class="mr-reps mr-reps-empty"><div class="mr-reps-empty-box"></div></div>
         {% if not hide_cum %}<div class="mr-cum mr-cum-dash">—</div>{% endif %}
         {% if tb_col %}<div class="mr-tb"></div>{% endif %}
       </div>

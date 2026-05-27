@@ -1601,6 +1601,9 @@ function getMovTableArray(section) {
       // Progressivo: checkbox 'PG' marca mov pra ter reps crescentes por round
       const pgBox = row.querySelector('.mi-pg');
       if (pgBox && pgBox.checked) mov.progressivo = true;
+      // Goal: checkbox 'GOAL' marca mov como alvo de reps acumuladas (For Time Goal)
+      const goalBox = row.querySelector('.mi-goal');
+      if (goalBox && goalBox.checked) mov.goal = true;
       arr.push(mov);
     }
   });
@@ -1650,6 +1653,10 @@ function appendMovRow(section, mov) {
       <label class="mi-tb-wrap mi-pg-wrap" title="Progressivo: reps deste movimento crescem por round (AMRAP/EMOM)" aria-label="Movimento progressivo">
         <input type="checkbox" class="mi-pg" ${mov.progressivo ? 'checked' : ''}>
         <span>PG</span>
+      </label>
+      <label class="mi-tb-wrap mi-goal-wrap" title="Goal: movimento alvo de reps acumuladas (For Time Goal — Simple Dimension/Mind)" aria-label="Movimento goal">
+        <input type="checkbox" class="mi-goal" ${mov.goal ? 'checked' : ''}>
+        <span>GOAL</span>
       </label>
       <div class="mi-ctrl">${ctrlBtns(section)}</div>`;
   }
