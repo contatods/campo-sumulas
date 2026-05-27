@@ -107,7 +107,7 @@ CSS = """
   --panel: #181818;
   --dk:    #3A3A3A;
   --mid:   #545454;
-  --ghost: #787878;
+  --ghost: #6B6B6B;   /* ratio 5.5:1 sobre branco — WCAG AA confortável (era 4.5 borderline) */
   --text3: #6B6B6B;   /* texto secundário (ratio 5.5:1 sobre branco — AA confortável) */
   --rule:  #A0A0A0;
   --paper: #E4E4E4;
@@ -1066,6 +1066,9 @@ body{
   body{margin:0}
   .a4-marker{display:none!important}
   .mov-wrap,.prekit,.score-box,.score-box-dual,.sign-zone,.obs-box,.amrap-wrap,.fl-zone{page-break-inside:avoid}
+  /* goal-score-note: regra oficial — não pode quebrar do score-box que ela
+     interpreta. break-before:avoid força colagem na página anterior. */
+  .goal-score-note{page-break-inside:avoid;break-before:avoid;page-break-before:avoid}
 }
 """
 
@@ -1427,14 +1430,14 @@ FOR_LOAD_TEAM_SUMMARY_TMPL = r"""<div class="page">
 {# ── HEADER ── #}
 <div class="hdr">
   <div class="hdr-logo-col">
-    {% if logo_src %}<img class="hdr-logo" src="{{ logo_src }}">{% endif %}
+    {% if logo_src %}<img class="hdr-logo" src="{{ logo_src }}" alt="Digital Score">{% endif %}
   </div>
   <div class="hdr-body">
     <div class="hdr-event">{{ ev.nome|upper }}</div>
     {% if ev.categoria %}<div class="hdr-cat">{{ ev.categoria|upper }} · RESUMO DO TIME</div>{% endif %}
   </div>
   <div class="hdr-evento-col">
-    {% if logo_evento_src %}<img class="hdr-evento-logo" src="{{ logo_evento_src }}">{% endif %}
+    {% if logo_evento_src %}<img class="hdr-evento-logo" src="{{ logo_evento_src }}" alt="{{ ev.nome|default('Evento') }}">{% endif %}
     {% if ev.data %}<div class="hdr-evento-date">{{ ev.data }}</div>{% endif %}
   </div>
 </div>
@@ -1680,7 +1683,7 @@ PAGE_TMPL_STR = r"""<div class="page">
 {# ── HEADER ── #}
 <div class="hdr">
   <div class="hdr-logo-col">
-    {% if logo_src %}<img class="hdr-logo" src="{{ logo_src }}">{% endif %}
+    {% if logo_src %}<img class="hdr-logo" src="{{ logo_src }}" alt="Digital Score">{% endif %}
   </div>
   <div class="hdr-body">
     <div class="hdr-event">
@@ -1689,7 +1692,7 @@ PAGE_TMPL_STR = r"""<div class="page">
     {% if ev.categoria %}<div class="hdr-cat">{{ ev.categoria|upper }}</div>{% endif %}
   </div>
   <div class="hdr-evento-col">
-    {% if logo_evento_src %}<img class="hdr-evento-logo" src="{{ logo_evento_src }}">{% endif %}
+    {% if logo_evento_src %}<img class="hdr-evento-logo" src="{{ logo_evento_src }}" alt="{{ ev.nome|default('Evento') }}">{% endif %}
     {% if wkt.data or ev.data %}<div class="hdr-evento-date">{{ wkt.data or ev.data }}</div>{% endif %}
   </div>
 </div>
