@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.48.3'
+VERSION = '1.48.4'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -597,11 +597,16 @@ class SumulaHandler(BaseHTTPRequestHandler):
                             bool(bat_que_rodam) and not atletas
                             and any(b.get('workouts_que_rodam') for b in bat_que_rodam)
                         )
-                        # Quando aguardando, popula atletas do ROSTER da categoria
-                        # (matched via _dia_label/categoria) com raia/bateria em
-                        # branco. Juiz preenche após balizamento. Só roda em
-                        # escopo categoria — ver roster_fill_aguardando.
-                        if aguardando and incluir_competidores and roster and roster_fill_aguardando:
+                        # Aguardando balizamento: SEMPRE popula atletas do roster da
+                        # categoria (com raia/bateria em branco pro juiz preencher),
+                        # independente do toggle 'Incluir competidores'. O toggle
+                        # serve pra gerar súmulas em branco com atletas alocados
+                        # (uso de fotocópia); em categoria aguardando não há atleta
+                        # alocado pra ocultar — sem o roster, a súmula sai inútil.
+                        roster_fill_ativo = (
+                            aguardando and roster and roster_fill_aguardando
+                        )
+                        if roster_fill_ativo:
                             atletas = [
                                 {'nome': r.get('nome', ''), 'box': r.get('box', ''),
                                  'raia': '', 'bateria': '', 'numero': r.get('numero', '')}
@@ -610,7 +615,10 @@ class SumulaHandler(BaseHTTPRequestHandler):
                             ]
                         ev_render = {**ev_local, 'aguardando_balizamento': aguardando} if aguardando else ev_local
 
-                        if incluir_competidores and atletas:
+                        # Combined renderiza atletas; render simples = página em branco.
+                        # roster_fill_ativo bypassa o toggle pra preservar os nomes
+                        # da regra "aguardando".
+                        if atletas and (incluir_competidores or roster_fill_ativo):
                             html = render_workout_combined(ev_render, wkt, FONTS, logo, logo_evt, atletas)
                         else:
                             html = render_workout(ev_render, wkt, FONTS, logo, logo_evt)
