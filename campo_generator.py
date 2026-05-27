@@ -507,7 +507,9 @@ body{
     var(--rule) 4px,var(--rule) 5px);
 }
 .aguardando-mark{
-  font-size:13pt;flex-shrink:0;line-height:1;
+  font-size:8pt;font-weight:900;flex-shrink:0;line-height:1;
+  background:var(--ink);color:var(--w);
+  padding:1mm 2mm;border-radius:2px;letter-spacing:.1em;
 }
 .aguardando-txt{
   font-size:9pt;font-weight:900;color:var(--ink);
@@ -528,7 +530,6 @@ body{
 }
 .goal-banner-sub{font-size:6pt;font-weight:400;letter-spacing:.04em;
   text-transform:none;color:rgba(255,255,255,.65);margin-left:auto}
-.gb-icon{font-size:10pt;margin-right:1mm}
 .gb-mark{background:var(--w);color:var(--ink);padding:.6mm 2mm;
   border-radius:2px;font-weight:900;font-size:7.5pt;letter-spacing:.1em}
 .gb-target{font-size:11pt;font-weight:900}
@@ -581,6 +582,13 @@ body{
 .goal-score-note{
   font-size:6.5pt;font-style:italic;color:var(--text3);
   margin:1.5mm 0 0;padding:0 1mm;text-align:right;
+}
+.gsn-mark{
+  display:inline-block;background:var(--ink);color:var(--w);
+  width:3.5mm;height:3.5mm;border-radius:50%;
+  font-size:6.5pt;font-weight:900;font-style:normal;
+  text-align:center;line-height:3.5mm;margin-right:1mm;
+  vertical-align:middle;
 }
 
 /* Movimento sem reps prescritas (max snatch etc): caixinhas brancas
@@ -1110,7 +1118,7 @@ MOV_TABLE_MACRO = r"""
       <div class="mov-row mov-row-goal">
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
-          <span class="mr-goal-badge">🎯 GOAL</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
+          <span class="mr-goal-badge">GOAL</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
         </div>
         <div class="mr-reps mr-reps-empty"><div class="mr-reps-empty-box"></div></div>
         {% if not hide_cum %}<div class="mr-cum mr-cum-dash">—</div>{% endif %}
@@ -1328,7 +1336,7 @@ SCORE_BOX_MACRO = r"""
     <span class="sb-tc-sub">marcar se atingido</span>
   </div>
 </div>
-<div class="goal-score-note">⚠ Não finalizou? Score = time cap + 1s por rep faltante do goal.</div>
+<div class="goal-score-note"><span class="gsn-mark">!</span> Não finalizou? Score = time cap + 1s por rep faltante do goal.</div>
 {% elif tipo == 'amrap' %}
 <div class="score-section">
   <span class="sc-t">Resultado</span>
@@ -1752,7 +1760,7 @@ PAGE_TMPL_STR = r"""<div class="page">
    antes de chamar render. Avisa juiz de forma clara e visível. #}
 {% if ev.aguardando_balizamento %}
 <div class="aguardando-banner" role="status">
-  <span class="aguardando-mark">⏳</span>
+  <span class="aguardando-mark">PENDENTE</span>
   <span class="aguardando-txt">Aguardando balizamento <span class="aguardando-sub">— atletas e raias serão definidos após o resultado do dia anterior</span></span>
 </div>
 {% endif %}
@@ -1800,7 +1808,6 @@ PAGE_TMPL_STR = r"""<div class="page">
     {# Banner For Time Goal v2: visual distinto, com carga e mensagem clara
        de que ao bater o goal o atleta corre pra chegada. #}
     <div class="goal-banner">
-      <span class="gb-icon">🎯</span>
       <span class="gb-mark">GOAL</span>
       <span class="gb-target">{{ wkt.goal_reps or '?' }}</span>
       <span class="gb-mov">{{ wkt.goal_movimento or 'reps' }}</span>
