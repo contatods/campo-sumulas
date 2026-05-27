@@ -524,6 +524,29 @@ body{
 }
 .goal-banner-sub{font-size:6pt;font-weight:400;letter-spacing:.04em;
   text-transform:none;color:rgba(255,255,255,.65);margin-left:auto}
+.gb-icon{font-size:10pt;margin-right:1mm}
+.gb-mark{background:var(--w);color:var(--ink);padding:.6mm 2mm;
+  border-radius:2px;font-weight:900;font-size:7.5pt;letter-spacing:.1em}
+.gb-target{font-size:11pt;font-weight:900}
+.gb-mov{font-size:9pt;font-weight:900}
+.gb-carga{font-size:8pt;font-weight:700;color:rgba(255,255,255,.75)}
+
+/* Linha de movimento Goal: tag visual, sem caixa de reps (juiz preenche
+   total agregado no score box). Cum não soma — workout "termina" no goal. */
+.mov-row-goal{background:var(--field)}
+.mr-goal-badge{
+  display:inline-block;background:var(--ink);color:var(--w);
+  padding:.4mm 1.6mm;border-radius:2px;font-size:6.5pt;font-weight:900;
+  letter-spacing:.1em;margin-right:2mm;vertical-align:1px;
+}
+.mr-cum-dash{text-align:center;color:var(--text3);font-weight:700}
+
+/* Nota abaixo do score box em For Time Goal: regra de penalidade por rep
+   faltante quando não finaliza. */
+.goal-score-note{
+  font-size:6.5pt;font-style:italic;color:var(--text3);
+  margin:1.5mm 0 0;padding:0 1mm;text-align:right;
+}
 
 /* Movimento sem reps prescritas (max snatch etc): caixinhas brancas
    escrevíveis no lugar do número de reps e do acumulado. */
@@ -1034,6 +1057,18 @@ MOV_TABLE_MACRO = r"""
         <div class="mr-reps">1</div>
         <div class="mr-cum">{{ ns.cum }}</div>
       </div>
+    {% elif mov.goal %}
+      {# Linha do movimento alvo (goal): badge + nome + carga, SEM caixa
+         por instância. Juiz registra o total agregado no score box. Cum
+         não soma — o workout encerra ao bater o goal total. #}
+      <div class="mov-row mov-row-goal">
+        {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
+        <div class="mr-name">
+          <span class="mr-goal-badge">🎯 GOAL</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
+        </div>
+        <div class="mr-reps mr-cum-dash">—</div>
+        <div class="mr-cum mr-cum-dash">—</div>
+      </div>
     {% else %}
       {% set ns.cum = ns.cum + (mov.reps | default(0)) %}
       <div class="mov-row{% if mov.paralelo %} mov-row-paralelo{% endif %}{% if mov.reps is not defined %} mov-row-flex{% endif %}">
@@ -1212,6 +1247,37 @@ SCORE_BOX_MACRO = r"""
     <span class="sb-tc-sub">marcar se atingido</span>
   </div>
 </div>
+{% elif tipo == 'for_time_goal' %}
+<div class="score-section">
+  <span class="sc-t">Resultado</span>
+  <span class="sc-s">Tempo se completou — ou reps acumuladas do goal se não</span>
+</div>
+<div class="score-box">
+  <div class="sb-lbl-col">
+    <span class="sb-lbl-tag">For Time Goal</span>
+    <span class="sb-lbl-name">Pontuação</span>
+  </div>
+  <div class="sb-field sb-field-tempo">
+    <span class="sb-field-lbl">Tempo Final <span class="sb-field-sub">se completou</span></span>
+    <div class="sb-field-line"></div>
+  </div>
+  <div class="sb-field sb-field-reps">
+    <span class="sb-field-lbl">Reps Goal Total <span class="sb-field-sub">se não completou</span></span>
+    <div class="sb-field-line"></div>
+  </div>
+  {% if tb_text %}
+  <div class="sb-field sb-field-tb">
+    <span class="sb-field-lbl">Tie-break <span class="sb-field-sub">{{ tb_text }}</span></span>
+    <div class="sb-field-line"></div>
+  </div>
+  {% endif %}
+  <div class="sb-tc-col">
+    <div class="sb-tc-box"></div>
+    <span class="sb-tc-lbl">Time Cap</span>
+    <span class="sb-tc-sub">marcar se atingido</span>
+  </div>
+</div>
+<div class="goal-score-note">⚠ Não finalizou? Score = time cap + 1s por rep faltante do goal.</div>
 {% elif tipo == 'amrap' %}
 <div class="score-section">
   <span class="sc-t">Resultado</span>
@@ -1679,7 +1745,19 @@ PAGE_TMPL_STR = r"""<div class="page">
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
   {# For Time tipo Simple Dimension/Mind — alvo de reps total declarado.
      Atleta distribui reps livremente entre blocos; juiz conta por bloco. #}
-  {% if wkt.goal_reps %}
+  {% if tipo == 'for_time_goal' %}
+    {# Banner For Time Goal v2: visual distinto, com carga e mensagem clara
+       de que ao bater o goal o atleta corre pra chegada. #}
+    <div class="goal-banner">
+      <span class="gb-icon">🎯</span>
+      <span class="gb-mark">GOAL</span>
+      <span class="gb-target">{{ wkt.goal_reps or '?' }}</span>
+      <span class="gb-mov">{{ wkt.goal_movimento or 'reps' }}</span>
+      {% if wkt.goal_carga %}<span class="gb-carga">@ {{ wkt.goal_carga|upper }}</span>{% endif %}
+      <span class="goal-banner-sub">+ rep de chegada · ao bater o goal, corra pra linha</span>
+    </div>
+  {% elif wkt.goal_reps %}
+    {# Legado: For Time com goal_reps mas sem tipo explícito for_time_goal #}
     <div class="goal-banner">
       Alvo · {{ wkt.goal_reps }} {{ wkt.goal_movimento or 'reps' }} + Chegada
       <span class="goal-banner-sub">distribuído livremente · juiz conta reps por bloco</span>

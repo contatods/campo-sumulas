@@ -47,7 +47,7 @@ class Workout(TypedDict, total=False):
     numero: int
     numero_f2: int      # Express ocupa 2 slots (numero e numero_f2)
     nome: str
-    tipo: str           # 'for_time' | 'amrap' | 'express' | 'for_load' (cf. WORKOUT_TIPOS)
+    tipo: str           # 'for_time' | 'for_time_goal' | 'amrap' | 'express' | 'for_load' (cf. WORKOUT_TIPOS)
     estilo: str         # alias de tipo, mantido por compat com template
     modalidade: str     # 'individual' | 'dupla' | 'time'
     time_cap: str
@@ -72,6 +72,10 @@ class Workout(TypedDict, total=False):
     emom_rounds: int              # nº de rounds EMOM
     tiebreak_por_round: bool      # mostra campo de tiebreak em cada round
     paralelo: bool                # quando movimento é executado simultaneamente
+    # For Time Goal (Simple Dimension / Simple Mind):
+    goal_reps: int                # alvo total de reps acumuladas pra liberar chegada
+    goal_movimento: str           # nome do movimento alvo (ex 'SNATCHES')
+    goal_carga: str               # carga do movimento alvo (ex '75 LB', '75/55 LB')
 
 
 class Evento(TypedDict, total=False):

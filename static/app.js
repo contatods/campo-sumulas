@@ -30,7 +30,7 @@ const SCHEMA_VERSION = 3;
 // Evento ativo no momento. ID é gerado quando o evento é criado/migrado.
 let eventoAtivoId = null;
 
-const TIPO_LABEL = { for_time: 'For Time', amrap: 'AMRAP', express: 'Express', for_load: 'For Load' };
+const TIPO_LABEL = { for_time: 'For Time', for_time_goal: 'For Time Goal', amrap: 'AMRAP', express: 'Express', for_load: 'For Load' };
 
 // API token opcional pra deploy público. Quando o backend tem
 // CAMPOSUMULAS_TOKEN setado, ele exige header 'X-Api-Token' em todo POST.

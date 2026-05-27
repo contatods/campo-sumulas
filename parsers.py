@@ -424,9 +424,10 @@ def _detectar_directives(full: str, lines: list[str], wkt: Workout) -> None:
 
     # Goal de For Time tipo Simple Dimension/Mind. Para ANTES de '+', 'and',
     # dígitos extras, palavras-chave de chegada — evita capturar combos longos.
+    # `[\w\-/.]` inclui ponto pra capturar "Sync. Snatches" inteiro (trios).
     m_goal = re.search(
         r'(?:goal|objetivo|alvo)\s*[:\-]?\s*(\d+)\s+'
-        r'((?:[A-Za-zÀ-ú][\w\-/]*)(?:\s+(?!\+|and\b|e\b|&|\d|finishing|chegada|cross)[A-Za-zÀ-ú][\w\-/]*){0,3})',
+        r'((?:[A-Za-zÀ-ú][\w\-/.]*)(?:\s+(?!\+|and\b|e\b|&|\d|finishing|chegada|cross)[A-Za-zÀ-ú][\w\-/.]*){0,3})',
         full, re.I)
     if m_goal:
         n = _safe_int(m_goal.group(1))
@@ -434,6 +435,21 @@ def _detectar_directives(full: str, lines: list[str], wkt: Workout) -> None:
         nome_mov = m_goal.group(2).strip().upper()
         nome_mov = re.sub(r'\s*(?:\+|and|e|&)\s.*$', '', nome_mov, flags=re.I).strip()
         wkt["goal_movimento"] = nome_mov
+
+    # Tipo for_time_goal: detecta padrão literal "Goal: N X + finishing rep"
+    # (Simple Dimension / Simple Mind). Só promove se já era for_time — não
+    # mexe em AMRAP/Express/For Load mesmo que tenham palavra "goal" solta.
+    if (wkt.get("tipo") == "for_time"
+        and re.search(r'\bgoal\s*[:\-]\s*\d+.*?(?:finishing\s+rep|cross\s+the\s+line)',
+                      full, re.I)):
+        wkt["tipo"] = "for_time_goal"
+        # Carga do goal: primeira linha 'Max <mov> (carga)' que aparecer.
+        for line in lines:
+            m_max = re.search(
+                r'\bmax\b\s+[A-Za-zÀ-ú][\w\s\-/.]+?\s*\(([^)]+)\)', line, re.I)
+            if m_max:
+                wkt["goal_carga"] = m_max.group(1).strip()
+                break
 
     # Último round vira MAX / AMRAP
     if (re.search(r'(?:last|[úu]ltimo|final)\s+round\s+(?:is\s+)?(?:max|amrap)', full, re.I)
@@ -529,11 +545,17 @@ def _tentar_flex_mov(line_clean: str, has_seps: bool,
     (sem reps líderes). Filtro estrito pra não pegar notas/regulamento."""
     if re.match(r'^\d', line_clean.strip()): return None   # tem reps — não é flex
     nome_raw = line_clean.strip()
-    palavras = nome_raw.split()
-    # 1-5 palavras; sem pontuação final (frases têm); sem bullet de lista;
+    # Conta palavras IGNORANDO parênteses (carga "(75lb/55lb)", "(2 athletes)")
+    # pra não desclassificar movs legítimos tipo "Max Sync. Snatches (75lb) (2 athletes)".
+    nome_para_contar = re.sub(r'\s*\([^)]*\)', '', nome_raw).strip()
+    palavras = nome_para_contar.split()
+    # Limite: 5 palavras normalmente, até 10 se for combo "X + Y" (Simple
+    # Dimension trio: "Max Sync. Wall-Ball Shots + Dumbbell Front Squats").
+    max_palavras = 10 if '+' in nome_para_contar else 5
+    # Restrições: sem pontuação final (frases têm); sem bullet de lista;
     # não pode ser header de seção tipo 'Part 1 (0:00-6:00)' nem ter janela
     # de tempo entre parens (sinal forte de header informativo).
-    if not (1 <= len(palavras) <= 5
+    if not (1 <= len(palavras) <= max_palavras
             and not nome_raw.endswith(('.', ':', '!', '?', ';'))
             and not nome_raw.startswith(('-', '*', '•', '→'))
             and not _SECTION_HEADER_RE.match(nome_raw)
@@ -541,7 +563,21 @@ def _tentar_flex_mov(line_clean: str, has_seps: bool,
             and not _FRASE_NAO_MOVIMENTO_RE.search(nome_raw)
             and not _NOTA_LIKELY_RE.search(nome_raw)):
         return None
-    nome_limpo, carga = _extrair_carga(nome_raw.upper())
+    # Strip sufixo "(N athletes)" / "(N athlete to completion)" / "(two dumbbells)"
+    # antes da carga — trios encadeiam "(75lb/55lb) (2 athletes)", senão a carga
+    # não fica no final. Faz múltiplas passadas pra cobrir sufixos empilhados.
+    nome_pre_carga = nome_raw
+    for _ in range(3):
+        novo = re.sub(
+            r'\s*\(\s*(?:\d+\s+athletes?\b[^)]*|two\s+dumbbells?|one\s+dumbbell)\s*\)\s*$',
+            '', nome_pre_carga, flags=re.I).strip()
+        if novo == nome_pre_carga: break
+        nome_pre_carga = novo
+    # Normaliza "75lb/55lb" → "75/55 lb" pra _CARGA_END_RE casar o par M/F
+    nome_pre_carga = re.sub(
+        r'(\d+(?:[.,]\d+)?)\s*(kg|lb|lbs|#|pood)\s*/\s*(\d+(?:[.,]\d+)?)\s*\2',
+        r'\1/\3 \2', nome_pre_carga, flags=re.I)
+    nome_limpo, carga = _extrair_carga(nome_pre_carga.upper())
     if not nome_limpo or len(nome_limpo) < 3: return None
     mov: Movimento = {"nome": nome_limpo}
     if carga: mov["carga"] = carga
@@ -609,11 +645,19 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     movs, time_cap = _parse_movimentos(lines_movs, wkt)
     if time_cap: wkt["time_cap"] = time_cap
 
-    # 5) For Time fecha com chegada; aplica progressão nos marcados
-    if wkt["tipo"] == "for_time" and movs:
+    # 5) For Time / For Time Goal fecham com chegada; aplica progressão nos marcados
+    if wkt["tipo"] in ("for_time", "for_time_goal") and movs:
         movs.append({"chegada": True})
     wkt["movimentos"] = movs
     _aplicar_progressao_reps(wkt)
+
+    # 6) For Time Goal: marca linhas que começam com "Max <X>" como goal:true.
+    # Render usa pra renderizar badge GOAL e omitir checkbox de reps.
+    if wkt["tipo"] == "for_time_goal":
+        for mov in wkt["movimentos"]:
+            nome_up = (mov.get("nome") or "").upper().strip()
+            if nome_up.startswith("MAX "):
+                mov["goal"] = True
     return wkt
 
 
