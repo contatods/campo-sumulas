@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.45.1'
+VERSION = '1.45.2'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -462,10 +462,13 @@ class SumulaHandler(BaseHTTPRequestHandler):
             # Substitui as categorias do (único) dia restante por só a escolhida
             dias = [{**dias[0], 'categorias': [cats_do_dia[cat_idx]]}]
 
-        # Roster fill em "aguardando balizamento" só quando geração é por
-        # categoria. Em evento/dia inteiro multiplicaria páginas (ex.: Monstar
-        # ~3500 páginas / ~200 MB) e estouraria o tamanho do ZIP e o timeout.
-        roster_fill_aguardando = cat_idx is not None
+        # Roster fill em "aguardando balizamento": habilitado quando qualquer
+        # filtro (dia ou categoria) está ativo. Em escopo dia ainda pode gerar
+        # muitas páginas (Monstar Sábado: ~1300 páginas / ~80MB / ~2min) mas é
+        # o que o juiz pede quando marca 'incluir competidores'. Frontend já
+        # mostra confirm dialog acima de 1500 páginas. Evento inteiro continua
+        # bloqueado (3000+ páginas estouram timeout do Render).
+        roster_fill_aguardando = dia_idx is not None or cat_idx is not None
 
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
