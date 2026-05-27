@@ -671,7 +671,40 @@ def parse_workout_text(text: str, numero: int) -> Workout:
             nome_up = (mov.get("nome") or "").upper().strip()
             if nome_up.startswith("MAX "):
                 mov["goal"] = True
+        # 7) Identifica o mov-âncora do tiebreak ("último Pull-Up do Part 3"
+        # → última linha PULL-UPS no '3º BLOCO'). Render usa pra colocar caixa
+        # de tempo no momento certo. Sem o padrão, tiebreak fica só no rodapé.
+        _marcar_mov_tiebreak(wkt)
     return wkt
+
+
+def _marcar_mov_tiebreak(wkt: Workout) -> None:
+    """Marca mov['tiebreak_aqui']=True na linha exata em que o juiz deve
+    cobrar o tiebreak. Procura padrão 'último <X> do Part <N>' no texto do
+    tiebreak e bate com o último mov com aquele label/nome."""
+    tb = (wkt.get('tiebreak') or '').strip()
+    if not tb: return
+    m = re.search(r'[úu]ltim[oa]\s+(.+?)\s+(?:do|da)\s+part\s+(\d+)', tb, re.I)
+    if not m: return
+    nome_alvo = m.group(1).strip()
+    part_n = _safe_int(m.group(2))
+    if not part_n: return
+    label_alvo = BLOCK_LABELS.get(part_n)
+    if not label_alvo: return
+    movs = wkt.get('movimentos') or []
+    def _norm(s: str) -> str:
+        # Compara só letras: 'Pull-Up' bate 'PULL-UPS' (descartando -, espaço, s final).
+        return re.sub(r'[^A-Z]', '', (s or '').upper()).rstrip('S')
+    alvo_norm = _norm(nome_alvo)
+    if not alvo_norm: return
+    alvo_idx = None
+    for i, mv in enumerate(movs):
+        if mv.get('label') != label_alvo: continue
+        nm = _norm(mv.get('nome', ''))
+        if alvo_norm in nm or nm in alvo_norm:
+            alvo_idx = i   # mantém o ÚLTIMO match (não dá break)
+    if alvo_idx is not None:
+        movs[alvo_idx]['tiebreak_aqui'] = True
 
 
 def _parse_express(lines: list[str], wkt: Workout) -> Workout:

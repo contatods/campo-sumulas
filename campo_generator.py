@@ -541,6 +541,34 @@ body{
 }
 .mr-cum-dash{text-align:center;color:var(--text3);font-weight:700}
 
+/* Coluna Tiebreak lateral (For Time Goal): só ativa quando wkt.tiebreak
+   está setado. Maioria das células vazias; apenas a linha do mov-âncora
+   (tiebreak_aqui) traz caixa branca pro juiz escrever o tempo. */
+.mh-tb{
+  width:18mm;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:5.5pt;font-weight:700;color:rgba(255,255,255,.85);
+  letter-spacing:.09em;text-transform:uppercase;
+  background:var(--dk);
+  border-left:1px solid rgba(255,255,255,.12);
+}
+.mr-tb{
+  width:18mm;flex-shrink:0;
+  border-left:1px solid var(--rule);
+  display:flex;align-items:center;justify-content:center;padding:1mm;
+}
+.mr-tb-anchor{background:var(--field)!important;padding:1mm}
+.mr-tb-anchor-box{
+  width:100%;min-height:5mm;
+  background:var(--w);border:1.5px solid var(--ink);
+  border-radius:1.5px;
+}
+.mr-tb-anchor-lbl{
+  font-size:5pt;font-weight:700;color:var(--ink);
+  letter-spacing:.06em;text-transform:uppercase;
+  margin-bottom:.5mm;text-align:center;
+}
+
 /* Nota abaixo do score box em For Time Goal: regra de penalidade por rep
    faltante quando não finaliza. */
 .goal-score-note{
@@ -1016,7 +1044,7 @@ body{
 
 
 MOV_TABLE_MACRO = r"""
-{% macro mov_table(movimentos, num, goal_reps=0, hide_cum=false) %}
+{% macro mov_table(movimentos, num, goal_reps=0, hide_cum=false, tb_col=false) %}
 {% set has_lbl = movimentos | selectattr('label','defined') | selectattr('label') | list | length > 0 %}
 <div class="mov-wrap">
   <div class="mov-hdr">
@@ -1024,6 +1052,7 @@ MOV_TABLE_MACRO = r"""
     <div class="mh-mov">Movimentos</div>
     <div class="mh-reps">Reps</div>
     {% if not hide_cum %}<div class="mh-cum">Acumulado</div>{% endif %}
+    {% if tb_col %}<div class="mh-tb">Tiebreak</div>{% endif %}
   </div>
   {% set ns = namespace(cum=0) %}
   {% for mov in movimentos %}
@@ -1056,6 +1085,7 @@ MOV_TABLE_MACRO = r"""
         </div>
         <div class="mr-reps">1</div>
         {% if not hide_cum %}<div class="mr-cum">{{ ns.cum }}</div>{% endif %}
+        {% if tb_col %}<div class="mr-tb"></div>{% endif %}
       </div>
     {% elif mov.goal %}
       {# Linha do movimento alvo (goal): badge + nome + carga, SEM caixa
@@ -1068,6 +1098,7 @@ MOV_TABLE_MACRO = r"""
         </div>
         <div class="mr-reps mr-cum-dash">—</div>
         {% if not hide_cum %}<div class="mr-cum mr-cum-dash">—</div>{% endif %}
+        {% if tb_col %}<div class="mr-tb"></div>{% endif %}
       </div>
     {% else %}
       {% set ns.cum = ns.cum + (mov.reps | default(0)) %}
@@ -1085,6 +1116,13 @@ MOV_TABLE_MACRO = r"""
              juiz preenche reps na caixinha branca. Cumulativo idem. #}
           <div class="mr-reps mr-reps-empty"><div class="mr-reps-empty-box"></div></div>
           {% if not hide_cum %}<div class="mr-cum mr-cum-empty"><div class="mr-cum-empty-box"></div></div>{% endif %}
+        {% endif %}
+        {% if tb_col %}
+          {% if mov.tiebreak_aqui %}
+            <div class="mr-tb mr-tb-anchor"><div class="mr-tb-anchor-box"></div></div>
+          {% else %}
+            <div class="mr-tb"></div>
+          {% endif %}
         {% endif %}
       </div>
       {# Checkpoint de tiebreak: linha extra escrevível após o mov marcado #}
@@ -1798,7 +1836,7 @@ PAGE_TMPL_STR = r"""<div class="page">
     {% set ns_rd.out = ns_rd.out + [{'chegada': true}] %}
     {{ mov_table(ns_rd.out, wkt.numero) }}
   {% else %}
-    {{ mov_table(wkt.movimentos, wkt.numero, goal_reps=(wkt.goal_reps | default(0)), hide_cum=(tipo == 'for_time_goal')) }}
+    {{ mov_table(wkt.movimentos, wkt.numero, goal_reps=(wkt.goal_reps | default(0)), hide_cum=(tipo == 'for_time_goal'), tb_col=(tipo == 'for_time_goal' and wkt.tiebreak)) }}
   {% endif %}
 {% endif %}
 
