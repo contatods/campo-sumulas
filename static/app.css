@@ -9,7 +9,13 @@
   /* Paleta neon sport — alta saturação, alto contraste sobre fundo escuro */
   --accent:#FFF;--green:#00E676;--red:#FF3D5A;--blue:#00D4FF;
   --orange:#FF6B00;--orange-dim:rgba(255,107,0,.14);--orange-edge:rgba(255,107,0,.42);
-  --radius:3px;
+  /* Radius escalonado: --radius geral pra inputs/buttons/cards pequenos.
+     --radius-lg pra modais e painéis grandes. */
+  --radius:6px;
+  --radius-lg:12px;
+  /* Sombra pra elementos flutuantes (modais, dropdowns, chat). Dark theme
+     precisa de outline-shadow (luz interna sutil) + drop-shadow preto. */
+  --shadow-lift:0 8px 28px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04);
 }
 body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
   font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -343,8 +349,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 /* ── Modal de categoria ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;
   align-items:center;justify-content:center;z-index:100}
-.modal{background:#141414;border:1px solid var(--border3);border-radius:4px;
-  padding:24px;width:440px;max-width:90vw;max-height:80vh;overflow-y:auto}
+.modal{background:#141414;border:1px solid var(--border3);border-radius:var(--radius-lg);
+  padding:24px;width:440px;max-width:90vw;max-height:80vh;overflow-y:auto;box-shadow:var(--shadow-lift)}
 .modal-title{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
   color:var(--text2);margin-bottom:6px}
 .modal-sub{font-size:11px;color:var(--text3);margin-bottom:18px;line-height:1.5}
@@ -584,8 +590,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   justify-content:center}
 .cfg-overlay{position:absolute;inset:0;background:rgba(0,0,0,.65);cursor:pointer}
 .cfg-panel{position:relative;background:var(--surface);border:1px solid var(--border3);
-  border-radius:8px;width:560px;max-width:90vw;max-height:85vh;display:flex;
-  flex-direction:column;overflow:hidden}
+  border-radius:var(--radius-lg);width:560px;max-width:90vw;max-height:85vh;display:flex;
+  flex-direction:column;overflow:hidden;box-shadow:var(--shadow-lift)}
 .cfg-header{display:flex;align-items:center;padding:14px 18px;
   border-bottom:1px solid var(--border)}
 .cfg-title{flex:1;font-size:11px;font-weight:700;letter-spacing:.18em;
@@ -726,8 +732,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .chat-fab:disabled{background:var(--surface3);color:var(--text4);cursor:not-allowed}
 
 .chat-panel{position:fixed;bottom:80px;right:18px;width:340px;max-height:70vh;
-  background:var(--surface);border:1px solid var(--border3);border-radius:8px;
-  box-shadow:0 8px 24px rgba(0,0,0,.6);display:flex;flex-direction:column;
+  background:var(--surface);border:1px solid var(--border3);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-lift);display:flex;flex-direction:column;
   z-index:91;overflow:hidden}
 .chat-hdr{display:flex;align-items:center;justify-content:space-between;
   padding:10px 14px;border-bottom:1px solid var(--border);
