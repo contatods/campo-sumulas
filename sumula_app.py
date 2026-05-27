@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.45.2'
+VERSION = '1.46.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -254,7 +254,37 @@ APP_JS     = _load_static('app.js')
 
 
 # ── HTTP Handler ────────────────────────────────────────────────────────────────
+class _ChunkedWriter:
+    """File-like wrapper que codifica HTTP chunked encoding em cada write.
+    Sem `seek` — força zipfile.ZipFile a usar data descriptors (streaming).
+    Permite o navegador começar a baixar enquanto o servidor ainda gera."""
+    def __init__(self, wfile):
+        self.wfile = wfile
+        self.pos = 0
+    def write(self, data):
+        if not data: return 0
+        # Formato HTTP chunked: tamanho-hex\r\n + dados + \r\n
+        self.wfile.write(f"{len(data):X}\r\n".encode('ascii'))
+        self.wfile.write(data)
+        self.wfile.write(b"\r\n")
+        self.pos += len(data)
+        return len(data)
+    def tell(self):
+        return self.pos
+    def flush(self):
+        try: self.wfile.flush()
+        except Exception: pass
+    def close_chunks(self):
+        # Chunk de tamanho 0 marca o fim do corpo HTTP chunked
+        self.wfile.write(b"0\r\n\r\n")
+        try: self.wfile.flush()
+        except Exception: pass
+
+
 class SumulaHandler(BaseHTTPRequestHandler):
+    # HTTP/1.1 é necessário pra Transfer-Encoding: chunked (streaming do ZIP).
+    protocol_version = 'HTTP/1.1'
+
     def log_message(self, fmt, *args): pass  # silencia log
 
     def do_GET(self):
@@ -470,8 +500,9 @@ class SumulaHandler(BaseHTTPRequestHandler):
         # bloqueado (3000+ páginas estouram timeout do Render).
         roster_fill_aguardando = dia_idx is not None or cat_idx is not None
 
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        def _fill_zip(zf):
+            # Closure sobre dias, ev, logo, logo_evt, incluir_competidores,
+            # roster, roster_fill_aguardando — todos do enclosing scope.
             for dia in dias:
                 dia_label = dia.get('label', 'Dia')
                 dia_data  = dia.get('data', '')
@@ -590,9 +621,11 @@ class SumulaHandler(BaseHTTPRequestHandler):
                         # Se um dia houver agrupamento por time_id de atletas
                         # individuais, esta é a hora de chamar o resumo.
 
-        nome_zip = sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas'
-        self._send(200, 'application/zip', buf.getvalue(),
-                   {'Content-Disposition': f'attachment; filename="{nome_zip}.zip"'})
+        nome_zip = (sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas') + '.zip'
+        # Streaming: navegador inicia o download imediatamente. Servidor
+        # gera as súmulas em paralelo ao envio. Cancela o efeito "demora
+        # pra começar" mesmo em ZIPs grandes (~80MB Sábado completo).
+        self._send_zip_streaming(nome_zip, _fill_zip)
 
     def _handle_generate_pre_evento(self, body):
         """Gera ZIP de súmulas 'pré-evento' — para atletas/times inscritos no
@@ -652,8 +685,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 "todos do roster já estão alocados."
             )
 
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        def _fill_zip(zf):
             for cat_nome, nao_alocados in nao_alocados_por_cat.items():
                 workouts = cats_agg[cat_nome]['workouts']
                 if not workouts: continue
@@ -680,9 +712,8 @@ class SumulaHandler(BaseHTTPRequestHandler):
                     html = render_workout_combined(ev_local, wkt, FONTS, logo, logo_evt, atletas)
                     zf.writestr(caminho, html.encode('utf-8'))
 
-        nome_zip = sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas'
-        self._send(200, 'application/zip', buf.getvalue(),
-                   {'Content-Disposition': f'attachment; filename="{nome_zip}_pre-evento.zip"'})
+        nome_zip = (sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas') + '_pre-evento.zip'
+        self._send_zip_streaming(nome_zip, _fill_zip)
 
     def _handle_import_excel(self, body):
         data_b64 = body.get('data')
@@ -815,6 +846,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(data)))
+        self.send_header('Connection', 'close')   # encerra conexão (evita keep-alive)
         # Em dev local: CORS aberto pra facilitar (pode chamar API de outro port).
         # Em cloud: omite o header — same-origin já basta (frontend e API mesma origem)
         # e evita expor /api/* pra qualquer site cross-origin.
@@ -824,6 +856,27 @@ class SumulaHandler(BaseHTTPRequestHandler):
             for k, v in extra.items(): self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
+
+    def _send_zip_streaming(self, filename, fill_zip_callback):
+        """Envia ZIP em chunked encoding — browser inicia download imediatamente,
+        antes mesmo do servidor terminar de gerar tudo. fill_zip_callback recebe
+        o ZipFile aberto e escreve os arquivos com zf.writestr(path, data).
+        Compressão nível 1 (rápida; ZIP só ~10% maior que default 6)."""
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/zip')
+        self.send_header('Transfer-Encoding', 'chunked')
+        self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+        self.send_header('Connection', 'close')
+        if not IS_CLOUD:
+            self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        cw = _ChunkedWriter(self.wfile)
+        try:
+            with zipfile.ZipFile(cw, 'w', zipfile.ZIP_DEFLATED,
+                                 allowZip64=True, compresslevel=1) as zf:
+                fill_zip_callback(zf)
+        finally:
+            cw.close_chunks()
 
 
 # ── Startup ──────────────────────────────────────────────────────────────────────
