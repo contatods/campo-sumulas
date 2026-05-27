@@ -540,8 +540,24 @@ body{
    pro juiz escrever à caneta sem encostar nas linhas vizinhas. Altura
    próxima das demais linhas pra preservar o ritmo da tabela. */
 .mov-row-goal{background:var(--field);min-height:9mm}
-.mov-row-goal .mr-reps{padding:1.2mm 1mm}
+.mov-row-goal .mr-reps{padding:1mm}
 .mov-row-goal .mr-reps-empty-box{min-height:7mm}
+/* Goal-dual: duas caixas (parte | acum.) lado a lado dentro do slot mr-reps.
+   Microlabel no canto superior direito de cada — padrão consistente com a
+   célula-âncora de tiebreak (m:s). Remove ambiguidade sobre o que escrever. */
+.mr-goal-dual{
+  display:flex;gap:.8mm;background:var(--dk)!important;padding:1mm;
+}
+.mr-goal-sub{
+  flex:1;position:relative;background:var(--w);
+  border-radius:1.5px;min-height:7mm;
+}
+.mr-goal-sub-lbl{
+  position:absolute;top:.4mm;right:.8mm;
+  font-size:4pt;font-weight:700;color:var(--ghost);
+  letter-spacing:.02em;text-transform:lowercase;line-height:1;
+  pointer-events:none;
+}
 .mr-goal-badge{
   display:inline-block;background:var(--ink);color:var(--w);
   padding:.3mm 1.4mm;border-radius:2px;font-size:6pt;font-weight:900;
@@ -1121,16 +1137,19 @@ MOV_TABLE_MACRO = r"""
         {% if tb_col %}<div class="mr-tb"></div>{% endif %}
       </div>
     {% elif mov.goal %}
-      {# Linha do movimento alvo (goal): badge + nome + carga, com caixa
-         branca de reps ATIVA — juiz conta reps daquela PART durante o
-         workout. Total agregado das PARTs também vai no score box do rodapé. #}
+      {# Linha do movimento alvo (goal): badge + nome + carga, com DUAS caixas
+         (parte | acum.) — juiz registra reps daquela PART E total acumulado.
+         Microlabel no canto remove ambiguidade do que escrever. #}
       {% set ns.row_idx = ns.row_idx + 1 %}
       <div class="mov-row mov-row-goal">
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
           <span class="mr-goal-badge">GOAL</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
         </div>
-        <div class="mr-reps mr-reps-empty"><div class="mr-reps-empty-box"></div></div>
+        <div class="mr-reps mr-goal-dual">
+          <div class="mr-goal-sub"><span class="mr-goal-sub-lbl">parte</span></div>
+          <div class="mr-goal-sub"><span class="mr-goal-sub-lbl">acum.</span></div>
+        </div>
         {% if not hide_cum %}<div class="mr-cum mr-cum-dash">—</div>{% endif %}
         {% if tb_col %}<div class="mr-tb{% if mov.tiebreak_aqui %} mr-tb-anchor{% endif %}"></div>{% endif %}
       </div>
@@ -1822,7 +1841,7 @@ PAGE_TMPL_STR = r"""<div class="page">
       <span class="gb-target">{{ wkt.goal_reps or '?' }}</span>
       <span class="gb-mov">{{ wkt.goal_movimento or 'reps' }}</span>
       {% if wkt.goal_carga %}<span class="gb-carga">@ {{ wkt.goal_carga|upper }}</span>{% endif %}
-      <span class="goal-banner-sub">+ rep de chegada · ao bater o goal, corra pra linha</span>
+      <span class="goal-banner-sub">bater o alvo libera a chegada</span>
     </div>
   {% elif wkt.goal_reps %}
     {# Legado: For Time com goal_reps mas sem tipo explícito for_time_goal #}
