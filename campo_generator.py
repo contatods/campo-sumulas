@@ -127,7 +127,11 @@ body{
 .page{
   width:194mm;
   position:relative;
-  display:flex;flex-direction:column;min-height:281mm;
+  display:flex;flex-direction:column;
+  /* Hard cap: 1 página A4 SEMPRE. Conteúdo que ultrapassar 281mm é
+     clipado em vez de transbordar pra próxima A4. Combina com
+     page-footer{margin-top:auto} pra manter footer colado no fim. */
+  height:281mm;max-height:281mm;overflow:hidden;
   page-break-after:always;break-after:page;
 }
 .page:last-child{page-break-after:auto;break-after:auto}
