@@ -370,7 +370,7 @@ body{
 }
 
 .mov-row{
-  display:flex;align-items:stretch;min-height:6.5mm;
+  display:flex;align-items:stretch;min-height:7mm;
   border-top:1px solid var(--rule);background:var(--w);
 }
 /* Zebra: usa .mov-row.is-even setada via Jinja (contar só mov-rows reais
@@ -539,9 +539,9 @@ body{
 /* Linha de movimento Goal: tag visual + caixa de reps levemente maior
    pro juiz escrever à caneta sem encostar nas linhas vizinhas. Altura
    próxima das demais linhas pra preservar o ritmo da tabela. */
-.mov-row-goal{background:var(--field);min-height:8mm}
+.mov-row-goal{background:var(--field);min-height:9mm}
 .mov-row-goal .mr-reps{padding:1.2mm 1mm}
-.mov-row-goal .mr-reps-empty-box{min-height:5.5mm}
+.mov-row-goal .mr-reps-empty-box{min-height:7mm}
 .mr-goal-badge{
   display:inline-block;background:var(--ink);color:var(--w);
   padding:.3mm 1.4mm;border-radius:2px;font-size:6pt;font-weight:900;
@@ -577,11 +577,14 @@ body{
   font-size:4.5pt;font-weight:700;color:var(--ghost);letter-spacing:.04em;
 }
 
-/* Nota abaixo do score box em For Time Goal: regra de penalidade por rep
-   faltante quando não finaliza. */
+/* Nota abaixo do score box em For Time Goal: REGRA OFICIAL de cálculo de
+   pontuação. Não pode parecer secundário — juiz usa pra ranquear quem não
+   finaliza. Faixa lateral + texto preto + peso 700. */
 .goal-score-note{
-  font-size:6.5pt;font-style:italic;color:var(--text3);
-  margin:1.5mm 0 0;padding:0 1mm;text-align:right;
+  font-size:7.5pt;font-weight:700;color:var(--ink);
+  margin:1.5mm 0 0;padding:1mm 2mm;
+  background:var(--field);
+  border-left:2px solid var(--ink);
 }
 .gsn-mark{
   display:inline-block;background:var(--ink);color:var(--w);
@@ -604,11 +607,15 @@ body{
   border-radius:1.5px;min-height:5mm;
 }
 
-/* Nota do formato relay no topo do mov_table (Spin etc).
-   Mov_table renderiza N blocos (1 por atleta), reps cumulativos. */
+/* Banner family — três variantes (aguardando / goal / relay) compartilham:
+   - background var(--ink) ou paper, color contrastante
+   - font 900, uppercase, letter-spacing .08em
+   - padding 1.5-2mm vertical / 3mm horizontal
+   - border var(--ink), bottom 0 quando colado em outro elemento
+   Pequenas variações de peso/tamanho são intencionais por hierarquia. */
 .relay-note{
   background:var(--ink);color:var(--w);
-  padding:1.2mm 3mm;font-size:6.5pt;font-weight:700;
+  padding:1.5mm 3mm;font-size:7.5pt;font-weight:800;
   letter-spacing:.08em;text-transform:uppercase;
   border:1px solid var(--ink);border-bottom:0;
 }
@@ -641,7 +648,7 @@ body{
   border:2px solid var(--panel);
   overflow:hidden;
   margin-bottom:1.5mm;
-  height:16mm;
+  height:18mm;
 }
 /* Left dark label */
 .sb-lbl-col{
@@ -681,18 +688,18 @@ body{
 }
 .sb-field-line{
   border-bottom:2px solid var(--ink);
-  flex:1;margin-top:2mm;
+  flex:1;margin-top:3mm;
 }
 /* Right dark time cap */
 .sb-tc-col{
   width:28mm;flex-shrink:0;background:var(--panel);
   display:flex;flex-direction:column;
   align-items:center;justify-content:center;
-  gap:1.5mm;
+  gap:1mm;
   border-left:1px solid rgba(255,255,255,.08);
 }
 .sb-tc-box{
-  width:9mm;height:9mm;
+  width:10mm;height:10mm;
   background:var(--w);
   border:1.5px solid var(--mid);
 }
