@@ -531,9 +531,11 @@ body{
 .gb-mov{font-size:9pt;font-weight:900}
 .gb-carga{font-size:8pt;font-weight:700;color:rgba(255,255,255,.75)}
 
-/* Linha de movimento Goal: tag visual, sem caixa de reps (juiz preenche
-   total agregado no score box). Cum não soma — workout "termina" no goal. */
-.mov-row-goal{background:var(--field)}
+/* Linha de movimento Goal: tag visual + caixa de reps maior (juiz conta
+   reps por PART à caneta). Altura > linhas normais pra escrita confortável. */
+.mov-row-goal{background:var(--field);min-height:11mm}
+.mov-row-goal .mr-reps-empty-box{min-height:8mm}
+.mov-row-goal .mr-tb-anchor-box{min-height:8mm}
 .mr-goal-badge{
   display:inline-block;background:var(--ink);color:var(--w);
   padding:.4mm 1.6mm;border-radius:2px;font-size:6.5pt;font-weight:900;
