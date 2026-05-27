@@ -531,15 +531,18 @@ body{
 .gb-mov{font-size:9pt;font-weight:900}
 .gb-carga{font-size:8pt;font-weight:700;color:rgba(255,255,255,.75)}
 
-/* Linha de movimento Goal: tag visual + caixa de reps maior (juiz conta
-   reps por PART à caneta). Altura > linhas normais pra escrita confortável. */
-.mov-row-goal{background:var(--field);min-height:11mm}
-.mov-row-goal .mr-reps-empty-box{min-height:8mm}
-.mov-row-goal .mr-tb-anchor-box{min-height:8mm}
+/* Linha de movimento Goal: tag visual + caixa de reps levemente maior
+   pro juiz escrever à caneta sem encostar nas linhas vizinhas. Altura
+   próxima das demais linhas pra preservar o ritmo da tabela. */
+.mov-row-goal{background:var(--field);min-height:8mm}
+.mov-row-goal .mr-reps,
+.mov-row-goal .mr-tb{padding:1.2mm 1mm}
+.mov-row-goal .mr-reps-empty-box{min-height:5.5mm}
+.mov-row-goal .mr-tb-anchor-box{min-height:5.5mm}
 .mr-goal-badge{
   display:inline-block;background:var(--ink);color:var(--w);
-  padding:.4mm 1.6mm;border-radius:2px;font-size:6.5pt;font-weight:900;
-  letter-spacing:.1em;margin-right:2mm;vertical-align:1px;
+  padding:.3mm 1.4mm;border-radius:2px;font-size:6pt;font-weight:900;
+  letter-spacing:.08em;margin-right:1.8mm;vertical-align:1px;
 }
 .mr-cum-dash{text-align:center;color:var(--text3);font-weight:700}
 
