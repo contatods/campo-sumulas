@@ -544,20 +544,14 @@ body{
    pro juiz escrever à caneta sem encostar nas linhas vizinhas. Altura
    próxima das demais linhas pra preservar o ritmo da tabela. */
 .mov-row-goal{background:var(--field);min-height:9mm}
-.mov-row-goal .mr-reps{padding:1mm}
-.mov-row-goal .mr-reps-empty-box{min-height:7mm}
-/* Goal-dual: duas caixas (parte | acum.) lado a lado dentro do slot mr-reps.
-   Microlabel no canto superior direito de cada — padrão consistente com a
-   célula-âncora de tiebreak (m:s). Remove ambiguidade sobre o que escrever. */
-.mr-goal-dual{
-  display:flex;gap:.8mm;background:var(--dk)!important;padding:1mm;
-}
-.mr-goal-sub{
-  flex:1;position:relative;background:var(--w);
-  border-radius:1.5px;min-height:7mm;
-}
-.mr-goal-sub-lbl{
-  position:absolute;top:.4mm;right:.8mm;
+.mov-row-goal .mr-reps{padding:1.2mm 1mm}
+.mov-row-goal .mr-reps-empty-box{min-height:7mm;position:relative}
+/* Microlabel 'acum.' no canto da caixa goal — padrão consistente com o
+   'm:s' da célula-âncora do tiebreak. Remove ambiguidade sobre o que
+   escrever: total acumulado até o fim daquela PART (não incremento).
+   Só nas linhas goal — outros tipos não levam microlabel. */
+.mov-row-goal .mr-reps-empty-box::after{
+  content:'acum.';position:absolute;top:.4mm;right:1mm;
   font-size:4pt;font-weight:700;color:var(--ghost);
   letter-spacing:.02em;text-transform:lowercase;line-height:1;
   pointer-events:none;
@@ -1141,19 +1135,16 @@ MOV_TABLE_MACRO = r"""
         {% if tb_col %}<div class="mr-tb"></div>{% endif %}
       </div>
     {% elif mov.goal %}
-      {# Linha do movimento alvo (goal): badge + nome + carga, com DUAS caixas
-         (parte | acum.) — juiz registra reps daquela PART E total acumulado.
-         Microlabel no canto remove ambiguidade do que escrever. #}
+      {# Linha do movimento alvo (goal): badge + nome + carga + uma caixa
+         pra reps acumuladas até o fim daquela PART. Microlabel 'acum.' no
+         canto da caixa deixa claro que é total, não incremento. #}
       {% set ns.row_idx = ns.row_idx + 1 %}
       <div class="mov-row mov-row-goal">
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
           <span class="mr-goal-badge">GOAL</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
         </div>
-        <div class="mr-reps mr-goal-dual">
-          <div class="mr-goal-sub"><span class="mr-goal-sub-lbl">parte</span></div>
-          <div class="mr-goal-sub"><span class="mr-goal-sub-lbl">acum.</span></div>
-        </div>
+        <div class="mr-reps mr-reps-empty"><div class="mr-reps-empty-box"></div></div>
         {% if not hide_cum %}<div class="mr-cum mr-cum-dash">—</div>{% endif %}
         {% if tb_col %}<div class="mr-tb{% if mov.tiebreak_aqui %} mr-tb-anchor{% endif %}"></div>{% endif %}
       </div>
