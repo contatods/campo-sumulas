@@ -108,11 +108,13 @@ CSS = """
   --dk:    #3A3A3A;
   --mid:   #545454;
   --ghost: #787878;
+  --text3: #6B6B6B;   /* texto secundário (ratio 5.5:1 sobre branco — AA confortável) */
   --rule:  #A0A0A0;
   --paper: #E4E4E4;
   --field: #F0F0F0;
   --w:     #FFFFFF;
   --a:     #000000;
+  --font-body: 'Lato', Arial, sans-serif;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 @page{size:A4;margin:8mm}
@@ -371,7 +373,9 @@ body{
   display:flex;align-items:stretch;min-height:6.5mm;
   border-top:1px solid var(--rule);background:var(--w);
 }
-.mov-row:nth-child(even){background:var(--paper)}
+/* Zebra: usa .mov-row.is-even setada via Jinja (contar só mov-rows reais
+   sem incluir secao-row/sep-row/atleta-sep-row no índice). */
+.mov-row.is-even{background:var(--paper)}
 
 .mr-lbl{
   width:14mm;flex-shrink:0;
@@ -560,7 +564,17 @@ body{
   width:24mm;flex-shrink:0;
   border-left:1px solid var(--rule);
 }
-.mr-tb-anchor{background:var(--w)!important}
+/* Célula-âncora do tiebreak (For Time Goal): a célula INTEIRA é a área de
+   escrita, com borda inferior pra simular linha-base e microlabel 'm:s' no
+   canto superior direito — afordância clara de "escreva um tempo aqui". */
+.mr-tb-anchor{
+  background:var(--w)!important;position:relative;
+  border-bottom:1.5px solid var(--ink);
+}
+.mr-tb-anchor::after{
+  content:'m:s';position:absolute;top:.6mm;right:1.2mm;
+  font-size:4.5pt;font-weight:700;color:var(--ghost);letter-spacing:.04em;
+}
 
 /* Nota abaixo do score box em For Time Goal: regra de penalidade por rep
    faltante quando não finaliza. */
@@ -888,7 +902,12 @@ body{
   background:var(--w);border-radius:1px;flex-shrink:0}
 .fl-val-lbl{font-size:8.5pt;font-weight:800;color:var(--ink);letter-spacing:.04em;
   text-transform:uppercase}
-.fl-val-lbl.nr{color:#A03020}
+/* NO-REP: invertido (fundo preto, texto branco) — P&B safe, imprime
+   distinguível em impressora monocromática. Antes era vermelho #A03020. */
+.fl-val-lbl.nr{
+  background:var(--ink);color:var(--w);
+  padding:.4mm 1.6mm;border-radius:2px;letter-spacing:.06em;
+}
 /* Observações curtas por tentativa (opcional) */
 .fl-obs{display:flex;align-items:center;gap:2mm;flex:1;min-width:50mm}
 .fl-obs-lbl{font-size:7.5pt;font-weight:700;color:var(--ghost);
@@ -1047,7 +1066,9 @@ MOV_TABLE_MACRO = r"""
     {% if not hide_cum %}<div class="mh-cum">Acumulado</div>{% endif %}
     {% if tb_col %}<div class="mh-tb">Tiebreak</div>{% endif %}
   </div>
-  {% set ns = namespace(cum=0) %}
+  {# row_idx conta só linhas de movimento (chegada/goal/default) — não conta
+     secao-row, sep-row, atleta-sep-row, round-header. Garante zebra correta. #}
+  {% set ns = namespace(cum=0, row_idx=0) %}
   {% for mov in movimentos %}
     {% if mov.atleta_header is defined %}
       <div class="atleta-sep-row">
@@ -1071,6 +1092,7 @@ MOV_TABLE_MACRO = r"""
          Para 'N rounds for time', mov_table já recebe a lista expandida com
          N repetições — ns.cum naturalmente acumula a soma total. #}
       {% set ns.cum = ns.cum + (goal_reps or 0) + 1 %}
+      {% set ns.row_idx = ns.row_idx + 1 %}
       <div class="mov-row chegada-inline">
         {% if has_lbl %}<div class="mr-lbl">—</div>{% endif %}
         <div class="mr-name">
@@ -1084,6 +1106,7 @@ MOV_TABLE_MACRO = r"""
       {# Linha do movimento alvo (goal): badge + nome + carga, com caixa
          branca de reps ATIVA — juiz conta reps daquela PART durante o
          workout. Total agregado das PARTs também vai no score box do rodapé. #}
+      {% set ns.row_idx = ns.row_idx + 1 %}
       <div class="mov-row mov-row-goal">
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
@@ -1095,7 +1118,8 @@ MOV_TABLE_MACRO = r"""
       </div>
     {% else %}
       {% set ns.cum = ns.cum + (mov.reps | default(0)) %}
-      <div class="mov-row{% if mov.paralelo %} mov-row-paralelo{% endif %}{% if mov.reps is not defined %} mov-row-flex{% endif %}">
+      {% set ns.row_idx = ns.row_idx + 1 %}
+      <div class="mov-row{% if ns.row_idx is divisibleby 2 %} is-even{% endif %}{% if mov.paralelo %} mov-row-paralelo{% endif %}{% if mov.reps is not defined %} mov-row-flex{% endif %}">
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
           {% if mov.paralelo %}<span class="mr-paralelo-mark" title="Executado em paralelo">‖</span>{% endif %}
