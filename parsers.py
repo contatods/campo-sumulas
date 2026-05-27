@@ -413,6 +413,19 @@ def _detectar_directives(full: str, lines: list[str], wkt: Workout) -> None:
             if m_tb:
                 wkt["tiebreak"] = m_tb.group(1).strip()
                 break
+        # Fallback: header sozinho + linha-bullet na sequência (formato Monstar:
+        # "Tiebreak\n- Será o tempo no último Pull-Up do Part 3.").
+        if not wkt.get("tiebreak"):
+            for i, ln in enumerate(lines):
+                if re.match(r'^\s*(?:tie[\s-]?break|tb|desempate)\s*$', ln, re.I):
+                    # Olha próxima(s) linha(s) — pula brancas e pega bullet/texto
+                    for j in range(i + 1, min(i + 4, len(lines))):
+                        nxt = lines[j].strip()
+                        m_bullet = re.match(r'^[-•*·]\s*(.+)$', nxt)
+                        if m_bullet:
+                            wkt["tiebreak"] = m_bullet.group(1).strip()
+                            break
+                    if wkt.get("tiebreak"): break
 
     # Progressão de reps (*Add N reps each round)
     m_prog = (re.search(r'\*\s*(?:add|acrescent[ae]r?|adicione)\s+(\d+)\s+reps?\s+(?:each|a\s+cada|por)\s+round', full, re.I)

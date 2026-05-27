@@ -1016,14 +1016,14 @@ body{
 
 
 MOV_TABLE_MACRO = r"""
-{% macro mov_table(movimentos, num, goal_reps=0) %}
+{% macro mov_table(movimentos, num, goal_reps=0, hide_cum=false) %}
 {% set has_lbl = movimentos | selectattr('label','defined') | selectattr('label') | list | length > 0 %}
 <div class="mov-wrap">
   <div class="mov-hdr">
     {% if has_lbl %}<div class="mh-lbl"></div>{% endif %}
     <div class="mh-mov">Movimentos</div>
     <div class="mh-reps">Reps</div>
-    <div class="mh-cum">Acumulado</div>
+    {% if not hide_cum %}<div class="mh-cum">Acumulado</div>{% endif %}
   </div>
   {% set ns = namespace(cum=0) %}
   {% for mov in movimentos %}
@@ -1055,7 +1055,7 @@ MOV_TABLE_MACRO = r"""
           <span class="mr-reps-inline">(1)</span>CHEGADA
         </div>
         <div class="mr-reps">1</div>
-        <div class="mr-cum">{{ ns.cum }}</div>
+        {% if not hide_cum %}<div class="mr-cum">{{ ns.cum }}</div>{% endif %}
       </div>
     {% elif mov.goal %}
       {# Linha do movimento alvo (goal): badge + nome + carga, SEM caixa
@@ -1067,7 +1067,7 @@ MOV_TABLE_MACRO = r"""
           <span class="mr-goal-badge">🎯 GOAL</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
         </div>
         <div class="mr-reps mr-cum-dash">—</div>
-        <div class="mr-cum mr-cum-dash">—</div>
+        {% if not hide_cum %}<div class="mr-cum mr-cum-dash">—</div>{% endif %}
       </div>
     {% else %}
       {% set ns.cum = ns.cum + (mov.reps | default(0)) %}
@@ -1079,12 +1079,12 @@ MOV_TABLE_MACRO = r"""
         </div>
         {% if mov.reps is defined %}
           <div class="mr-reps">{{ mov.reps }}</div>
-          <div class="mr-cum">{{ ns.cum }}</div>
+          {% if not hide_cum %}<div class="mr-cum">{{ ns.cum }}</div>{% endif %}
         {% else %}
           {# Movimento sem reps prescritos (ex: max snatch com Goal):
              juiz preenche reps na caixinha branca. Cumulativo idem. #}
           <div class="mr-reps mr-reps-empty"><div class="mr-reps-empty-box"></div></div>
-          <div class="mr-cum mr-cum-empty"><div class="mr-cum-empty-box"></div></div>
+          {% if not hide_cum %}<div class="mr-cum mr-cum-empty"><div class="mr-cum-empty-box"></div></div>{% endif %}
         {% endif %}
       </div>
       {# Checkpoint de tiebreak: linha extra escrevível após o mov marcado #}
@@ -1673,7 +1673,7 @@ PAGE_TMPL_STR = r"""<div class="page">
 </div>
 
 {# ── WORKOUT ZONE ── #}
-{% set tipo_labels = {'for_time':'For Time','amrap':'AMRAP','express':'Express — AMRAP + For Time','for_load':'For Load'} %}
+{% set tipo_labels = {'for_time':'For Time','for_time_goal':'For Time Goal','amrap':'AMRAP','express':'Express — AMRAP + For Time','for_load':'For Load'} %}
 <div class="wkt-zone">
   {% if tipo == 'express' and wkt.numero_f2 is defined %}
   <div class="wkt-badge-dual">
@@ -1798,7 +1798,7 @@ PAGE_TMPL_STR = r"""<div class="page">
     {% set ns_rd.out = ns_rd.out + [{'chegada': true}] %}
     {{ mov_table(ns_rd.out, wkt.numero) }}
   {% else %}
-    {{ mov_table(wkt.movimentos, wkt.numero, goal_reps=(wkt.goal_reps | default(0))) }}
+    {{ mov_table(wkt.movimentos, wkt.numero, goal_reps=(wkt.goal_reps | default(0)), hide_cum=(tipo == 'for_time_goal')) }}
   {% endif %}
 {% endif %}
 
