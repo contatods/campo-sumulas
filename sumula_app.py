@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.48.4'
+VERSION = '1.49.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -539,6 +539,33 @@ class SumulaHandler(BaseHTTPRequestHandler):
                     baterias_com_cron = [b for b in baterias if b.get('workouts_que_rodam')]
                     algum_sem_cron = len(baterias_com_cron) < len(baterias)
 
+                    # Ordem cronológica do prefixo do filename: workouts que rodam
+                    # hoje, ordenados pelo horário do PRIMEIRO heat de cada um.
+                    # Resolve confusão multi-arena (bat #45 às 10h vs bat #21 às
+                    # 15h — numeração de bateria é por arena, não por tempo).
+                    # Badge dentro da súmula segue wkt.numero global por categoria.
+                    def _hor_primeiro_heat(wp):
+                        hs = []
+                        for b in baterias:
+                            wqr = b.get('workouts_que_rodam') or []
+                            if wqr and wp not in wqr: continue
+                            h = (b.get('horario_aquecimento')
+                                 or b.get('horario_fila') or '')
+                            if h:
+                                # zero-pad "9:30" → "09:30" pra ordenar string
+                                hs.append(h.zfill(5) if len(h) == 4 else h)
+                        return min(hs) if hs else 'zz:zz'
+                    wkts_pos_hoje = []
+                    for wp in range(1, len(workouts) + 1):
+                        if not baterias:
+                            wkts_pos_hoje.append(wp)
+                            continue
+                        if algum_sem_cron or any(wp in b['workouts_que_rodam']
+                                                  for b in baterias_com_cron):
+                            wkts_pos_hoje.append(wp)
+                    wkts_ordenados = sorted(wkts_pos_hoje, key=_hor_primeiro_heat)
+                    ordem_cron = {p: i + 1 for i, p in enumerate(wkts_ordenados)}
+
                     for wkt_pos, wkt in enumerate(workouts, start=1):
                         # Skip se cronograma definido e nenhuma bateria do dia roda
                         # este wkt. Baterias sem cronograma rodam tudo (compat).
@@ -579,9 +606,11 @@ class SumulaHandler(BaseHTTPRequestHandler):
                             for c in competidores
                         ]
 
-                        # Filename usa o numero GLOBAL por categoria (bate com badge da súmula).
-                        wkt_num_global = wkt.get('numero') or wkt_pos
-                        nome_arq = f"{wkt_num_global:02d}_{sanitize(wkt.get('nome', 'wkt'))}.html"
+                        # Prefixo do filename = ordem cronológica do dia (multi-arena
+                        # safe). Badge dentro da súmula continua mostrando numero
+                        # global por categoria (wkt.numero).
+                        prefixo = ordem_cron.get(wkt_pos, wkt_pos)
+                        nome_arq = f"{prefixo:02d}_{sanitize(wkt.get('nome', 'wkt'))}.html"
                         caminho  = f"{dia_pasta}/{cat_pasta}/{nome_arq}"
 
                         # Detecta "aguardando balizamento": existem baterias que
