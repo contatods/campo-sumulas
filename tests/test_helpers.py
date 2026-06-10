@@ -1,6 +1,28 @@
 """Funções puras: ordenação, numeração, parsers de duração e estimativa de rounds."""
 from parsers import _atleta_sort_key, assign_workout_numbers, assign_workout_numbers_global
 from ai_rounds import _extrair_minutos, _estimar_rounds_algoritmico
+from sumula_app import _resolve_logo
+
+
+def test_resolve_logo_aceita_data_url():
+    val = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg"
+    assert _resolve_logo(val) == val
+
+
+def test_resolve_logo_rejeita_caminho_de_arquivo():
+    """Path traversal: POST com `logo_empresa: '/etc/passwd'` vazava o
+    arquivo em base64 no HTML antes do v1.50.1. App público no Render.
+    """
+    assert _resolve_logo("/etc/passwd") == ""
+    assert _resolve_logo(".env") == ""
+    assert _resolve_logo("../../secret.txt") == ""
+    assert _resolve_logo("logo.png") == ""
+
+
+def test_resolve_logo_vazio_ou_none():
+    assert _resolve_logo("") == ""
+    assert _resolve_logo(None) == ""
+    assert _resolve_logo(0) == ""
 
 
 def test_atleta_sort_key_ordena_por_bateria_raia_numerica_nome(atletas_desordenados):

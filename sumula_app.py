@@ -18,7 +18,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.50.0'
+VERSION = '1.50.1'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -184,14 +184,17 @@ def _validate_for_load(wkt: dict, idx: int) -> None:
 
 def _resolve_logo(value):
     """Retorna uma data-URL de logo.
-    Se 'value' já é data-URL (upload do front), usa direto.
-    Se é caminho de arquivo, converte com img_b64.
+
+    O front sempre envia data-URL (upload via FileReader). Qualquer outro
+    valor é rejeitado pra fechar leitura arbitrária de arquivo via POST
+    (`logo_empresa: '/etc/passwd'` antes vazava o arquivo em base64 dentro
+    do HTML — app está público no Render).
     """
     if not value:
         return ""
-    if value.startswith("data:"):
-        return value          # já é data-URL — upload via interface
-    return img_b64(value)    # caminho local
+    if isinstance(value, str) and value.startswith("data:"):
+        return value
+    return ""
 
 # ── Imports dos módulos extraídos ──────────────────────────────────────────────
 from parsers import parse_excel, parse_pdf, assign_workout_numbers, assign_workout_numbers_global, _atleta_sort_key
@@ -424,7 +427,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
         enriquecer_workouts(workouts)      # n_rounds já set → não chama IA
         wkt      = workouts[wkt_idx]
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
-        logo_evt = ev.get('logo_evento', '')
+        logo_evt = _resolve_logo(ev.get('logo_evento', ''))
         # Sobrescreve categoria e data com os valores do dia/categoria selecionados
         # (a categoria global de evento é fallback)
         ev_local = {
@@ -457,7 +460,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
         ev       = cfg.get('evento', {}) or {}
         roster   = cfg.get('roster') or []
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
-        logo_evt = ev.get('logo_evento', '')
+        logo_evt = _resolve_logo(ev.get('logo_evento', ''))
         incluir_competidores = bool(body.get('incluir_competidores', True))
 
         # Numeração contínua por categoria ATRAVÉS dos dias (Elite Masc:
@@ -685,7 +688,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
 
         ev       = cfg.get('evento', {}) or {}
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
-        logo_evt = ev.get('logo_evento', '')
+        logo_evt = _resolve_logo(ev.get('logo_evento', ''))
 
         # Junta workouts por categoria (de todos os dias) + identifica alocados
         # Estrutura: {categoria_nome: {'workouts':[...], 'alocados_nums': set}}
