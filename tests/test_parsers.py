@@ -9,6 +9,7 @@ from parsers import (
     _bateria_tem_atleta_na_faixa, _alocacoes_tem_atleta_na_faixa,
     _normalizar_categoria, _normalizar_categoria_relaxada,
     _workout_numero_de_codigo,
+    _roster_de_abas_atletas,
 )
 
 
@@ -256,6 +257,37 @@ def test_bateria_tem_atleta_na_faixa_filtra_por_numero_da_bateria():
     assert _bateria_tem_atleta_na_faixa("2", montagem, (101, 199)) is False
     # Bateria 2 cai em 1601-1699
     assert _bateria_tem_atleta_na_faixa("2", montagem, (1601, 1699)) is True
+
+
+def test_roster_de_abas_atletas_dedup_linhas_duplicadas():
+    """Excel com copia/cola gera linhas duplicadas. Dedup por (numero, nome)
+    pra evitar atleta repetido na súmula combinada de pré-evento."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet("Atletas - Sábado")
+    ws.append([101, "Matheus", "Box A"])
+    ws.append([102, "Victor",  "Box B"])
+    ws.append([101, "Matheus", "Box A"])  # duplicada exata
+    ws.append([101, "MATHEUS", "Box A"])  # duplicada case-insensitive
+    ws.append([103, "Outro",   "Box C"])
+    roster = _roster_de_abas_atletas(wb)
+    assert [a["numero"] for a in roster] == ["101", "102", "103"]
+    assert [a["nome"] for a in roster] == ["Matheus", "Victor", "Outro"]
+
+
+def test_roster_de_abas_atletas_preserva_colisao_individual_dupla():
+    """Storm reusa #101 entre Individual (`MATHEUS`) e Dupla (`GOKU E KURIRIN`).
+    Ambos devem permanecer no roster — colisão legítima, não duplicação."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet("Atletas - Sábado")
+    ws.append([101, "MATHEUS POLACCHINI VIEIRA", "STORM TANK"])
+    ws = wb.create_sheet("Atletas - Domingo")
+    ws.append([101, "GOKU E KURIRIN", "DUST-3"])
+    roster = _roster_de_abas_atletas(wb)
+    assert len(roster) == 2
+    nomes = {a["nome"] for a in roster}
+    assert nomes == {"MATHEUS POLACCHINI VIEIRA", "GOKU E KURIRIN"}
 
 
 def test_parse_excel_storm_separa_modalidades_por_dia():

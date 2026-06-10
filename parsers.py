@@ -1761,6 +1761,7 @@ def _roster_individuais(wb) -> list[dict[str, str]]:
         return []
     ws = wb['Atletas']
     out: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
     for row in ws.iter_rows(values_only=True):
         if not row or all(c is None for c in row):
             continue
@@ -1769,6 +1770,10 @@ def _roster_individuais(wb) -> list[dict[str, str]]:
         box    = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
         if not nome:
             continue
+        key = (numero, nome.lower())
+        if key in seen:
+            continue
+        seen.add(key)
         out.append({'numero': numero, 'nome': nome, 'box': box})
     return out
 
@@ -2006,7 +2011,20 @@ def _roster_de_abas_atletas(wb) -> list[dict[str, str]]:
             if not nome or nome.upper() == '#N/A':
                 continue
             out.append({'numero': numero, 'nome': nome, 'box': box})
-    return out
+    # Dedup por (numero, nome lower): linhas duplicadas no Excel (típico em
+    # copia/cola) não viram atletas repetidos na súmula combinada de pré-evento.
+    # Match por nome também (não só número) preserva colisão legítima entre
+    # modalidades — Storm reusa #101 pra `MATHEUS` (Individual) e `GOKU E
+    # KURIRIN` (Dupla); ambos ficam.
+    seen: set[tuple[str, str]] = set()
+    deduped: list[dict[str, str]] = []
+    for a in out:
+        key = (a['numero'], a['nome'].lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(a)
+    return deduped
 
 
 def _parse_equipamento(wb) -> Optional[dict[str, Any]]:

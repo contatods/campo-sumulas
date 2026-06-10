@@ -551,7 +551,10 @@ function toggleMaisOpcoes() {
   const btn  = document.getElementById('btnMaisOpcoes');
   const open = wrap.style.display === 'none';
   wrap.style.display = open ? '' : 'none';
-  if (btn) btn.textContent = open ? 'menos escopos ▴' : 'outros escopos ▾';
+  if (btn) {
+    btn.textContent = open ? 'menos escopos ▴' : 'outros escopos ▾';
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
 }
 
 function onEventoChange() {

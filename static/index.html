@@ -55,7 +55,7 @@
         <span class="bge-main">⬇ Gerar categoria selecionada</span>
         <span class="bge-sub" id="bgeSubCat">—</span>
       </button>
-      <button class="ger-toggle-more" type="button" onclick="toggleMaisOpcoes()" id="btnMaisOpcoes">outros escopos ▾</button>
+      <button class="ger-toggle-more" type="button" onclick="toggleMaisOpcoes()" id="btnMaisOpcoes" aria-expanded="false" aria-controls="gerarMaisOpcoes">outros escopos ▾</button>
       <div id="gerarMaisOpcoes" style="display:none">
         <label class="ger-chk">
           <input type="checkbox" id="chkIncluirCompetidores" checked onchange="onGerarOptChange()">
@@ -409,7 +409,7 @@
         <div class="field">
           <label>Logo do Evento</label>
           <div class="logo-upload-wrap" onclick="document.getElementById('inputLogoEvento').click()">
-            <img id="logoEventoPreview" style="display:none;height:28px;object-fit:contain">
+            <img id="logoEventoPreview" alt="Logo do evento" style="display:none;height:28px;object-fit:contain">
             <span id="logoEventoPlaceholder">Clique para selecionar</span>
           </div>
           <input id="inputLogoEvento" type="file" accept="image/*" style="display:none" onchange="onLogoEvento(this)">
@@ -417,7 +417,7 @@
         <div class="field">
           <label>Logo Digital Score</label>
           <div class="logo-upload-wrap" onclick="document.getElementById('inputLogoEmpresa').click()">
-            <img id="logoEmpresaPreview" style="display:none;height:28px;object-fit:contain">
+            <img id="logoEmpresaPreview" alt="Logo Digital Score" style="display:none;height:28px;object-fit:contain">
             <span id="logoEmpresaPlaceholder">Clique para selecionar</span>
           </div>
           <input id="inputLogoEmpresa" type="file" accept="image/*" style="display:none" onchange="onLogoEmpresa(this)">

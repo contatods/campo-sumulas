@@ -5,7 +5,7 @@
   /* WCAG AA: text3 era #555 (2.5:1) — FAIL pra placeholders/labels.
      Subido pra #A0A0A0 (~6.6:1) garante leitura em ambiente claro.
      text4 mantém #333 só pra elementos puramente decorativos (linhas, divisores). */
-  --text:#D8D8D8;--text2:#A8A8A8;--text3:#888;--text4:#555;
+  --text:#D8D8D8;--text1:#EFEFEF;--text2:#A8A8A8;--text3:#888;--text4:#555;
   /* Paleta neon sport — alta saturação, alto contraste sobre fundo escuro */
   --accent:#FFF;--green:#00E676;--red:#FF3D5A;--blue:#00D4FF;
   --orange:#FF6B00;--orange-dim:rgba(255,107,0,.14);--orange-edge:rgba(255,107,0,.42);
@@ -24,6 +24,14 @@
 }
 body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
   font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* Acessibilidade: foco visível por teclado (WCAG 2.4.7) — inputs já têm
+   glow próprio; aqui cobrimos botões, tabs e clickables sem outline custom. */
+button:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible{
+  outline:2px solid var(--orange);outline-offset:2px;border-radius:var(--radius);
+}
 
 /* ── Header ── */
 .hdr{background:#0A0A0A;height:46px;display:flex;align-items:center;padding:0 18px;
