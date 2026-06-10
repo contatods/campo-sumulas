@@ -2066,8 +2066,6 @@ function limparTudo() {
   ['logoEventoPlaceholder','logoEmpresaPlaceholder'].forEach(id => {
     const el=document.getElementById(id); if(el) el.style.display='';
   });
-  document.getElementById('eventoForm').style.display = 'none';
-  document.getElementById('btnToggleEvento').textContent = 'Editar';
   document.getElementById('previewFrame').style.display = 'none';
   document.getElementById('pbName').textContent = '—';
   renderEventoDisplay();
