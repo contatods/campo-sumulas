@@ -619,12 +619,67 @@ def _aplicar_progressao_reps(wkt: Workout) -> None:
         m["reps_por_round"] = seq
 
 
+_COMPOSTO_HEADER_RE = re.compile(
+    r'^["“‘](?P<f1>.+?)["”’]\s*\+\s*["“‘](?P<f2>.+?)["”’]\s*$'
+)
+
+
+def _extrair_janela(texto: str, nome: str) -> str:
+    """Pega a janela `(0:00-5:00)` que aparece após o nome da fórmula.
+
+    Aceita também `–` (en-dash) entre os tempos. Retorna '' se não achar.
+    """
+    if not texto or not nome:
+        return ''
+    nome_esc = re.escape(nome)
+    m = re.search(
+        rf'["“‘]{nome_esc}["”’]\s*\(\s*(\d+:\d+)\s*[-–]\s*(\d+:\d+)\s*\)',
+        texto, re.I)
+    return f'{m.group(1)}–{m.group(2)}' if m else ''
+
+
+def _detectar_composto(lines: list[str]) -> Optional[tuple[str, str, str, str]]:
+    """Detecta workout composto pelo header `"X" + "Y"` na 1ª linha.
+
+    Retorna (nome_f1, nome_f2, texto_f1, texto_f2) se for composto, None
+    caso contrário. Split: tudo entre o header e a próxima ocorrência de
+    `"NOME2"` (linha que abre F2) vira F1; do `"NOME2"` em diante vira F2.
+    `─── NOTAS ───` corta o final de F2 — o regulamento fica anexado
+    fora dos blocos pra cada F2 conseguir parsear sem ruído.
+    """
+    if not lines:
+        return None
+    m = _COMPOSTO_HEADER_RE.match(lines[0])
+    if not m:
+        return None
+    nome_f1 = m.group('f1').strip()
+    nome_f2 = m.group('f2').strip()
+    # Acha onde F2 começa: linha que abre com `"NOME2"`
+    idx_f2 = None
+    nome_f2_norm = nome_f2.lower()
+    for i, ln in enumerate(lines[1:], start=1):
+        m2 = re.match(r'^["“‘](.+?)["”’]', ln)
+        if m2 and m2.group(1).strip().lower() == nome_f2_norm:
+            idx_f2 = i
+            break
+    if idx_f2 is None:
+        return None  # não acha o início da F2 → trata como workout simples
+    # NOTAS marca fim dos blocos
+    idx_notas = next((i for i, ln in enumerate(lines)
+                      if re.search(r'─{2,}\s*NOTAS\s*─{2,}', ln, re.I)), None)
+    fim_f2 = idx_notas if idx_notas is not None else len(lines)
+    # F1 começa em 1 (pula header) e vai até início de F2
+    texto_f1 = '\n'.join(lines[1:idx_f2])
+    texto_f2 = '\n'.join(lines[idx_f2:fim_f2])
+    return nome_f1, nome_f2, texto_f1, texto_f2
+
+
 def parse_workout_text(text: str, numero: int) -> Workout:
     """Converte texto livre de uma célula/seção num dict de workout.
 
     Pipeline:
       1. Extrai nome (primeira linha entre aspas, ou texto livre não-numérico)
-      2. Detecta tipo (express / for_load / for_time / amrap)
+      2. Detecta tipo (composto / express / for_load / for_time / amrap)
       3. Detecta diretrizes (relay, EMOM, tiebreak, progressão, Goal, MAX)
       4. Loop de movimentos (filtra noise, marca paralelo/progressivo, captura carga)
       5. Adiciona chegada (For Time) e aplica progressão (movs marcados)
@@ -633,6 +688,40 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     wkt: Workout = {"numero": numero, "nome": f"WKT {numero}", "tipo": "for_time",
                     "modalidade": "individual", "time_cap": "",
                     "movimentos": [], "descricao": []}
+
+    # 0) Composto — `"X" + "Y"` no header → 2 sub-workouts encadeados.
+    # Pega o time_cap geral da última diretriz `Time cap:` no texto completo.
+    composto = _detectar_composto(lines)
+    if composto:
+        nome_f1, nome_f2, texto_f1, texto_f2 = composto
+        f1 = parse_workout_text(texto_f1, 1)
+        f2 = parse_workout_text(texto_f2, 2)
+        if not f1.get('nome') or f1['nome'].startswith('WKT '):
+            f1['nome'] = nome_f1.upper()
+        if not f2.get('nome') or f2['nome'].startswith('WKT '):
+            f2['nome'] = nome_f2.upper()
+        # Janela `(0:00-5:00)` de cada fórmula → tempo absoluto na timeline
+        f1['janela'] = _extrair_janela(texto_f1, nome_f1)
+        f2['janela'] = _extrair_janela(texto_f2, nome_f2)
+        full = '\n'.join(lines)
+        m_cap = re.search(r'time\s*cap\s*[:\-]?\s*([^\n]+?)(?:\.|$)', full, re.I)
+        time_cap_total = m_cap.group(1).strip() if m_cap else (f2.get('time_cap') or f1.get('time_cap') or '')
+        m_desc = re.search(
+            r'descanse?\s+(?:de\s+)?(?:um|uma|dois|duas|tr[êe]s|\d+)\s+(?:minutos?|min|segundos?|s)\b',
+            full, re.I)
+        descanso = m_desc.group(0) if m_desc else ''
+        return {
+            'numero': numero,
+            'nome': f'{nome_f1.upper()} + {nome_f2.upper()}',
+            'tipo': 'composto',
+            'modalidade': 'individual',
+            'time_cap': time_cap_total,
+            'movimentos': [],
+            'descricao': [],
+            'f1': f1,
+            'f2': f2,
+            'descanso': descanso,
+        }
 
     # 1) Nome
     nome = _extrair_nome_workout(lines)

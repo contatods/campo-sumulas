@@ -47,7 +47,7 @@ class Workout(TypedDict, total=False):
     numero: int
     numero_f2: int      # Express ocupa 2 slots (numero e numero_f2)
     nome: str
-    tipo: str           # 'for_time' | 'for_time_goal' | 'amrap' | 'express' | 'for_load' (cf. WORKOUT_TIPOS)
+    tipo: str           # 'for_time' | 'for_time_goal' | 'amrap' | 'express' | 'for_load' | 'composto' (cf. WORKOUT_TIPOS)
     estilo: str         # alias de tipo, mantido por compat com template
     modalidade: str     # 'individual' | 'dupla' | 'time'
     time_cap: str

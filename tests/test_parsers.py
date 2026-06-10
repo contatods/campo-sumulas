@@ -259,6 +259,66 @@ def test_bateria_tem_atleta_na_faixa_filtra_por_numero_da_bateria():
     assert _bateria_tem_atleta_na_faixa("2", montagem, (1601, 1699)) is True
 
 
+def test_parse_workout_text_composto_detecta_dois_subworkouts():
+    """Storm 2026: workout composto `"X" + "Y"` no header, com 2 fórmulas
+    encadeadas. Parser quebra em sub-workouts (f1, f2), cada um com seu
+    próprio tipo, movimentos e time_cap. F1 do Storm é For Time Goal,
+    F2 é For Time normal."""
+    texto = (
+        '"Barbells and Jump" + "Run In The Park"\n\n'
+        '"Barbells and Jump" (0:00-5:00)\n\n'
+        'For time:\n'
+        '15 Deadlifts (115lb)\n'
+        '10 Snatches (115lb)\n'
+        'Max Box Jump Over (60cm)\n\n'
+        'Goal: 45 Box Jump Over + finishing rep (cross the line).\n\n'
+        'Descanse um minuto, depois...\n\n'
+        '"Run In The Park" (6:00-9:00)\n'
+        'For time:\n'
+        '10 Snatches (135lb)\n'
+        '200m Run\n'
+        '10 Snatches (135lb)\n\n'
+        'Time cap: 9 minutes\n'
+    )
+    wkt = parse_workout_text(texto, numero=2)
+    assert wkt['tipo'] == 'composto'
+    assert wkt['nome'] == 'BARBELLS AND JUMP + RUN IN THE PARK'
+    assert wkt['time_cap'] == '9 minutes'
+    assert 'minuto' in wkt['descanso'].lower()
+
+    f1 = wkt['f1']
+    assert f1['nome'] == 'BARBELLS AND JUMP'
+    assert f1['tipo'] == 'for_time_goal'
+    assert f1['goal_reps'] == 45
+    assert 'BOX JUMP OVER' in f1['goal_movimento']
+    assert f1['janela'] == '0:00–5:00'
+
+    f2 = wkt['f2']
+    assert f2['nome'] == 'RUN IN THE PARK'
+    assert f2['tipo'] == 'for_time'
+    assert f2['janela'] == '6:00–9:00'
+    # F2 tem 200m Run + Snatches (sem goal)
+    nomes_f2 = [m.get('nome') for m in f2['movimentos'] if m.get('nome')]
+    assert '200M RUN' in nomes_f2
+    assert any('SNATCH' in n for n in nomes_f2)
+
+
+def test_parse_workout_text_simples_nao_eh_composto():
+    """Garantia: workout simples (1 nome só) NÃO vira composto por engano."""
+    texto = (
+        '"Vinte Seis"\n\n'
+        'For time:\n'
+        '26 Burpees Over-the-Bar\n'
+        '26 Hang Cleans (115lb)\n\n'
+        'Time cap: 15 minutes\n'
+    )
+    wkt = parse_workout_text(texto, numero=1)
+    assert wkt['tipo'] == 'for_time'
+    assert wkt['nome'] == 'VINTE SEIS'
+    assert 'f1' not in wkt
+    assert 'f2' not in wkt
+
+
 def test_roster_de_abas_atletas_dedup_linhas_duplicadas():
     """Excel com copia/cola gera linhas duplicadas. Dedup por (numero, nome)
     pra evitar atleta repetido na súmula combinada de pré-evento."""

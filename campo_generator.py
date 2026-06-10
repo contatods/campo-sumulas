@@ -1812,6 +1812,40 @@ PAGE_TMPL_STR = r"""<div class="page">
      tabela já é o lembrete oficial (buy-in + complex) e evita duplicação. #}
   {{ for_load_table(wkt, atleta) }}
 
+{% elif tipo == 'composto' %}
+  {# Composto: 2 sub-workouts encadeados (`"X" + "Y"` no header do Excel).
+     Cada fórmula tem seu próprio tipo (For Time / For Time Goal / AMRAP),
+     time cap, e score box. Score do composto = soma das duas pontuações. #}
+  {% for f_pair in [(1, wkt.f1), (2, wkt.f2)] %}
+    {% set f_idx = f_pair[0] %}
+    {% set f = f_pair[1] %}
+    <div class="section-banner">
+      <div style="display:flex;align-items:center">
+        <div class="sbn-badge">F{{ f_idx }}</div>
+        <span class="sbn-t">{{ f.nome }}</span>
+      </div>
+      {% if f.janela %}<span class="sbn-s">{{ f.janela }}</span>{% endif %}
+    </div>
+    {% if f.tipo == 'for_time_goal' %}
+      <div class="goal-banner">
+        <span class="gb-mark">GOAL</span>
+        <span class="gb-target">{{ f.goal_reps or '?' }}</span>
+        <span class="gb-mov">{{ f.goal_movimento or 'reps' }}</span>
+        {% if f.goal_carga %}<span class="gb-carga">@ {{ f.goal_carga|upper }}</span>{% endif %}
+        <span class="goal-banner-sub">bater o alvo libera a chegada</span>
+      </div>
+    {% endif %}
+    {% if f.tipo == 'amrap' %}
+      {{ amrap_table(f.movimentos, wkt.numero, f.n_rounds|default(3), f) }}
+    {% else %}
+      {{ mov_table(f.movimentos, wkt.numero, goal_reps=(f.goal_reps | default(0)), hide_cum=(f.tipo == 'for_time_goal'), tb_col=(f.tipo == 'for_time_goal' and f.tiebreak)) }}
+    {% endif %}
+    {{ score_box(f.tipo, f) }}
+    {% if f_idx == 1 and wkt.descanso %}
+      <div class="rest-bar">{{ wkt.descanso|capitalize }}</div>
+    {% endif %}
+  {% endfor %}
+
 {% else %}
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
   {# For Time tipo Simple Dimension/Mind — alvo de reps total declarado.
@@ -1872,8 +1906,8 @@ PAGE_TMPL_STR = r"""<div class="page">
   {% endif %}
 {% endif %}
 
-{# ── SCORE BOX ── #}
-{{ score_box(tipo, wkt) }}
+{# ── SCORE BOX ── (composto já tem score box por fórmula) #}
+{% if tipo != 'composto' %}{{ score_box(tipo, wkt) }}{% endif %}
 
 {# ── ASSINATURAS — coladas logo abaixo do score box ── #}
 <div class="sign-zone">
