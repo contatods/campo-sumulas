@@ -1417,21 +1417,9 @@ SCORE_BOX_MACRO = r"""
     <span class="sb-tc-sub">marcar se atingido</span>
   </div>
 </div>
-{% elif tipo == 'for_load' %}
-<div class="score-section">
-  <span class="sc-t">Maior Carga</span>
-  <span class="sc-s">Maior tentativa válida</span>
-</div>
-<div class="score-box">
-  <div class="sb-lbl-col">
-    <span class="sb-lbl-tag">For Load</span>
-    <span class="sb-lbl-name">Pontuação</span>
-  </div>
-  <div class="sb-field sb-field-tempo">
-    <span class="sb-field-lbl">Melhor Carga</span>
-    <div class="sb-field-line"></div>
-  </div>
-</div>
+{# For Load: score box omitido — a tabela de tentativas já tem a linha
+   "Melhor Carga" + "Ref. T" + unidade, que é a fonte oficial. Duplicar
+   aqui virava ambiguidade operacional ("qual é o valor que vale?"). #}
 {% endif %}
 {% endmacro %}
 """
