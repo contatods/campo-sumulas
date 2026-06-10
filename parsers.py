@@ -1893,15 +1893,40 @@ def _is_layout_grades_e_dias(wb) -> bool:
     return tem_grade and tem_montagem
 
 
+def _split_partes_categoria(s: str) -> list[str]:
+    """Split bruto de string de bateria composta em pedaços (sem normalizar).
+
+    Separadores aceitos: ` & ` e `, `. Regrudar pedaços com parens
+    desbalanceados — vírgula DENTRO de parens (ex: `Iniciante (8, 9 anos)`)
+    não é separador.
+    """
+    if not s:
+        return []
+    bruto = re.split(r'\s+&\s+|,\s+', s)
+    partes: list[str] = []
+    buffer = ''
+    for p in bruto:
+        candidato = f'{buffer}, {p}' if buffer else p
+        if candidato.count('(') != candidato.count(')'):
+            buffer = candidato
+        else:
+            partes.append(candidato)
+            buffer = ''
+    if buffer:
+        partes.append(buffer)
+    return [p for p in partes if p.strip()]
+
+
 def _quebrar_categoria_composta(s: str) -> list[str]:
     """'A (Heat 1) & B (Heat 2)' → ['a', 'b'] (cada parte normalizada).
+
+    Aceita também `,` como separador (`A (Heat 1), B (Heat 2) & C (Heat 3)`)
+    — formato que aparece em eventos com 3+ cats compartilhando bateria.
 
     Diferente de `_normalizar_categoria`, que perde tudo depois do primeiro `(`
     e portanto descarta a segunda categoria de baterias mistas.
     """
-    if not s:
-        return []
-    return [_normalizar_categoria(p) for p in re.split(r'\s+&\s+', s) if p.strip()]
+    return [_normalizar_categoria(p) for p in _split_partes_categoria(s)]
 
 
 def _bateria_casa_categoria(
@@ -1923,7 +1948,7 @@ def _bateria_casa_categoria(
         return True
     if permite_relaxado and cat_grade_relaxada:
         partes_relax = [_normalizar_categoria_relaxada(p)
-                        for p in re.split(r'\s+&\s+', bateria_categoria) if p.strip()]
+                        for p in _split_partes_categoria(bateria_categoria)]
         if cat_grade_relaxada in partes_relax:
             return True
     return False
@@ -2063,16 +2088,29 @@ def _parse_inscritos(wb) -> dict[str, tuple[int, int]]:
     Usado pra desambiguar alocações de baterias mistas (atletas de duas
     categorias rodando juntos): a faixa de número diz quem pertence a qual.
     """
+    return {cat: (ini, fim) for cat, (ini, fim, _) in _parse_inscritos_full(wb).items()}
+
+
+def _parse_inscritos_full(wb) -> dict[str, tuple[int, int, Optional[bool]]]:
+    """Versão completa: retorna `(ini, fim, is_individual)`.
+
+    `is_individual=True/False` se a coluna `Individual` existir no header
+    (valor `Sim`/`Não`); `None` se a coluna não está presente. Usado pra
+    desambiguar quando duas categorias compartilham a mesma faixa de número
+    (Individual `Rx Masculino` e Dupla `Dupla Rx Masculino` usam 101-199).
+    """
     sname = next((s for s in wb.sheetnames if s.strip().lower() == 'inscritos'), None)
     if not sname:
         return {}
     ws = wb[sname]
 
-    resultado: dict[str, tuple[int, int]] = {}
+    resultado: dict[str, tuple[int, int, Optional[bool]]] = {}
     col_nome = col_ini = col_fim = None
+    col_indiv: Optional[int] = None
     for row in ws.iter_rows(values_only=True):
         if not row or all(c is None for c in row):
             col_nome = col_ini = col_fim = None  # quebra de bloco: re-detecta header
+            col_indiv = None
             continue
         vals = [str(c).strip().lower() if c else '' for c in row]
         # Header novo: precisa ter coluna 'nome' + uma 'inicial' + uma 'final'
@@ -2080,6 +2118,7 @@ def _parse_inscritos(wb) -> dict[str, tuple[int, int]]:
             col_nome = vals.index('nome')
             col_ini  = next(i for i, v in enumerate(vals) if 'inicial' in v)
             col_fim  = next(i for i, v in enumerate(vals) if 'final' in v)
+            col_indiv = next((i for i, v in enumerate(vals) if 'individual' in v), None)
             continue
         if col_nome is None:
             continue
@@ -2094,7 +2133,14 @@ def _parse_inscritos(wb) -> dict[str, tuple[int, int]]:
             continue
         if ini_int > fim_int:
             continue
-        resultado[_normalizar_categoria(str(nome))] = (ini_int, fim_int)
+        is_indiv: Optional[bool] = None
+        if col_indiv is not None and col_indiv < len(row):
+            v = str(row[col_indiv] or '').strip().lower()
+            if v in ('sim', 'yes', 's', 'y', 'true', '1'):
+                is_indiv = True
+            elif v in ('não', 'nao', 'no', 'n', 'false', '0'):
+                is_indiv = False
+        resultado[_normalizar_categoria(str(nome))] = (ini_int, fim_int, is_indiv)
     return resultado
 
 
@@ -2120,6 +2166,45 @@ def _filtrar_alocacoes_por_faixa(
         else:
             descartadas.append(a)
     return mantidas, descartadas
+
+
+def _alocacoes_tem_atleta_na_faixa(
+    alocs: list[dict[str, Any]], faixa: tuple[int, int],
+) -> bool:
+    """True se alguma alocação tem número dentro da faixa."""
+    if not faixa:
+        return False
+    ini, fim = faixa
+    for a in alocs:
+        try:
+            n = int(str(a.get('numero', '')).strip())
+        except (ValueError, AttributeError):
+            continue
+        if ini <= n <= fim:
+            return True
+    return False
+
+
+def _bateria_tem_atleta_na_faixa(
+    bateria_numero: str,
+    montagem: dict[tuple[str, str, str], list[dict[str, Any]]],
+    faixa: tuple[int, int],
+) -> bool:
+    """True se a Montagem dessa bateria tem ao menos 1 atleta na faixa.
+
+    Cobre o caso onde o nome textual da categoria diverge entre Inscritos,
+    cronograma e Montagem (ex: Inscritos diz `Teen Scaled 14-15 Feminino`
+    mas cronograma só diz `14-15 Feminino (Single Heat)`). A faixa de
+    número do Inscritos vira a fonte de verdade.
+    """
+    if not faixa or not bateria_numero:
+        return False
+    for (_cod, _cat, chave_bat), alocs in montagem.items():
+        if chave_bat != bateria_numero:
+            continue
+        if _alocacoes_tem_atleta_na_faixa(alocs, faixa):
+            return True
+    return False
 
 
 def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
@@ -2150,8 +2235,24 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
     for workouts in grade_por_categoria.values():
         padronizar_workouts(workouts)
 
-    # Faixas de número por categoria — desambigua atletas em baterias mistas
-    inscritos_faixas = _parse_inscritos(wb)
+    # Faixas de número por categoria — desambigua atletas em baterias mistas.
+    # Versão `_full` traz `is_individual` quando a coluna Individual existe;
+    # usado pra separar modalidades quando faixas colidem (`Rx Masculino` vs
+    # `Dupla Rx Masculino` usam 101-199 cada um).
+    inscritos_full = _parse_inscritos_full(wb)
+    inscritos_faixas: dict[str, tuple[int, int]] = {
+        cat: (ini, fim) for cat, (ini, fim, _) in inscritos_full.items()
+    }
+    inscritos_modalidade: dict[str, Optional[bool]] = {
+        cat: is_indiv for cat, (_, _, is_indiv) in inscritos_full.items()
+    }
+    # Faixas que COLIDEM entre duas ou mais categorias
+    _contagem_faixa: dict[tuple[int, int], int] = {}
+    for f in inscritos_faixas.values():
+        _contagem_faixa[f] = _contagem_faixa.get(f, 0) + 1
+    _faixas_colisao: set[tuple[int, int]] = {
+        f for f, n in _contagem_faixa.items() if n > 1
+    }
 
     # Detecta categorias da grade com mesma "relaxada" — match relaxado é
     # ambíguo nesse caso e não pode ser usado como fallback. Ex: se aparecer
@@ -2225,8 +2326,22 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             cats_no_dia_norm.update(_quebrar_categoria_composta(cat_str))
             cats_no_dia_relax.update(
                 _normalizar_categoria_relaxada(p)
-                for p in re.split(r'\s+&\s+', cat_str) if p.strip()
+                for p in _split_partes_categoria(cat_str)
             )
+
+        # Modalidades presentes neste dia (Individual=True / Dupla=False),
+        # deduzidas das cats casadas por nome no cronograma. Usado pra
+        # bloquear match por faixa colidida em modalidade ausente do dia
+        # — ex: Sábado só tem Individuais, então faixa 1301-1399 não pode
+        # mapear pra `Dupla Iniciante Mista` (mesmo número, modalidade
+        # ausente). Vazio = todas as modalidades aceitas (sem coluna
+        # `Individual` no Inscritos → comportamento legado).
+        mods_no_dia: set[bool] = set()
+        for cat_norm, (_ini, _fim, is_indiv) in inscritos_full.items():
+            if is_indiv is None:
+                continue
+            if cat_norm in cats_no_dia_norm or cat_norm in cats_no_dia_relax:
+                mods_no_dia.add(is_indiv)
 
         cats_resultado: list[dict[str, Any]] = []
         # Tracker de chaves da montagem que foram consumidas via cronograma.
@@ -2237,11 +2352,56 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             cat_grade_norm = _normalizar_categoria(cat_grade)
             cat_grade_relax = cats_grade_relaxadas[cat_grade]
             permite_relax = cat_grade not in cats_ambiguas
-            # Só anexa categoria se ela aparece em alguma bateria deste dia
-            # (match estrito sempre, relaxado só se categoria não-ambígua)
-            if cat_grade_norm not in cats_no_dia_norm and not (
-                permite_relax and cat_grade_relax in cats_no_dia_relax
-            ):
+            # Faixa de número desta categoria no Inscritos (se houver).
+            # Usado pra 3ª camada de match: bateria onde o nome textual não
+            # menciona a cat, mas a Montagem tem atletas dela.
+            faixa_cat = inscritos_faixas.get(cat_grade_norm) or (
+                inscritos_faixas.get(cat_grade_relax) if permite_relax else None
+            )
+            # Faixa colidida (mesma faixa em duas cats, típico Individuais×Duplas)
+            # ainda pode servir pra match por faixa neste dia, desde que:
+            #   (a) a(s) outra(s) cat(s) com a mesma faixa NÃO estejam no
+            #       cronograma deste dia (sem conflito de nome direto), OU
+            #   (b) a modalidade da cat (Individual/Dupla via coluna Inscritos)
+            #       esteja presente no dia. Cobre Storm: faixa 1301-1399 é
+            #       Teen Intermediario 16-17 Masculino (individual) e Dupla
+            #       Iniciante Mista (dupla); no Sábado só Individual aparece,
+            #       então a Dupla não pode entrar mesmo sem conflito por nome.
+            faixa_cat_unica = faixa_cat
+            if faixa_cat in _faixas_colisao:
+                conflitos = [c for c, f in inscritos_faixas.items()
+                             if f == faixa_cat and c != cat_grade_norm and c != cat_grade_relax]
+                conflito_presente = any(
+                    c in cats_no_dia_norm or c in cats_no_dia_relax
+                    for c in conflitos
+                )
+                # Modalidade desta cat (via Inscritos). Bloqueia se modalidade
+                # não está no dia. Tolerante se coluna `Individual` ausente.
+                mod_cat = inscritos_modalidade.get(cat_grade_norm) or (
+                    inscritos_modalidade.get(cat_grade_relax) if permite_relax else None
+                )
+                modalidade_ausente = (
+                    mod_cat is not None and mods_no_dia and mod_cat not in mods_no_dia
+                )
+                if conflito_presente or modalidade_ausente:
+                    faixa_cat_unica = None
+            # Só anexa categoria se ela aparece em alguma bateria deste dia.
+            # Camadas de match, em ordem:
+            #   (1) match estrito de normalização (nome)
+            #   (2) match relaxado (nome sem parênteses, se não-ambígua)
+            #   (3) match por faixa de número (atletas da faixa caem em
+            #       alguma bateria da Montagem). Cobre Teens & similares
+            #       onde Inscritos usa nome longo (`Teen Scaled 14-15 Fem`)
+            #       mas cronograma usa nome curto (`14-15 Feminino`).
+            casou_por_nome = (
+                cat_grade_norm in cats_no_dia_norm
+                or (permite_relax and cat_grade_relax in cats_no_dia_relax)
+            )
+            casou_por_faixa = faixa_cat_unica is not None and any(
+                _bateria_tem_atleta_na_faixa(b.get('numero', ''), montagem, faixa_cat_unica)
+                for b in cronograma
+            )
+            if not (casou_por_nome or casou_por_faixa):
                 continue
 
             # Workouts deste DIA específico (filtra wkts da grade pelo _dia_label).
@@ -2256,6 +2416,8 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                 b for b in cronograma
                 if _bateria_casa_categoria(b.get('categoria', ''), cat_grade_norm,
                                            cat_grade_relax, permite_relax)
+                or (faixa_cat_unica is not None
+                    and _bateria_tem_atleta_na_faixa(b.get('numero', ''), montagem, faixa_cat_unica))
             ]
 
             baterias_full: list[dict[str, Any]] = []
@@ -2279,6 +2441,11 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                     cat_bate = _bateria_casa_categoria(
                         chave_cat, cat_grade_norm, cat_grade_relax, permite_relax,
                     )
+                    # 3ª camada: nome textual não bateu mas a Montagem tem
+                    # atletas dentro da faixa de número desta categoria.
+                    # Só usa faixa única (sem colisão Individual/Dupla).
+                    if not cat_bate and faixa_cat_unica is not None:
+                        cat_bate = _alocacoes_tem_atleta_na_faixa(alocs, faixa_cat_unica)
                     if not cat_bate:
                         continue
                     cat_exata_bate = (
@@ -2306,38 +2473,34 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                 else:
                     codigo_montagem, aloc = "", []
 
-                # Bateria mista (`X & Y`): a Montagem traz atletas das duas
-                # categorias juntos. Se temos faixa de número da categoria
-                # atual (via Inscritos), filtra pra não vazar atletas da outra.
-                if aloc and len(_quebrar_categoria_composta(b.get('categoria', ''))) > 1:
-                    # Lookup da faixa: tenta chave estrita (com descritores) e
-                    # depois relaxada — Inscritos pode ter nome sem descritor
-                    # (ex: 'Master 35-39 Feminino') enquanto a grade tem o
-                    # nome completo ('Master 35-39 Feminino (identico ao amador)').
-                    faixa = inscritos_faixas.get(cat_grade_norm) or (
-                        inscritos_faixas.get(cat_grade_relax) if permite_relax else None
-                    )
-                    if faixa:
-                        aloc, descartados = _filtrar_alocacoes_por_faixa(aloc, faixa)
-                        # Aviso só pra atletas que NÃO caem em NENHUMA faixa
-                        # conhecida — esses são erros reais (typo no Excel ou
-                        # atleta fora da numeração). Atletas descartados que
-                        # pertencem a outra categoria conhecida estão no lugar
-                        # certo, só não é a categoria sendo processada agora.
-                        for d in descartados:
-                            n_str = str(d.get('numero', '')).strip()
-                            try:
-                                n_int = int(n_str)
-                            except ValueError:
-                                continue   # número inválido — outro problema
-                            if any(lo <= n_int <= hi for lo, hi in inscritos_faixas.values()):
-                                continue   # pertence a outra categoria conhecida
-                            nome = (d.get('nome') or '?').strip() or '?'
-                            avisos_import.append({
-                                'nivel': 'aviso',
-                                'msg':   f'Atleta #{n_str} ({nome}) com número fora de toda faixa do Inscritos — não foi atribuído a nenhuma categoria',
-                                'onde':  f'{dia_label}/Bat {b.get("numero", "?")}',
-                            })
+                # Filtra alocações pela faixa de número da categoria atual
+                # quando: (a) bateria mista por nome (`X & Y`) ou (b) bateria
+                # casada por faixa (nome do cronograma não menciona a cat).
+                # Em ambos os casos a Montagem pode trazer atletas de outras
+                # categorias compartilhando o horário; a faixa do Inscritos
+                # separa quem é de quem.
+                nome_e_misto = len(_quebrar_categoria_composta(b.get('categoria', ''))) > 1
+                if aloc and faixa_cat and (nome_e_misto or not casou_por_nome):
+                    aloc, descartados = _filtrar_alocacoes_por_faixa(aloc, faixa_cat)
+                    # Aviso só pra atletas que NÃO caem em NENHUMA faixa
+                    # conhecida — esses são erros reais (typo no Excel ou
+                    # atleta fora da numeração). Atletas descartados que
+                    # pertencem a outra categoria conhecida estão no lugar
+                    # certo, só não é a categoria sendo processada agora.
+                    for d in descartados:
+                        n_str = str(d.get('numero', '')).strip()
+                        try:
+                            n_int = int(n_str)
+                        except ValueError:
+                            continue   # número inválido — outro problema
+                        if any(lo <= n_int <= hi for lo, hi in inscritos_faixas.values()):
+                            continue   # pertence a outra categoria conhecida
+                        nome = (d.get('nome') or '?').strip() or '?'
+                        avisos_import.append({
+                            'nivel': 'aviso',
+                            'msg':   f'Atleta #{n_str} ({nome}) com número fora de toda faixa do Inscritos — não foi atribuído a nenhuma categoria',
+                            'onde':  f'{dia_label}/Bat {b.get("numero", "?")}',
+                        })
 
                 codigo_final = b.get('codigo_evento') or codigo_montagem
                 # workouts_do_dia já está filtrado por dia (após v1.38). Mapeia

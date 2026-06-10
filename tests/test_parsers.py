@@ -5,7 +5,8 @@ from parsers import (
     parse_workout_text, parse_excel,
     _quebrar_categoria_composta, _bateria_casa_categoria,
     _propagar_codigos_da_montagem, _filtrar_alocacoes_por_faixa,
-    _parse_inscritos,
+    _parse_inscritos, _parse_inscritos_full,
+    _bateria_tem_atleta_na_faixa, _alocacoes_tem_atleta_na_faixa,
     _normalizar_categoria, _normalizar_categoria_relaxada,
     _workout_numero_de_codigo,
 )
@@ -53,6 +54,29 @@ def test_quebrar_categoria_composta_separa_e_normaliza():
         "Iniciante Feminino (Heat 3) & Iniciante Masculino (Heat 1)"
     )
     assert partes == ["iniciante feminino", "iniciante masculino"]
+
+
+def test_quebrar_categoria_composta_aceita_virgula_como_separador():
+    # Storm 2026: três cats compartilhando bateria usando `,` + `&`
+    partes = _quebrar_categoria_composta(
+        "Dupla Iniciante Masculino (Single Heat),  Dupla Iniciante Feminina (Single Heat) & Dupla Iniciante Mista (Single Heat)"
+    )
+    assert partes == [
+        "dupla iniciante masculino",
+        "dupla iniciante feminina",
+        "dupla iniciante mista",
+    ]
+
+
+def test_quebrar_categoria_composta_protege_virgula_dentro_de_parens():
+    # Vírgula DENTRO de parens (descritor) não é separador
+    partes = _quebrar_categoria_composta(
+        "Iniciante (8, 9 anos) Masculino & Iniciante (10, 11 anos) Feminino"
+    )
+    assert partes == [
+        "iniciante (8, 9 anos) masculino",
+        "iniciante (10, 11 anos) feminino",
+    ]
 
 
 def test_bateria_casa_categoria_evita_falso_positivo_dupla_vs_individual():
@@ -188,6 +212,160 @@ def test_parse_inscritos_retorna_vazio_sem_aba():
     wb = openpyxl.Workbook()
     wb.active.title = "OutraAba"
     assert _parse_inscritos(wb) == {}
+
+
+def test_parse_inscritos_full_le_coluna_individual():
+    # Storm 2026: coluna `Individual` desambigua Individual vs Dupla
+    # quando faixas de número colidem.
+    wb = _wb_com_inscritos([
+        ["Nome", "Max", "Pago", "Nº. Inicial", "Nº. Final", "Individual"],
+        ["RX Masculino",       10, 8,  101, 199, "Sim"],
+        ["Dupla RX Masculino", 10, 5,  101, 199, "Não"],
+    ])
+    full = _parse_inscritos_full(wb)
+    assert full["rx masculino"]        == (101, 199, True)
+    assert full["dupla rx masculino"]  == (101, 199, False)
+
+
+def test_parse_inscritos_full_sem_coluna_individual_retorna_none():
+    wb = _wb_com_inscritos([
+        ["Nome", "Max", "Pago", "Nº. Inicial", "Nº. Final"],
+        ["RX Masculino", 10, 8, 101, 199],
+    ])
+    full = _parse_inscritos_full(wb)
+    assert full["rx masculino"] == (101, 199, None)
+
+
+def test_alocacoes_tem_atleta_na_faixa_detecta_minimo_um():
+    alocs = [{"numero": "104"}, {"numero": "1601"}, {"numero": "abc"}]
+    assert _alocacoes_tem_atleta_na_faixa(alocs, (101, 199)) is True
+    assert _alocacoes_tem_atleta_na_faixa(alocs, (1601, 1699)) is True
+    assert _alocacoes_tem_atleta_na_faixa(alocs, (5000, 5099)) is False
+    # Sem faixa → False
+    assert _alocacoes_tem_atleta_na_faixa(alocs, None) is False
+
+
+def test_bateria_tem_atleta_na_faixa_filtra_por_numero_da_bateria():
+    montagem = {
+        ("#1", "Cat A", "1"): [{"numero": "104"}, {"numero": "105"}],
+        ("#1", "Cat B", "2"): [{"numero": "1601"}],
+    }
+    # Bateria 1: atletas 104,105 → caem em 101-199
+    assert _bateria_tem_atleta_na_faixa("1", montagem, (101, 199)) is True
+    # Bateria 2: só 1601 → NÃO cai em 101-199
+    assert _bateria_tem_atleta_na_faixa("2", montagem, (101, 199)) is False
+    # Bateria 2 cai em 1601-1699
+    assert _bateria_tem_atleta_na_faixa("2", montagem, (1601, 1699)) is True
+
+
+def test_parse_excel_storm_separa_modalidades_por_dia():
+    """Regressão Storm Challenge 2026: faixas colidem entre Individuais
+    (Sábado) e Duplas (Domingo). Sem desambiguação por modalidade, cats da
+    Dupla vazam pro Sábado e vice-versa. Reproduz o cenário mínimo:
+    - Sábado: bateria mista Teen (1301-1399) com adultos
+    - Domingo: bateria de Dupla Iniciante Mista (1301-1399)
+    """
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    # Inscritos com coluna Individual
+    ws = wb.create_sheet("Inscritos")
+    ws.append(["Nome", "Max", "Pago", "Nº. Inicial", "Nº. Final", "Individual"])
+    ws.append(["Teen Intermediario 16-17 Masculino", 5, 4, 1301, 1399, "Sim"])
+    ws.append(["Intermediario Masculino",            40, 30, 301, 399, "Sim"])
+    ws.append(["Dupla Iniciante Mista",              10, 2, 1301, 1399, "Não"])
+    ws.append(["Dupla Rx Misto",                     10, 2, 401, 499,   "Não"])
+    # Workouts - Individuais (grade)
+    ws = wb.create_sheet("Workouts - Individuais")
+    ws.append(["Teen Intermediario 16-17 Masculino", "Intermediario Masculino"])
+    ws.append([
+        '"Vinte Seis"\n\nFor time:\n10 Burpees\n\nTime cap: 10 minutes',
+        '"Vinte Seis"\n\nFor time:\n10 Burpees\n\nTime cap: 10 minutes',
+    ])
+    # Workouts - Duplas (precisa de 2+ cats pro detector de grade pegar)
+    ws = wb.create_sheet("Workouts - Duplas")
+    ws.append(["Dupla Iniciante Mista", "Dupla Rx Misto"])
+    ws.append([
+        '"Vinte Seis"\n\nFor time:\n10 Burpees\n\nTime cap: 10 minutes',
+        '"Vinte Seis"\n\nFor time:\n10 Burpees\n\nTime cap: 10 minutes',
+    ])
+    # Sábado (cronograma): bateria 1 mista Teen+Intermediario
+    ws = wb.create_sheet("Sábado")
+    ws.append(["Storm Challenge"])
+    ws.append(["Sábado"])
+    ws.append(["Eventos", "Categoria", "Bateria", "Arbitragem", "Quantidade",
+               "Aquecimento", "Duração Aquec.", "Fila", "Duração Fila",
+               "Horário", "Cap", "Transição"])
+    ws.append(['"Vinte Seis"',
+               "16-17 Masculino (Single Heat) & Intermediario Masculino (Heat 1)",
+               1, "", "4 (4)", "08:00", "00:30", "08:30", "00:15",
+               "08:45", "00:15", "00:10"])
+    # Sábado - Montagem: 2 atletas Teen + 2 Intermediario
+    ws = wb.create_sheet("Sábado - Montagem")
+    ws.append(["08:45", '"Vinte Seis"'])
+    ws.append([1, "16-17 Masculino (Single Heat) & Intermediario Masculino (Heat 1)"])
+    ws.append(["Raia", "Número", "Nome", "Box"])
+    ws.append([1, 1301, "Teen Atleta 1", "Box X"])
+    ws.append([2, 1302, "Teen Atleta 2", "Box Y"])
+    ws.append([3, 321,  "Inter Atleta 1", "Box Z"])
+    ws.append([4, 322,  "Inter Atleta 2", "Box W"])
+    # Atletas - Sábado (roster)
+    ws = wb.create_sheet("Atletas - Sábado")
+    ws.append([1301, "Teen Atleta 1", "Box X"])
+    ws.append([1302, "Teen Atleta 2", "Box Y"])
+    ws.append([321,  "Inter Atleta 1", "Box Z"])
+    ws.append([322,  "Inter Atleta 2", "Box W"])
+    # Domingo (cronograma): bateria 1 só Dupla
+    ws = wb.create_sheet("Domingo")
+    ws.append(["Storm Challenge"])
+    ws.append(["Domingo"])
+    ws.append(["Eventos", "Categoria", "Bateria", "Arbitragem", "Quantidade",
+               "Aquecimento", "Duração Aquec.", "Fila", "Duração Fila",
+               "Horário", "Cap", "Transição"])
+    ws.append(['"Vinte Seis"', "Dupla Iniciante Mista (Single Heat)",
+               1, "", "2 (2)", "09:00", "00:30", "09:30", "00:15",
+               "09:45", "00:15", "00:10"])
+    # Domingo - Montagem
+    ws = wb.create_sheet("Domingo - Montagem")
+    ws.append(["09:45", '"Vinte Seis"'])
+    ws.append([1, "Dupla Iniciante Mista (Single Heat)"])
+    ws.append(["Raia", "Número", "Nome", "Box"])
+    ws.append([1, 1301, "Dupla A", "Box DA"])
+    ws.append([2, 1302, "Dupla B", "Box DB"])
+    # Atletas - Domingo
+    ws = wb.create_sheet("Atletas - Domingo")
+    ws.append([1301, "Dupla A", "Box DA"])
+    ws.append([1302, "Dupla B", "Box DB"])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    r = parse_excel(buf.getvalue())
+    assert r["tipo"] == "evento_multidia"
+
+    sabado = next(d for d in r["dias"] if d["label"] == "Sábado")
+    domingo = next(d for d in r["dias"] if d["label"] == "Domingo")
+
+    # Sábado: Teen + Intermediario, NÃO pode ter Dupla Iniciante Mista
+    sabado_cats = {c["nome"] for c in sabado["categorias"]}
+    assert "Teen Intermediario 16-17 Masculino" in sabado_cats
+    assert "Intermediario Masculino" in sabado_cats
+    assert "Dupla Iniciante Mista" not in sabado_cats
+
+    # Domingo: só Dupla, NÃO pode ter Teen nem Intermediario
+    domingo_cats = {c["nome"] for c in domingo["categorias"]}
+    assert "Dupla Iniciante Mista" in domingo_cats
+    assert "Teen Intermediario 16-17 Masculino" not in domingo_cats
+    assert "Intermediario Masculino" not in domingo_cats
+
+    # Teen no Sábado tem os 2 atletas certos (1301, 1302), filtrados da
+    # bateria mista
+    teen = next(c for c in sabado["categorias"]
+                if c["nome"] == "Teen Intermediario 16-17 Masculino")
+    nums_teen = [a["numero"] for b in teen["baterias"] for a in b["alocacoes"]]
+    assert sorted(nums_teen) == ["1301", "1302"]
+
+    # Roster: todos os atletas têm categoria atribuída
+    sem_cat = [a for a in r["roster"] if not (a.get("categoria") or "").strip()]
+    assert sem_cat == []
 
 
 def test_workout_numero_de_codigo_exige_prefixo_explicito():
