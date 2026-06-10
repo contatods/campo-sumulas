@@ -1744,7 +1744,7 @@ PAGE_TMPL_STR = r"""<div class="page">
 </div>
 
 {# ── WORKOUT ZONE ── #}
-{% set tipo_labels = {'for_time':'For Time','for_time_goal':'For Time Goal','amrap':'AMRAP','express':'Express — AMRAP + For Time','for_load':'For Load'} %}
+{% set tipo_labels = {'for_time':'For Time','for_time_goal':'For Time Goal','amrap':'AMRAP','express':'Express — AMRAP + For Time','for_load':'For Load','composto':'Composto'} %}
 <div class="wkt-zone">
   {% if tipo == 'express' and wkt.numero_f2 is defined %}
   <div class="wkt-badge-dual">
