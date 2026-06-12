@@ -158,6 +158,11 @@ body{
 .is-composto .rest-bar{height:3mm;margin:0.5mm 0}
 .is-composto .sign-zone{margin-top:2mm}
 .is-composto .sign-cell{height:9mm}
+/* Separador `then...` é redundante numa súmula compacta — o juíz já entende
+   pela sequência de mov-rows. Em workout simples (não composto) mantém
+   pra leitura clara da ordem. Especialmente importante nas Duplas, que
+   têm Atleta 1 + Atleta 2 + then + Max Box Jump × 2 partes = 4 separadores. */
+.is-composto .sep-row{display:none}
 .ds-credit{
   text-align:center;font-size:5pt;color:#bbb;
   letter-spacing:.1em;margin-top:3mm;
