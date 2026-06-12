@@ -207,8 +207,12 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     try: num = int(num_s)
     except ValueError: return None
     if num >= 1000: return None  # evita anos
-    # Rejeita frases explicativas (`2 atletas nadarão`, `5 times escolherão`, etc)
-    if _FRASE_NAO_MOVIMENTO_RE.search(nome):
+    # Rejeita frases explicativas (`2 atletas nadarão`, `5 times escolherão`, etc).
+    # Antes de testar, descarta descritor `(dois atletas)` / `(N atleta)` entre
+    # parens — é metadata operacional, não frase explicativa. Caso real Storm:
+    # `200m Run (dois atletas)` é movimento legítimo, não regulamento.
+    nome_p_filtro = re.sub(r'\s*\([^)]*atletas?[^)]*\)', '', nome, flags=re.I)
+    if _FRASE_NAO_MOVIMENTO_RE.search(nome_p_filtro):
         return None
     return (num, nome)
 
