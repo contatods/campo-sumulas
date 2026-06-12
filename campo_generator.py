@@ -136,6 +136,28 @@ body{
 }
 .page:last-child{page-break-after:auto;break-after:auto}
 .page-footer{margin-top:auto;}
+
+/* ── Composto: 2 sub-workouts na mesma A4. Comprime alturas/paddings pra
+   garantir que score box F2, assinaturas e observações caibam na página
+   sem clipar. Outros tipos seguem com altura confortável. ── */
+.is-composto .pk-athlete-row{height:7mm}
+.is-composto .pk-sub-row{height:7mm}
+.is-composto .pk-ops-row{height:7mm}
+.is-composto .section-banner{height:4.5mm;margin-bottom:1mm}
+.is-composto .goal-banner{padding:1mm 3mm}
+.is-composto .mov-row{min-height:6.5mm}
+.is-composto .mov-row-goal{min-height:8.5mm}
+.is-composto .score-section{height:3.5mm}
+.is-composto .score-box{height:15mm;margin-bottom:1mm}
+.is-composto .score-box-dual{height:15mm;margin-bottom:1mm}
+/* Nota da regra For Time Goal vira redundante no composto — score box já
+   diz "TEMPO FINAL se completou / REPS GOAL TOTAL se não completou" */
+.is-composto .goal-score-note{display:none}
+.is-composto .obs-box{min-height:22mm}
+.is-composto .obs-line{min-height:3.5mm}
+.is-composto .rest-bar{height:3mm;margin:0.5mm 0}
+.is-composto .sign-zone{margin-top:2mm}
+.is-composto .sign-cell{height:9mm}
 .ds-credit{
   text-align:center;font-size:5pt;color:#bbb;
   letter-spacing:.1em;margin-top:3mm;
@@ -1678,7 +1700,7 @@ DOC_TMPL_STR = r"""<!DOCTYPE html>
 """
 
 
-PAGE_TMPL_STR = r"""<div class="page">
+PAGE_TMPL_STR = r"""<div class="page{% if wkt.tipo == 'composto' %} is-composto{% endif %}">
 
 <div class="a4-marker"></div>
 
