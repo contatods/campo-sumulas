@@ -34,6 +34,11 @@ except ImportError:
 
 BLOCK_LABELS = {1: "1º BLOCO", 2: "2º BLOCO", 3: "3º BLOCO", 4: "4º BLOCO", 5: "5º BLOCO"}
 
+# Header de bloco por atleta em duplas/trios: `Atleta 1`, `Athlete 2`.
+# Quando presente, os movimentos seguintes ganham label `ATLETA N` no lugar
+# do label numérico de bloco — juiz vê na súmula quem faz cada movimento.
+_ATLETA_HEADER_RE = re.compile(r'^\s*(?:atleta|athlete)\s+(\d+)\s*[:\.]?\s*$', re.I)
+
 
 # Separadores que marcam fim da prescrição "core" e início de
 # regras/observações/regulamento que NÃO devem aparecer na súmula impressa.
@@ -497,8 +502,13 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
     block = 1
     in_paralelo = False
     time_cap = ""
-    has_seps = any(re.match(r'^then\.+$', l, re.I) for l in lines)
+    has_then = any(re.match(r'^then\.+$', l, re.I) for l in lines)
+    has_atleta = any(_ATLETA_HEADER_RE.match(l) for l in lines)
+    has_seps = has_then or has_atleta
     has_goal = bool(wkt.get("goal_reps"))
+    # Label "ATLETA N" ativo enquanto não chegar `then...` (que reseta).
+    # Setado pelo header `Atleta N` no loop abaixo.
+    atleta_label: Optional[str] = None
 
     for line in lines:
         ll = line.lower()
@@ -506,9 +516,16 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
         if tc:
             time_cap = f"{tc.group(1)} min"
             continue
+        m_atl = _ATLETA_HEADER_RE.match(line)
+        if m_atl:
+            n = int(m_atl.group(1))
+            atleta_label = f"ATLETA {n}"
+            in_paralelo = False
+            continue
         if re.match(r'^then[\.\s]*$', line, re.I):
             if movs: movs.append({"separador": "then..."})
             block += 1
+            atleta_label = None
             in_paralelo = False
             continue
         if _PARALELO_RE.match(line):
@@ -544,14 +561,23 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
             mov: Movimento = {"nome": nome_limpo}
             if reps is not None: mov["reps"] = reps
             if carga: mov["carga"] = carga
-            if has_seps and block in BLOCK_LABELS: mov["label"] = BLOCK_LABELS[block]
+            if atleta_label:
+                mov["label"] = atleta_label
+            elif has_then and not has_atleta and block in BLOCK_LABELS:
+                # Compat com workouts que usam só `then...` (sem header Atleta N)
+                mov["label"] = BLOCK_LABELS[block]
             if in_paralelo: mov["paralelo"] = True
             if is_progressivo: mov["progressivo"] = True
             movs.append(mov)
         elif has_goal:
             # For Time com Goal: aceita movs sem reps líderes (Snatches 95/65 lb)
             mov_flex = _tentar_flex_mov(line_clean, has_seps, block, in_paralelo)
-            if mov_flex: movs.append(mov_flex)
+            if mov_flex:
+                if atleta_label:
+                    mov_flex["label"] = atleta_label
+                elif has_then and not has_atleta and block in BLOCK_LABELS:
+                    mov_flex["label"] = BLOCK_LABELS[block]
+                movs.append(mov_flex)
 
     return movs, time_cap
 
@@ -598,7 +624,8 @@ def _tentar_flex_mov(line_clean: str, has_seps: bool,
     if not nome_limpo or len(nome_limpo) < 3: return None
     mov: Movimento = {"nome": nome_limpo}
     if carga: mov["carga"] = carga
-    if has_seps and block in BLOCK_LABELS: mov["label"] = BLOCK_LABELS[block]
+    # Label aplicado pelo caller (_parse_movimentos sabe se é ATLETA N ou
+    # Nº BLOCO baseado em has_atleta vs only-then). Ver linhas 547-555.
     if in_paralelo: mov["paralelo"] = True
     return mov
 

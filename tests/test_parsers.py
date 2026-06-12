@@ -303,6 +303,78 @@ def test_parse_workout_text_composto_detecta_dois_subworkouts():
     assert any('SNATCH' in n for n in nomes_f2)
 
 
+def test_parse_workout_text_atleta_n_vira_label_em_dupla():
+    """Storm 2026 Dupla SETE MINUTOS: linhas `Atleta 1` / `Atleta 2` marcam
+    quem faz cada movimento. Devem virar `label='ATLETA N'` no mov pra
+    súmula mostrar de quem é a responsabilidade. Movs antes do primeiro
+    `Atleta N` (ex: Cal Air Bike dividido pela dupla) ficam sem label.
+    """
+    texto = (
+        '"Sete Minutos" (Final)\n\n'
+        'For time:\n'
+        '40 Cal Air Bike\n'
+        'Depois, cada atleta:\n'
+        'Atleta 1\n'
+        '16 Bar Muscle-Ups\n'
+        '24m Dumbbell Overhead Walking Lunge (22,5kg)\n'
+        'Atleta 2\n'
+        '16 Bar Muscle-Ups\n'
+        '24m Dumbbell Overhead Walking Lunge (22,5kg)\n\n'
+        'Time cap: 7 minutes\n'
+    )
+    wkt = parse_workout_text(texto, numero=3)
+    assert wkt['tipo'] == 'for_time'
+    movs = [m for m in wkt['movimentos'] if m.get('nome')]
+    assert movs[0]['nome'] == 'CAL AIR BIKE'
+    assert 'label' not in movs[0]  # antes dos atletas — sem label
+    assert movs[1]['label'] == 'ATLETA 1'
+    assert movs[2]['label'] == 'ATLETA 1'
+    assert movs[3]['label'] == 'ATLETA 2'
+    assert movs[4]['label'] == 'ATLETA 2'
+
+
+def test_parse_workout_text_atleta_n_com_then_reseta_label():
+    """Quando `Atleta N` é seguido de `then...`, o label reseta — movs
+    pós-then sem outro Atleta antes ficam sem label (não herdam o anterior).
+    Padrão Storm BARBELLS Dupla: Atleta 1 + then + Atleta 2 + then + Max
+    Box Jump (dupla junta) → Max Box Jump sem label."""
+    texto = (
+        '"BARBELLS"\n\n'
+        'For time:\n'
+        'Atleta 1\n'
+        '15 Deadlifts (115lb)\n'
+        'then...\n'
+        'Atleta 2\n'
+        '15 Deadlifts (115lb)\n'
+        'then...\n'
+        '60 Box Jump Over (60cm)\n\n'
+        'Time cap: 5 minutes\n'
+    )
+    wkt = parse_workout_text(texto, numero=1)
+    movs = [m for m in wkt['movimentos'] if m.get('nome')]
+    # 2 Deadlifts (cada um de um atleta) + 1 Box Jump (dupla)
+    assert movs[0]['label'] == 'ATLETA 1'
+    assert movs[1]['label'] == 'ATLETA 2'
+    assert 'label' not in movs[2]  # após both — sem atribuição
+
+
+def test_parse_workout_text_then_sozinho_ainda_usa_block_labels():
+    """Compat: workouts antigos que usam só `then...` (sem Atleta N) seguem
+    com label `1º BLOCO` / `2º BLOCO` etc. — não foi quebrado pela mudança."""
+    texto = (
+        '"OLD STYLE"\n\n'
+        'For time:\n'
+        '15 Deadlifts\n'
+        'then...\n'
+        '15 Snatches\n\n'
+        'Time cap: 5 minutes\n'
+    )
+    wkt = parse_workout_text(texto, numero=1)
+    movs = [m for m in wkt['movimentos'] if m.get('nome')]
+    assert movs[0]['label'] == '1º BLOCO'
+    assert movs[1]['label'] == '2º BLOCO'
+
+
 def test_parse_workout_text_simples_nao_eh_composto():
     """Garantia: workout simples (1 nome só) NÃO vira composto por engano."""
     texto = (

@@ -127,6 +127,37 @@ Time cap: 9 minutes
 - `Time cap:` no final aplica ao workout inteiro
 - Tipos suportados em F1/F2: `for_time`, `for_time_goal`, `amrap`
 
+### Identificação por atleta (Duplas / Trios / Times)
+
+Quando o workout tem movimentos atribuídos a atletas específicos, use a linha `Atleta N` (ou `Athlete N`) como header antes dos movimentos daquele atleta:
+
+```
+40 Cal Air Bike
+Atleta 1
+16 Bar Muscle-Ups
+24m Dumbbell Overhead Walking Lunge (22,5kg)
+Atleta 2
+16 Bar Muscle-Ups
+24m Dumbbell Overhead Walking Lunge (22,5kg)
+```
+
+Renderização na súmula:
+- `Cal Air Bike` → sem label (movimento da dupla)
+- `Bar Muscle-Ups` / `Lunge` (1º par) → `ATLETA 1` no badge esquerdo
+- `Bar Muscle-Ups` / `Lunge` (2º par) → `ATLETA 2` no badge esquerdo
+
+Resetar atribuição (movimento volta a ser "da dupla junta"): use `then...` em linha própria:
+
+```
+Atleta 1
+15 Deadlifts (115lb)
+then...
+Atleta 2
+15 Deadlifts (115lb)
+then...
+Max Box Jump Over (60cm)   ← agora "junto", sem label
+```
+
 ### Movimentos: convenções de escrita
 
 - `<N> <Movimento>` → `15 Deadlifts`. N é número inicial.
