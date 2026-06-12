@@ -163,6 +163,19 @@ body{
    pra leitura clara da ordem. Especialmente importante nas Duplas, que
    têm Atleta 1 + Atleta 2 + then + Max Box Jump × 2 partes = 4 separadores. */
 .is-composto .sep-row{display:none}
+
+/* Composto "tight": ativado quando F1+F2 têm >14 mov-rows visíveis.
+   Comprime obs-box, sign-cells e mov-rows pra liberar espaço pro F2
+   caber. Usado nas Duplas BARBELLS+RUN (Atleta 1 + Atleta 2 doubled). */
+.is-composto-tight .obs-box{min-height:14mm}
+.is-composto-tight .obs-line{min-height:3mm}
+.is-composto-tight .sign-cell{height:8mm}
+.is-composto-tight .mov-row{min-height:6mm}
+.is-composto-tight .mov-row-goal{min-height:7.5mm}
+.is-composto-tight .score-box{height:14mm}
+.is-composto-tight .pk-athlete-row{height:6.5mm}
+.is-composto-tight .pk-sub-row{height:6.5mm}
+.is-composto-tight .pk-ops-row{height:6.5mm}
 .ds-credit{
   text-align:center;font-size:5pt;color:#bbb;
   letter-spacing:.1em;margin-top:3mm;
@@ -1705,7 +1718,13 @@ DOC_TMPL_STR = r"""<!DOCTYPE html>
 """
 
 
-PAGE_TMPL_STR = r"""<div class="page{% if wkt.tipo == 'composto' %} is-composto{% endif %}">
+PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separadores 'then...'
+   que serão ocultados via CSS). Acima de 14 rows visíveis aplica `tight`,
+   que comprime obs-box pra liberar espaço pro F2 caber sem clipe. #}
+{% set _f1_movs = (wkt.f1.movimentos | rejectattr('separador', 'defined') | list | length) if (wkt.tipo == 'composto' and wkt.f1 is defined) else 0 %}
+{% set _f2_movs = (wkt.f2.movimentos | rejectattr('separador', 'defined') | list | length) if (wkt.tipo == 'composto' and wkt.f2 is defined) else 0 %}
+{% set _composto_dense = (_f1_movs + _f2_movs) > 14 %}
+<div class="page{% if wkt.tipo == 'composto' %} is-composto{% if _composto_dense %} is-composto-tight{% endif %}{% endif %}">
 
 <div class="a4-marker"></div>
 
