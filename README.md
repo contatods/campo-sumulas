@@ -47,6 +47,33 @@ pra desambiguar atletas em baterias mistas (categoria A & B na mesma bateria).
 - **Express** — AMRAP + For Time encadeados (2 fórmulas)
 - **For Load** — maior carga em N tentativas (com régua de anilhas marcáveis)
 
+## PDFs organizados por bateria
+
+Conversão HTML → PDF com o Chrome headless da máquina (mesmo motor do
+Ctrl+P — saída idêntica ao navegador). Camada pós-geração: os HTMLs são os
+mesmos do ZIP normal.
+
+**No app:** botão "PDFs por bateria (dia atual)" em outros escopos — aparece
+quando o servidor encontra o Chrome (rodando local; no Render fica oculto,
+`status.pdf_ativo`). Endpoint: `POST /api/gerar-pdfs` (payload do generate).
+Horários das baterias saem do próprio config.
+
+**CLI** (`gerar_pdfs.py`, sobre um ZIP já baixado):
+
+```bash
+python3 gerar_pdfs.py SUMULAS.zip --excel programacao.xlsx   # ou --json backup.json
+```
+
+Saída (pasta `<zip>_PDFs` ao lado do ZIP):
+
+- `<Dia>/<Categoria>/<NN_Workout>/Bateria_03.pdf` — só as páginas daquela bateria
+- `<Dia>/00_DIA_COMPLETO.pdf` — dia inteiro em ordem cronológica de bateria
+
+Os horários das baterias (pra ordenação cronológica do dia completo) vêm de
+`--excel` (o mesmo Excel de programação que o app importa) ou `--json` (o
+backup do app, "Exportar JSON"). Sem nenhum dos dois, a ordem cai pra
+Categoria → Workout → Bateria. Requer Google Chrome.
+
 ## Comandos
 
 ```bash

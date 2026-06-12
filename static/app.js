@@ -972,6 +972,15 @@ function atualizarBotaoGerar() {
     subCt.textContent = `${nCat} página${nCat !== 1 ? 's' : ''} · ${cat.nome}${compOn ? '' : ' · sem competidores'}`;
   }
 
+  // Botão "PDFs por bateria (dia atual)" — só visível com pdf_ativo
+  const btnPdf = document.getElementById('btnGerarPdfDia');
+  const subPdf = document.getElementById('bgeSubPdfDia');
+  if (btnPdf && subPdf) {
+    btnPdf.disabled = btnDi.disabled;
+    subPdf.textContent = !diaCur ? 'sem dia ativo'
+      : `${nDia} página${nDia !== 1 ? 's' : ''} · ${diaCur.label || 'dia atual'} · Chrome local`;
+  }
+
   // Botão "Pré-evento" — atletas no roster sem bateria
   const btnPre = document.getElementById('btnGerarPreEvento');
   const subPre = document.getElementById('bgeSubPreEvento');
@@ -1139,6 +1148,29 @@ function gerarZIPEscopo(escopo) {
 
 // Compat: gerarZIP() ainda existe pro botão antigo (caso ainda referenciado)
 function gerarZIP() { gerarZIPEscopo('evento'); }
+
+function gerarPDFsDia() {
+  // ZIP de PDFs por bateria do dia atual (endpoint local — usa o Chrome da
+  // máquina). Mesmo payload do /api/generate com escopo dia.
+  const payload = _buildPayloadGerar('dia');
+  if (!payload) return;
+  const restore = _gerarBtnsBusy(['btnGerarPdfDia'], 'btnGerarPdfDia', 'bgeSubPdfDia');
+  toast('Gerando PDFs — um dia cheio pode levar ~2 minutos…', 'ok');
+  apiFetch('/api/gerar-pdfs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(r => { if (!r.ok) return r.json().then(j => { throw new Error(j.error || 'falha na geração de PDFs'); }); return r.blob(); })
+  .then(blob => {
+    const baseName = (config.evento.nome || 'sumulas').replace(/\s+/g, '_');
+    const label = ((config.dias || [])[diaAtual] || {}).label || 'dia';
+    _downloadBlob(blob, `${baseName}_${label}_PDFs.zip`);
+    toast('PDFs por bateria gerados!', 'ok');
+  })
+  .catch(e => toast('Erro: ' + e.message, 'err'))
+  .finally(restore);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  EDITOR
@@ -2460,6 +2492,10 @@ function toast(msg, type = 'ok') {
 (function initApp() {
   apiFetch('/api/status').then(r=>r.json()).then(s => {
     chatAIAtiva = !!s.ai_ativo;
+    if (s.pdf_ativo) {
+      const bp = document.getElementById('btnGerarPdfDia');
+      if (bp) bp.style.display = '';
+    }
     if (s.ai_ativo) document.getElementById('aiBadge').style.display = '';
   }).catch(()=>{});
   loadState();

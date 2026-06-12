@@ -6,6 +6,7 @@ Uso: python3 sumula_app.py   →  abre http://localhost:8765
 """
 
 import json, os, io, zipfile, threading, webbrowser, sys, base64, re, signal, time, traceback
+import pathlib, shutil, tempfile
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlsplit
 
@@ -18,7 +19,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.51.7'
+VERSION = '1.52.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -198,6 +199,8 @@ def _resolve_logo(value):
 
 # ── Imports dos módulos extraídos ──────────────────────────────────────────────
 from parsers import parse_excel, parse_pdf, assign_workout_numbers, assign_workout_numbers_global, _atleta_sort_key
+from gerar_pdfs import (achar_chrome, horarios_do_config,
+                        converter as converter_pdfs)
 from ai_rounds import (enriquecer_workouts, AI_ATIVO,
                        sugerir_time_cap, auto_descricao,
                        validar_evento, resumo_evento, chat_evento,
@@ -234,6 +237,13 @@ if AI_ATIVO:
     print("  ✓ IA ativa (Anthropic Claude Haiku) — cálculo inteligente de rounds")
 else:
     print("  ○  IA inativa (defina ANTHROPIC_API_KEY para ativar)")
+# PDFs por bateria: usa o Chrome headless da máquina (fidelidade do Ctrl+P).
+# No Render não há Chrome → recurso desligado, frontend esconde o botão.
+PDF_CHROME = achar_chrome()
+if PDF_CHROME:
+    print("  ✓ PDFs por bateria ativos (Chrome headless)")
+else:
+    print("  ○  PDFs por bateria inativos (Google Chrome não encontrado)")
 print("  ✓ Saída: HTML (abrir no browser + Ctrl+P para PDF)")
 print()
 
@@ -311,6 +321,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 "uptime_s":    int(time.time() - _STARTUP_TS),
                 "python":      sys.version.split()[0],
                 "ambiente":    "cloud" if IS_CLOUD else "local",
+                "pdf_ativo":   bool(PDF_CHROME),
             })
             self._send(200, 'application/json; charset=utf-8', payload.encode())
         else:
@@ -337,6 +348,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
             routes = {
                 '/api/preview':            self._handle_preview,
                 '/api/generate':           self._handle_generate,
+                '/api/gerar-pdfs':         self._handle_generate_pdfs,
                 '/api/generate/pre-evento': self._handle_generate_pre_evento,
                 '/api/import/excel':       self._handle_import_excel,
                 '/api/import/pdf':         self._handle_import_pdf,
@@ -439,7 +451,15 @@ class SumulaHandler(BaseHTTPRequestHandler):
         self._send(200, 'text/html; charset=utf-8', html.encode('utf-8'))
 
     def _handle_generate(self, body):
-        """Gera ZIP no shape multi-dia.
+        """Gera ZIP de HTMLs no shape multi-dia (ver _preparar_fill_zip)."""
+        fill_zip, nome_zip, _dias = self._preparar_fill_zip(body)
+        # Streaming: navegador inicia o download imediatamente. Servidor
+        # gera as súmulas em paralelo ao envio. Cancela o efeito "demora
+        # pra começar" mesmo em ZIPs grandes (~80MB Sábado completo).
+        self._send_zip_streaming(nome_zip + '.zip', fill_zip)
+
+    def _preparar_fill_zip(self, body):
+        """Valida o body e monta a geração de súmulas multi-dia.
 
         Estrutura: Dia/Categoria/Workout_NN.html — cada arquivo combina todas
         as alocações de TODAS as baterias dessa categoria que rodam aquele
@@ -449,6 +469,11 @@ class SumulaHandler(BaseHTTPRequestHandler):
         branco (sem nome/número/box).
 
         Filtros opcionais: `dia_idx` (gera só esse dia). Sem filtro, gera tudo.
+
+        Retorna (fill_zip, nome_base, dias): fill_zip recebe qualquer objeto
+        com .writestr(caminho, bytes) — o ZipFile do download de HTMLs ou o
+        escritor em disco do gerador de PDFs; dias é a lista já filtrada
+        (fonte dos horários de bateria pro PDF do dia completo).
         """
         cfg = body.get('config')
         if not isinstance(cfg, dict):
@@ -661,11 +686,52 @@ class SumulaHandler(BaseHTTPRequestHandler):
                         # Se um dia houver agrupamento por time_id de atletas
                         # individuais, esta é a hora de chamar o resumo.
 
-        nome_zip = (sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas') + '.zip'
-        # Streaming: navegador inicia o download imediatamente. Servidor
-        # gera as súmulas em paralelo ao envio. Cancela o efeito "demora
-        # pra começar" mesmo em ZIPs grandes (~80MB Sábado completo).
-        self._send_zip_streaming(nome_zip, _fill_zip)
+        nome_base = sanitize(ev.get('nome', '') or 'sumulas') or 'sumulas'
+        return _fill_zip, nome_base, dias
+
+    def _handle_generate_pdfs(self, body):
+        """Gera ZIP de PDFs organizados por bateria (local only).
+
+        Mesmo body do /api/generate. Gera os MESMOS HTMLs (via
+        _preparar_fill_zip, byte-idêntico ao ZIP de HTMLs), converte com o
+        Chrome headless da máquina (gerar_pdfs.converter) e devolve ZIP com:
+          Dia/Categoria/Workout/Bateria_NN.pdf  +  Dia/00_DIA_COMPLETO.pdf
+        (dia completo em ordem horário → bateria → raia).
+
+        No Render não há Chrome → endpoint responde 400 e o frontend nem
+        mostra o botão (status.pdf_ativo == false).
+        """
+        if not PDF_CHROME:
+            raise BadRequest("geração de PDF indisponível — Google Chrome não "
+                             "encontrado nesta máquina (recurso local)")
+        fill_zip, nome_base, dias = self._preparar_fill_zip(body)
+        horarios = horarios_do_config({'dias': dias})
+
+        tmp = tempfile.mkdtemp(prefix='sumulas_app_pdf_')
+        try:
+            raiz  = os.path.join(tmp, 'html')
+            saida = os.path.join(tmp, 'pdf')
+
+            class _DiskWriter:
+                """Duck-type do ZipFile: fill_zip só usa .writestr()."""
+                def writestr(self, caminho, data):
+                    destino = os.path.join(raiz, caminho)
+                    os.makedirs(os.path.dirname(destino), exist_ok=True)
+                    with open(destino, 'wb') as f:
+                        f.write(data)
+
+            fill_zip(_DiskWriter())
+            feitos, erros = converter_pdfs(raiz, saida, horarios, PDF_CHROME)
+            if erros:
+                raise RuntimeError(f"{len(erros)} PDF(s) falharam: {erros[0]}")
+
+            def _fill(zf):
+                base = pathlib.Path(saida)
+                for pdf in sorted(base.rglob('*.pdf')):
+                    zf.writestr(str(pdf.relative_to(base)), pdf.read_bytes())
+            self._send_zip_streaming(f'{nome_base}_PDFs.zip', _fill)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
     def _handle_generate_pre_evento(self, body):
         """Gera ZIP de súmulas 'pré-evento' — para atletas/times inscritos no
