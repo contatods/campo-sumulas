@@ -125,6 +125,10 @@ select{width:100%;background:#101114;color:var(--tx);border:1px solid var(--bord
 footer{margin-top:auto;padding-top:28px;color:#5c5f68;font-size:11px}
 a.recarregar{color:var(--mut);font-size:12px;text-decoration:none;float:right}
 a.recarregar:hover{color:var(--lar)}
+.selo{margin-top:9px;font-size:12.5px;display:none;padding:7px 11px;border-radius:8px;line-height:1.35}
+.selo.ok{display:block;color:#7ee29a;background:#11271a;border:1px solid #1f5733}
+.selo.warn{display:block;color:#ffb486;background:#2c1a10;border:1px solid #6e3812}
+.selo.chk{display:block;color:var(--mut);background:#16181d;border:1px solid var(--bord)}
 </style>
 </head>
 <body>
@@ -145,10 +149,11 @@ a.recarregar:hover{color:var(--lar)}
 
   <div class="card">
     <h2>2 · Cronograma das baterias <span class="opt">— Excel de programação ou backup JSON (opcional, ordena o dia completo por horário)</span></h2>
-    <select id="selCron"></select>
+    <select id="selCron" onchange="checarCron()"></select>
     <label class="drop" id="dropCron">…ou clique/arraste o .xlsx / .json aqui
       <input type="file" accept=".xlsx,.xlsm,.json" onchange="upload(this,'cron')"></label>
     <div class="escolhido" id="escCron"></div>
+    <div class="selo" id="seloCron"></div>
   </div>
 
   <button id="btnGerar" onclick="gerar()">Gerar PDFs</button>
@@ -196,9 +201,37 @@ function upload(inp, tipo){
   r.onload = () => {
     const b64 = r.result.split(',')[1];
     if(tipo==='zip'){ upZip={nome:f.name,b64}; document.getElementById('escZip').textContent='⬆ '+f.name; document.getElementById('selZip').value=''; }
-    else { upCron={nome:f.name,b64}; document.getElementById('escCron').textContent='⬆ '+f.name; document.getElementById('selCron').value=''; }
+    else { upCron={nome:f.name,b64}; document.getElementById('escCron').textContent='⬆ '+f.name; document.getElementById('selCron').value=''; checarCron(); }
   };
   r.readAsDataURL(f);
+}
+
+// Valida o cronograma escolhido (dropdown ou upload): confirma quantos
+// horários foram lidos. Retorna o objeto {total, exemplo, ...} pra quem
+// quiser decidir (o gerar() usa pra avisar antes de sair fora de ordem).
+async function checarCron(){
+  const sel = document.getElementById('selCron').value;
+  const selo = document.getElementById('seloCron');
+  let body = null;
+  if(upCron) body = {cron_nome:upCron.nome, cron_b64:upCron.b64};
+  else if(sel) body = {cron_caminho:sel};
+  if(!body){ selo.className='selo'; selo.textContent=''; return {total:0, nenhum:true}; }
+  selo.className='selo chk'; selo.textContent='conferindo o arquivo…';
+  let d;
+  try{
+    const r = await fetch('/api/cronograma',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    d = await r.json();
+  }catch(e){ d = {total:0, erro:'falha ao ler'}; }
+  if(d.total>0){
+    selo.className='selo ok';
+    selo.textContent=`✓ ${d.total} horários de bateria carregados`+(d.exemplo?` (ex: ${d.exemplo})`:'');
+  } else {
+    selo.className='selo warn';
+    selo.textContent='⚠ nenhum horário reconhecido neste arquivo'
+      +(d.erro?` — ${d.erro}`:'')+'. O dia completo sairá em ordem alfabética.';
+  }
+  return d;
 }
 
 ['dropZip','dropCron'].forEach(id=>{
@@ -216,6 +249,18 @@ function upload(inp, tipo){
 async function gerar(){
   const zipSel = document.getElementById('selZip').value;
   if(!zipSel && !upZip){ alert('Escolha o ZIP de súmulas primeiro.'); return; }
+
+  // Rede de segurança: revalida o cronograma na hora de gerar. Sem horários
+  // (campo vazio OU arquivo sem cronograma), o dia completo sai em ordem
+  // alfabética — confirma antes pra ninguém gerar fora de ordem sem querer.
+  const chk = await checarCron();
+  if(!chk.total){
+    const msg = chk.nenhum
+      ? 'Você não escolheu um cronograma.\n\nSem ele, o PDF "00_DIA_COMPLETO" sairá em ordem ALFABÉTICA por categoria — não na ordem das baterias (horário → bateria → raia). Os PDFs por bateria saem certos de qualquer jeito.\n\nGerar mesmo assim?'
+      : 'O arquivo de cronograma escolhido NÃO tem horários de bateria reconhecidos.\n\nO PDF "00_DIA_COMPLETO" sairá em ordem ALFABÉTICA por categoria. Confira se escolheu o Excel de programação certo (ou o backup JSON do app).\n\nGerar mesmo assim?';
+    if(!confirm(msg)) return;
+  }
+
   const body = {};
   if(upZip){ body.zip_nome=upZip.nome; body.zip_b64=upZip.b64; } else body.zip_caminho=zipSel;
   const cronSel = document.getElementById('selCron').value;
@@ -328,10 +373,43 @@ class GuiHandler(BaseHTTPRequestHandler):
                 self._send(200, 'application/json', b'{"ok":true}')
             else:
                 self._send(400, 'application/json', b'{"error":"pasta nao existe"}')
+        elif self.path == '/api/cronograma':
+            self._validar_cronograma(body)
         elif self.path == '/api/converter':
             self._converter(body)
         else:
             self._send(404, 'text/plain', b'Rota nao encontrada')
+
+    def _validar_cronograma(self, body):
+        """Lê o cronograma escolhido e responde quantos horários tem +
+        um exemplo (o da bateria mais cedo). Frontend usa pro selo verde
+        e pra decidir se avisa antes de gerar fora de ordem."""
+        tmp = None
+        try:
+            if body.get('cron_caminho'):
+                caminho = body['cron_caminho']
+            elif body.get('cron_b64'):
+                tmp = Path(tempfile.mkdtemp(prefix='cron_'))
+                caminho = str(tmp / (body.get('cron_nome') or 'cron.json'))
+                Path(caminho).write_bytes(base64.b64decode(body['cron_b64']))
+            else:
+                self._send(200, 'application/json', b'{"total":0}')
+                return
+            horarios = _carregar_cronograma(caminho)
+            comhora = [(v, k[2]) for k, v in horarios.items() if v]
+            exemplo = ""
+            if comhora:
+                v, num = min(comhora)
+                exemplo = f"bat {num} = {v}"
+            self._send(200, 'application/json',
+                       json.dumps({"total": len(horarios),
+                                   "exemplo": exemplo}).encode())
+        except Exception as e:
+            self._send(200, 'application/json',
+                       json.dumps({"total": 0, "erro": str(e)}).encode())
+        finally:
+            if tmp:
+                shutil.rmtree(tmp, ignore_errors=True)
 
     def _chunk(self, texto):
         data = (texto + "\n").encode('utf-8')
