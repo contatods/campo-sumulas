@@ -1792,7 +1792,7 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
 {# ── WORKOUT ZONE ── #}
 {% set tipo_labels = {'for_time':'For Time','for_time_goal':'For Time Goal','amrap':'AMRAP','express':'Express — AMRAP + For Time','for_load':'For Load','composto':'Composto'} %}
 <div class="wkt-zone">
-  {% if tipo == 'express' and wkt.numero_f2 is defined %}
+  {% if tipo in ('express', 'composto') and wkt.numero_f2 is defined %}
   <div class="wkt-badge-dual">
     <span class="bd-num">{{ wkt.numero }}</span>
     <span class="bd-sep">·</span>
@@ -1861,13 +1861,14 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
 {% elif tipo == 'composto' %}
   {# Composto: 2 sub-workouts encadeados (`"X" + "Y"` no header do Excel).
      Cada fórmula tem seu próprio tipo (For Time / For Time Goal / AMRAP),
-     time cap, e score box. Score do composto = soma das duas pontuações. #}
-  {% for f_pair in [(1, wkt.f1), (2, wkt.f2)] %}
-    {% set f_idx = f_pair[0] %}
+     time cap, score box, E NÚMERO PRÓPRIO (numero / numero_f2 — ocupa 2
+     slots na sequência da categoria, igual Express). #}
+  {% for f_pair in [(wkt.numero, wkt.f1), (wkt.numero_f2|default(wkt.numero), wkt.f2)] %}
+    {% set f_num = f_pair[0] %}
     {% set f = f_pair[1] %}
     <div class="section-banner">
       <div style="display:flex;align-items:center">
-        <div class="sbn-badge">F{{ f_idx }}</div>
+        <div class="sbn-badge">{{ f_num }}</div>
         <span class="sbn-t">{{ f.nome }}</span>
       </div>
       {% if f.janela %}<span class="sbn-s">{{ f.janela }}</span>{% endif %}
@@ -1882,12 +1883,12 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
       </div>
     {% endif %}
     {% if f.tipo == 'amrap' %}
-      {{ amrap_table(f.movimentos, wkt.numero, f.n_rounds|default(3), f) }}
+      {{ amrap_table(f.movimentos, f_num, f.n_rounds|default(3), f) }}
     {% else %}
-      {{ mov_table(f.movimentos, wkt.numero, goal_reps=(f.goal_reps | default(0)), hide_cum=(f.tipo == 'for_time_goal'), tb_col=(f.tipo == 'for_time_goal' and f.tiebreak)) }}
+      {{ mov_table(f.movimentos, f_num, goal_reps=(f.goal_reps | default(0)), hide_cum=(f.tipo == 'for_time_goal'), tb_col=(f.tipo == 'for_time_goal' and f.tiebreak)) }}
     {% endif %}
     {{ score_box(f.tipo, f) }}
-    {% if f_idx == 1 and wkt.descanso %}
+    {% if loop.first and wkt.descanso %}
       <div class="rest-bar">{{ wkt.descanso|capitalize }}</div>
     {% endif %}
   {% endfor %}

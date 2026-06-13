@@ -136,7 +136,7 @@ function assignWorkoutNumbersGlobal() {
       let counter = counters[nome] || 1;
       for (const wkt of (cat.workouts || [])) {
         wkt.numero = counter;
-        if (wkt.tipo === 'express') {
+        if (wkt.tipo === 'express' || wkt.tipo === 'composto') {
           wkt.numero_f2 = counter + 1;
           counter += 2;
         } else {
@@ -864,7 +864,7 @@ function renderCategoriaDetalhe(cat, ci) {
         const isActive = previewPath && previewPath.dia === diaAtual && previewPath.cat === ci && previewPath.wkt === wi;
         const tipoLabel = TIPO_LABEL[w.tipo] || w.tipo;
         const numDisplay = w.numero || (wi + 1);
-        const numStr = (w.tipo === 'express' && w.numero_f2) ? `${numDisplay}-${w.numero_f2}` : String(numDisplay);
+        const numStr = ((w.tipo === 'express' || w.tipo === 'composto') && w.numero_f2) ? `${numDisplay}-${w.numero_f2}` : String(numDisplay);
         return `
         <div class="wkt-row${isActive ? ' active' : ''}" onclick="selectWorkout(${ci}, ${wi})">
           <div class="wkt-row-num">${numStr}</div>
@@ -1241,7 +1241,7 @@ function editarWorkout(ci, wi) {
   editingPath = { dia: diaAtual, cat: ci, wkt: wi };
   assignWorkoutNumbersGlobal();
   const wNum = w.numero || (wi + 1);
-  const wNumStr = (w.tipo === 'express' && w.numero_f2) ? `${wNum}-${w.numero_f2}` : String(wNum);
+  const wNumStr = ((w.tipo === 'express' || w.tipo === 'composto') && w.numero_f2) ? `${wNum}-${w.numero_f2}` : String(wNum);
   document.getElementById('edTitle').textContent = `Workout ${wNumStr} · ${esc(cats[ci].nome)}`;
   document.getElementById('edNome').value = w.nome || '';
   document.getElementById('edTipo').value = w.tipo || 'for_time';

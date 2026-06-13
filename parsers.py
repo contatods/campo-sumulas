@@ -1381,13 +1381,13 @@ def _atleta_sort_key(a: Atleta) -> tuple:
 
 def assign_workout_numbers(workouts: list[Workout]) -> list[Workout]:
     """Recalcula números de workouts considerando slots.
-    Express Formula ocupa 2 slots (N e N+1). Outros ocupam 1 slot.
+    Express e Composto ocupam 2 slots (N e N+1). Outros ocupam 1 slot.
     Modifica a lista in-place e retorna ela.
     """
     counter = 1
     for wkt in workouts:
         wkt['numero'] = counter
-        if wkt.get('tipo') == 'express':
+        if wkt.get('tipo') in ('express', 'composto'):
             wkt['numero_f2'] = counter + 1
             counter += 2
         else:
@@ -1400,7 +1400,7 @@ def assign_workout_numbers_global(dias: list) -> None:
     """Numera workouts em sequência CONTÍNUA por categoria, atravessando dias.
 
     Ex: Elite Masc com 3 wkts na Sexta + 2 no Sábado vira 1,2,3 e 4,5 — em vez
-    de reiniciar 1,2 no Sábado. Mantém regra de Express (ocupa 2 slots).
+    de reiniciar 1,2 no Sábado. Express e Composto ocupam 2 slots.
     Mutação in-place nos wkt['numero'] / wkt['numero_f2'] de cada dia.
     """
     counters: dict[str, int] = {}
@@ -1410,7 +1410,7 @@ def assign_workout_numbers_global(dias: list) -> None:
             counter = counters.get(nome, 1)
             for wkt in (cat.get('workouts') or []):
                 wkt['numero'] = counter
-                if wkt.get('tipo') == 'express':
+                if wkt.get('tipo') in ('express', 'composto'):
                     wkt['numero_f2'] = counter + 1
                     counter += 2
                 else:
