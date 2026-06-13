@@ -555,6 +555,9 @@ function toggleMaisOpcoes() {
     btn.textContent = open ? 'menos escopos ▴' : 'outros escopos ▾';
     btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
+  if (open && typeof _atualizarSelGerarWorkout === 'function') {
+    _atualizarSelGerarWorkout();
+  }
 }
 
 function onEventoChange() {
@@ -981,6 +984,12 @@ function atualizarBotaoGerar() {
       : `${nDia} página${nDia !== 1 ? 's' : ''} · ${diaCur.label || 'dia atual'} · Chrome local`;
   }
 
+  // Linha "Workout específico" — só repopula se o painel estiver aberto
+  const wktRow = document.getElementById('gerarWkpRow');
+  if (wktRow && wktRow.style.display !== 'none') {
+    _atualizarSelGerarWorkout();
+  }
+
   // Botão "Pré-evento" — atletas no roster sem bateria
   const btnPre = document.getElementById('btnGerarPreEvento');
   const subPre = document.getElementById('bgeSubPreEvento');
@@ -1090,6 +1099,14 @@ function _buildPayloadGerar(escopo) {
     }
     payload.dia_idx = diaAtual;
     payload.cat_idx = catSel;
+  } else if (escopo === 'workout') {
+    const sel = document.getElementById('selGerarWorkout');
+    const wktIdx = sel && sel.value !== '' ? parseInt(sel.value, 10) : NaN;
+    if (isNaN(wktIdx)) {
+      toast('Selecione um workout primeiro', 'err'); return null;
+    }
+    payload.dia_idx = diaAtual;
+    payload.wkt_idx = wktIdx;
   }
   return payload;
 }
@@ -1104,8 +1121,107 @@ function _nomeArquivoZip(escopo) {
     const c = ((config.dias[diaAtual] || {}).categorias || [])[catSel];
     return c ? `${baseName}_${c.nome.replace(/\s+/g, '_')}.zip` : `${baseName}.zip`;
   }
+  if (escopo === 'workout') {
+    const dia = (config.dias || [])[diaAtual] || {};
+    const sel = document.getElementById('selGerarWorkout');
+    const wktIdx = sel && sel.value !== '' ? parseInt(sel.value, 10) : NaN;
+    const meta = _workoutMetaDoDia(dia, wktIdx);
+    const label = dia.label || 'dia';
+    const slug = meta
+      ? `Workout-${meta.numLabel}-${(meta.nome || '').replace(/\s+/g, '-')}`
+      : 'workout';
+    return `${baseName}_${label}_${slug}.zip`;
+  }
   return `${baseName}.zip`;
 }
+
+// Workouts ÚNICOS do dia atual, agrupados por idx. Storm Sábado tem categorias
+// com 2 e 3 workouts mas os 3 nomes são iguais entre categorias — então
+// dropdown vira ['VINTE SEIS', 'BARBELLS+RUN', 'SETE MINUTOS'].
+function _workoutsDoDia(dia) {
+  const seenByIdx = new Map();   // wktIdx (0-based) → meta
+  for (const cat of (dia.categorias || [])) {
+    (cat.workouts || []).forEach((w, idx) => {
+      if (seenByIdx.has(idx)) return;
+      const numLabel = (w.tipo === 'composto' && w.numero_f2)
+        ? `${w.numero}-${w.numero_f2}`
+        : String(w.numero);
+      seenByIdx.set(idx, {
+        idx,
+        nome:        w.nome || `Workout ${idx + 1}`,
+        tipo:        w.tipo,
+        numero:      w.numero,
+        numero_f2:   w.numero_f2,
+        numLabel,
+      });
+    });
+  }
+  return Array.from(seenByIdx.values()).sort((a, b) => a.idx - b.idx);
+}
+
+function _workoutMetaDoDia(dia, wktIdx) {
+  return _workoutsDoDia(dia).find(w => w.idx === wktIdx) || null;
+}
+
+// Popula o select com workouts do dia atual. Chamado quando dia muda + quando
+// outros-escopos abre.
+function _atualizarSelGerarWorkout() {
+  const sel = document.getElementById('selGerarWorkout');
+  const row = document.getElementById('gerarWkpRow');
+  const btn = document.getElementById('btnGerarWorkout');
+  if (!sel || !row || !btn) return;
+  assignWorkoutNumbersGlobal();
+  const dia = (config.dias || [])[diaAtual] || {};
+  const wkts = _workoutsDoDia(dia);
+  if (!wkts.length) {
+    row.style.display = 'none';
+    return;
+  }
+  row.style.display = '';
+  const prevVal = sel.value;
+  sel.innerHTML = '<option value="">— Workout —</option>' +
+    wkts.map(w => {
+      const numLbl = (w.tipo === 'composto' && w.numero_f2) ? `${w.numero}-${w.numero_f2}` : String(w.numero);
+      return `<option value="${w.idx}">${esc(numLbl)} · ${esc(w.nome)}</option>`;
+    }).join('');
+  if (prevVal && wkts.some(w => String(w.idx) === prevVal)) {
+    sel.value = prevVal;
+  }
+  onSelGerarWorkoutChange();
+}
+
+function onSelGerarWorkoutChange() {
+  const sel = document.getElementById('selGerarWorkout');
+  const btn = document.getElementById('btnGerarWorkout');
+  const sub = document.getElementById('bgeSubWorkout');
+  if (!sel || !btn) return;
+  const empty = !sel.value;
+  btn.disabled = empty;
+  if (sub) {
+    if (empty) {
+      sub.textContent = '—';
+    } else {
+      const dia = (config.dias || [])[diaAtual] || {};
+      const wktIdx = parseInt(sel.value, 10);
+      // Conta páginas que vão sair (sumar atletas das categorias que têm esse workout)
+      let total = 0;
+      for (const cat of (dia.categorias || [])) {
+        if ((cat.workouts || []).length <= wktIdx) continue;
+        const bats = cat.baterias || [];
+        const wktPos = wktIdx + 1;
+        for (const b of bats) {
+          const wqr = b.workouts_que_rodam || [];
+          if (wqr.length && !wqr.includes(wktPos)) continue;
+          total += (b.alocacoes || []).length;
+        }
+      }
+      sub.textContent = total ? `${total} súmula${total === 1 ? '' : 's'}` : '— sem atletas alocados —';
+    }
+  }
+  // Atualiza meta do workout no _workoutMetaDoDia cache se precisar
+  void _workoutMetaDoDia;
+}
+
 
 function gerarZIPEscopo(escopo) {
   const totalWkts = (config.dias || []).reduce((sum, d) =>
@@ -1129,8 +1245,8 @@ function gerarZIPEscopo(escopo) {
   }
   const payload = _buildPayloadGerar(escopo);
   if (!payload) return;
-  const btnIdMap = { evento: 'btnGerarEvento', dia: 'btnGerarDia', cat: 'btnGerarCat' };
-  const subIdMap = { evento: 'bgeSubEvento',   dia: 'bgeSubDia',   cat: 'bgeSubCat' };
+  const btnIdMap = { evento: 'btnGerarEvento', dia: 'btnGerarDia', cat: 'btnGerarCat', workout: 'btnGerarWorkout' };
+  const subIdMap = { evento: 'bgeSubEvento',   dia: 'bgeSubDia',   cat: 'bgeSubCat',   workout: 'bgeSubWorkout' };
   const restore = _gerarBtnsBusy(Object.values(btnIdMap), btnIdMap[escopo], subIdMap[escopo]);
   apiFetch('/api/generate', {
     method: 'POST',

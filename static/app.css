@@ -486,6 +486,16 @@ button:focus-visible,
   box-shadow:var(--shadow-soft);transform:translateY(-1px)}
 .btn-gerar-escopo:disabled{opacity:.45;cursor:not-allowed}
 .btn-gerar-escopo + .btn-gerar-escopo{margin-top:6px}
+/* Linha workout: select + botão de gerar lado a lado */
+.ger-wkt-row{display:flex;gap:6px;margin-top:6px;align-items:stretch}
+.ger-wkt-row select{flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border3);
+  color:var(--text);border-radius:var(--radius);padding:8px 10px;font-family:inherit;
+  font-size:11px;letter-spacing:.04em;cursor:pointer}
+.ger-wkt-row select:hover:not(:disabled){border-color:var(--orange-edge)}
+.ger-wkt-row select:focus{border-color:var(--orange);box-shadow:var(--focus-glow);outline:none}
+.ger-wkt-row .btn-gerar-wkt{flex:0 0 auto;width:auto;padding:6px 10px;margin-top:0}
+.ger-wkt-row .btn-gerar-wkt .bge-main{font-size:11px;font-weight:700}
+.ger-wkt-row .btn-gerar-wkt .bge-sub{font-size:9px;color:var(--ghost)}
 /* Botão primário com gradient laranja — destaque real do CTA principal. */
 .btn-gerar-escopo.primary{background:linear-gradient(180deg,#FF7E1F 0%,var(--orange) 100%);
   color:#000;border-color:#FF7E1F;box-shadow:var(--shadow-soft)}

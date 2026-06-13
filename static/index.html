@@ -78,6 +78,13 @@
           <span class="bge-main">Pré-evento (não alocados)</span>
           <span class="bge-sub" id="bgeSubPreEvento">—</span>
         </button>
+        <div class="ger-wkt-row" id="gerarWkpRow" style="display:none">
+          <select id="selGerarWorkout" onchange="onSelGerarWorkoutChange()" title="Workout específico do dia atual"></select>
+          <button class="btn-gerar-escopo btn-gerar-wkt" id="btnGerarWorkout" onclick="gerarZIPEscopo('workout')" disabled title="Gera súmulas só do workout selecionado, atravessando todas as categorias do dia atual">
+            <span class="bge-main">⬇ Gerar workout</span>
+            <span class="bge-sub" id="bgeSubWorkout">—</span>
+          </button>
+        </div>
       </div>
     </div>
   </aside>

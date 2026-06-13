@@ -19,7 +19,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.52.3'
+VERSION = '1.53.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -520,13 +520,31 @@ class SumulaHandler(BaseHTTPRequestHandler):
             # Substitui as categorias do (único) dia restante por só a escolhida
             dias = [{**dias[0], 'categorias': [cats_do_dia[cat_idx]]}]
 
+        # Filtro adicional: wkt_idx (precisa dia_idx). Gera só UM workout do dia,
+        # atravessando todas as categorias. Útil pra reimprimir material de um
+        # workout específico em campo (perdeu/molhou/rasgou súmula). Composto
+        # ocupa 1 índice na lista (não 2) — quem escolhe 'BARBELLS+RUN' recebe
+        # a súmula composta inteira (badge dual no header). Categorias que NÃO
+        # têm esse índice de workout (ex: Iniciante com 2 workouts em vez de 3)
+        # ficam fora silenciosamente.
+        wkt_idx = body.get('wkt_idx')
+        if wkt_idx is not None:
+            if dia_idx is None:
+                raise BadRequest("wkt_idx requer dia_idx")
+            try:
+                wkt_idx = int(wkt_idx)
+            except (TypeError, ValueError):
+                raise BadRequest("wkt_idx inválido")
+            if wkt_idx < 0:
+                raise BadRequest("wkt_idx deve ser >= 0")
+
         # Roster fill em "aguardando balizamento": habilitado quando qualquer
         # filtro (dia ou categoria) está ativo. Em escopo dia ainda pode gerar
         # muitas páginas (Monstar Sábado: ~1300 páginas / ~80MB / ~2min) mas é
         # o que o juiz pede quando marca 'incluir competidores'. Frontend já
         # mostra confirm dialog acima de 1500 páginas. Evento inteiro continua
         # bloqueado (3000+ páginas estouram timeout do Render).
-        roster_fill_aguardando = dia_idx is not None or cat_idx is not None
+        roster_fill_aguardando = dia_idx is not None or cat_idx is not None or wkt_idx is not None
 
         def _fill_zip(zf):
             # Closure sobre dias, ev, logo, logo_evt, incluir_competidores,
@@ -595,6 +613,10 @@ class SumulaHandler(BaseHTTPRequestHandler):
                     ordem_cron = {p: i + 1 for i, p in enumerate(wkts_ordenados)}
 
                     for wkt_pos, wkt in enumerate(workouts, start=1):
+                        # Filtro wkt_idx: gera só esse workout (índice 0-based).
+                        # Categorias sem esse índice ficam fora silenciosamente.
+                        if wkt_idx is not None and (wkt_pos - 1) != wkt_idx:
+                            continue
                         # Skip se cronograma definido e nenhuma bateria do dia roda
                         # este wkt. Baterias sem cronograma rodam tudo (compat).
                         roda_este_wkt = (
