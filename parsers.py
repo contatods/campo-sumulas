@@ -1847,14 +1847,26 @@ def _workout_numero_de_codigo(codigo: str) -> int | None:
 
 def _workouts_que_rodam_da_bateria(codigo_evento: str, workouts: list[dict]) -> list[int]:
     """Mapeia o codigo_evento de uma bateria pra lista de posições 1-based
-    de workouts da categoria. Aceita 3 formas:
+    de workouts da categoria. Aceita 4 formas:
       1. Nº direto: '#1', '#2 & #3', 'WKT 4'  → match por número
       2. Nome do workout entre aspas: '"Simple Dimension"'  → match por nome
       3. Misto: '"Simple Dimension" & "Spin"'  → split por & + match por nome
+      4. Composto: parte do split bate com nome de F1 ou F2 do composto
+         (Storm Dupla: cronograma diz `"Barbells and Jump & Run in the Park"`,
+         mas o composto se chama `BARBELLS AND JUMP + RUN IN THE PARK`.
+         Split por & retorna `BARBELLS AND JUMP` e `RUN IN THE PARK`, e
+         cada um bate com F1.nome ou F2.nome do composto).
     Retorna [] se nada bateu.
     """
     if not codigo_evento or not workouts:
         return []
+    # Antes de split, testa match exato do codigo cheio com nome de algum
+    # workout (cobre composto onde o nome dele JÁ tem `+` ou `&` literal).
+    nome_full = codigo_evento.strip().strip('"“”\'').upper()
+    for idx, w in enumerate(workouts, start=1):
+        nome_w = (w.get('nome', '') or '').strip().upper()
+        if nome_w and nome_w == nome_full:
+            return [idx]
     # Split em '&' pra suportar baterias mistas (workout A & workout B)
     partes = _split_codigo_evento(codigo_evento) or [codigo_evento]
     posicoes: list[int] = []
@@ -1864,7 +1876,7 @@ def _workouts_que_rodam_da_bateria(codigo_evento: str, workouts: list[dict]) -> 
         if n is not None:
             if n not in posicoes: posicoes.append(n)
             continue
-        # Forma 2: nome do workout (entre aspas ou não) — match case-insensitive
+        # Forma 2/3: nome do workout (entre aspas ou não) — match case-insensitive
         nome_busca = p.strip().strip('"“”\'').upper()
         if not nome_busca: continue
         for idx, w in enumerate(workouts, start=1):
@@ -1872,6 +1884,13 @@ def _workouts_que_rodam_da_bateria(codigo_evento: str, workouts: list[dict]) -> 
             if nome_w and nome_w == nome_busca:
                 if idx not in posicoes: posicoes.append(idx)
                 break
+            # Forma 4: composto — F1 ou F2 do composto bate com a parte
+            if w.get('tipo') == 'composto':
+                f1_nome = ((w.get('f1') or {}).get('nome') or '').strip().upper()
+                f2_nome = ((w.get('f2') or {}).get('nome') or '').strip().upper()
+                if nome_busca == f1_nome or nome_busca == f2_nome:
+                    if idx not in posicoes: posicoes.append(idx)
+                    break
     return posicoes
 
 

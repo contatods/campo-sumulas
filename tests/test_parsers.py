@@ -10,6 +10,7 @@ from parsers import (
     _normalizar_categoria, _normalizar_categoria_relaxada,
     _workout_numero_de_codigo,
     _roster_de_abas_atletas,
+    _workouts_que_rodam_da_bateria,
 )
 
 
@@ -373,6 +374,43 @@ def test_parse_workout_text_then_sozinho_ainda_usa_block_labels():
     movs = [m for m in wkt['movimentos'] if m.get('nome')]
     assert movs[0]['label'] == '1º BLOCO'
     assert movs[1]['label'] == '2º BLOCO'
+
+
+def test_workouts_que_rodam_match_composto_pelo_nome_split_por_amp():
+    """Storm Domingo: cronograma diz `"Barbells and Jump & Run in the Park"`
+    mas o composto se chama `BARBELLS AND JUMP + RUN IN THE PARK` (com `+`).
+    Split por `&` gera as partes `BARBELLS AND JUMP` e `RUN IN THE PARK`,
+    cada uma deve bater com F1.nome ou F2.nome do composto. Antes do fix
+    `workouts_que_rodam` ficava `[]` e o gerador rodava TODOS os workouts
+    naquela bateria (bug grave: VINTE SEIS em bateria do composto)."""
+    workouts = [
+        {'nome': 'VINTE SEIS', 'tipo': 'for_time'},
+        {
+            'nome': 'BARBELLS AND JUMP + RUN IN THE PARK', 'tipo': 'composto',
+            'f1': {'nome': 'BARBELLS AND JUMP'},
+            'f2': {'nome': 'RUN IN THE PARK'},
+        },
+        {'nome': 'SETE MINUTOS', 'tipo': 'for_time'},
+    ]
+    # Bateria com codigo `"Barbells and Jump & Run in the Park"` → posição 2
+    assert _workouts_que_rodam_da_bateria(
+        '"Barbells and Jump & Run in the Park"', workouts) == [2]
+    # E sanity: nome exato continua funcionando
+    assert _workouts_que_rodam_da_bateria('"VINTE SEIS"', workouts) == [1]
+
+
+def test_workouts_que_rodam_match_exato_de_composto_com_plus_no_codigo():
+    """Quando o cronograma escreve o nome do composto com `+` (formato do
+    parser), match exato deve funcionar SEM precisar do split por `&`."""
+    workouts = [
+        {
+            'nome': 'BARBELLS AND JUMP + RUN IN THE PARK', 'tipo': 'composto',
+            'f1': {'nome': 'BARBELLS AND JUMP'},
+            'f2': {'nome': 'RUN IN THE PARK'},
+        },
+    ]
+    assert _workouts_que_rodam_da_bateria(
+        '"Barbells and Jump + Run in the Park"', workouts) == [1]
 
 
 def test_parse_workout_text_simples_nao_eh_composto():
