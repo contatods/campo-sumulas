@@ -301,6 +301,48 @@ def test_parse_excel_dia_sem_montagem_inclui_baterias_sem_atletas(xlsx_multi_are
     assert masculino["baterias"][0]["alocacoes"] == []
 
 
+def test_parse_excel_grade_com_coluna_dia_e_sem_nenhuma_montagem():
+    """Regressão (Pwrd by Coffee 2026): arquivo de programação com grades
+    `Workouts - <Modalidade>` que têm COLUNA DE DIA na col A (ex: 'Sexta' sem
+    data/quebra-de-linha) e abas de cronograma <Dia> SEM nenhuma `- Montagem`
+    (roster ainda não fechado). Deve reconhecer e gerar baterias em branco —
+    não estourar 'Excel sem dados reconhecíveis'.
+    """
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    # Grade com coluna de dia (col A) — dia SEM quebra de linha, workout na col B
+    ws = wb.create_sheet("Workouts - Individuais")
+    ws.append([None, "Elite Masculino", "Elite Feminino"])
+    ws.append(["Sexta",
+               '"Muscle Swim"\nFor time:\n50m Swim\n10 Devil Presses\nTime cap: 8 min',
+               '"Muscle Swim"\nFor time:\n50m Swim\n10 Devil Presses\nTime cap: 8 min'])
+
+    # Cronograma do dia — SEM aba `Sexta - Montagem`
+    ws = wb.create_sheet("Sexta")
+    ws.append(["Arena: Campo"])
+    ws.append(["Eventos", "Categoria", "Bateria", "Arbitragem", "Quantidade", "Aquecimento", "", "Fila"])
+    ws.append(['"Muscle Swim"', "Elite Masculino (Heat 1)", 1, None, "7 (7)", "14:20", None, "14:45"])
+    ws.append([None, "Elite Feminino (Heat 1)", 2, None, "5 (5)", "14:35", None, "15:00"])
+
+    ws = wb.create_sheet("Inscritos")
+    ws.append(["Nome", "Max", "Pago", "Nº. Inicial", "Nº. Final", "Individual"])
+    ws.append(["Elite Masculino", 45, 7, 101, 199, "Sim"])
+    ws.append(["Elite Feminino", 45, 5, 201, 299, "Sim"])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    result = parse_excel(buf.getvalue())
+    assert result["tipo"] == "evento_multidia", result.get("erro")
+    sexta = next(d for d in result["dias"] if d["label"] == "Sexta")
+    masc = next(c for c in sexta["categorias"] if c["nome"] == "Elite Masculino")
+    # Bateria reconhecida, workout anexado, raias em branco (sem roster)
+    assert len(masc["baterias"]) == 1
+    assert masc["baterias"][0]["alocacoes"] == []
+    assert masc["workouts"] and masc["workouts"][0]["nome"] == "MUSCLE SWIM"
+
+
 def test_validar_evento_detecta_for_time_sem_time_cap():
     config = {
         "dias": [{

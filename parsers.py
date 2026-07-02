@@ -907,9 +907,12 @@ def _is_categoria_grid(ws) -> bool:
     if len(rows) < 2: return False
     r1 = [c for c in rows[0] if c is not None]
     r2 = [c for c in rows[1] if c is not None]
+    # A 2ª linha precisa ter ALGUMA célula multi-linha (o texto do workout). Não
+    # exigimos que seja a 1ª célula: em grades com coluna de dia (col A = 'Sexta'),
+    # o dia pode vir sem data/quebra-de-linha e o workout fica na coluna seguinte.
     return (len(r1) >= 2
             and all(isinstance(v, str) for v in r1[:4])
-            and r2 and isinstance(r2[0], str) and '\n' in r2[0])
+            and any(isinstance(v, str) and '\n' in v for v in r2))
 
 
 def parse_excel(data: bytes) -> dict[str, Any]:
@@ -2028,13 +2031,35 @@ def parse_excel_multidia(wb) -> dict[str, Any]:
 # (ex: `Individuais` + `Duplas`, ou `Times` + `Solo`, etc.) e cronograma +
 # montagem por dia (`<Dia>` + `<Dia> - Montagem`). Sem aba unificada `Workouts`.
 
+def _tem_cronograma(ws) -> bool:
+    """Aba parece um cronograma de dia: header com 'Categoria' E 'Bateria'.
+
+    Mesma heurística usada no corpo de `parse_excel_grades_e_dias` pra detectar
+    dias sem par `- Montagem`. Multi-arena: basta uma ocorrência de cada.
+    """
+    for ri, row in enumerate(ws.iter_rows(values_only=True)):
+        if ri >= 5:
+            break
+        valores = [str(c).strip().lower() if c else "" for c in row]
+        if 'categoria' in valores and 'bateria' in valores:
+            return True
+    return False
+
+
 def _is_layout_grades_e_dias(wb) -> bool:
     nomes_lower = [s.lower() for s in wb.sheetnames]
     if 'workouts' in nomes_lower:
         return False  # se tem Workouts, o detector multidia clássico cuida disso
-    tem_grade    = any(_is_categoria_grid(wb[s]) for s in wb.sheetnames)
+    tem_grade = any(_is_categoria_grid(wb[s]) for s in wb.sheetnames)
+    if not tem_grade:
+        return False
+    # Dias podem vir COM montagem (atletas alocados) ou SÓ com cronograma
+    # (planejamento, roster ainda não fechado → o corpo gera súmulas em branco).
+    # Não exigir `- Montagem` aqui: o porteiro não pode ser mais rígido que o
+    # corpo, que já trata `montagem = {}` quando não há a aba.
     tem_montagem = any(' - montagem' in n for n in nomes_lower)
-    return tem_grade and tem_montagem
+    tem_dia_cronograma = any(_tem_cronograma(wb[s]) for s in wb.sheetnames)
+    return tem_montagem or tem_dia_cronograma
 
 
 def _split_partes_categoria(s: str) -> list[str]:
