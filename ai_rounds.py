@@ -473,7 +473,35 @@ def validar_evento(config: dict) -> list[dict]:
                             'onde': f'{dlabel}/{cnome}/{wkt.get("nome","?")}',
                         })
 
-    # 8) Cronograma: slot da bateria menor que a duração estimada do workout
+    # 8) Carga de dumbbell fora do rol de Equipamentos (ex: 16kg que não existe;
+    #    disponíveis 10/15/22,5). Ancora a carga logo após 'dumbbell' pra NÃO
+    #    pegar carga de barra em movimento composto ('Fat Bar (34kg) + DB (16kg)').
+    dumbbells_ok = set((config.get('equipamento') or {}).get('dumbbells') or [])
+    if dumbbells_ok:
+        db_paren_re = re.compile(r'dumbbell[^()]*\(([^)]*)\)', re.I)
+        kg_re = re.compile(r'(\d+(?:[.,]\d+)?)\s*kg', re.I)
+        vistos_db: set = set()
+        for di, dia in enumerate(dias):
+            dlabel = dia.get('label', f'Dia {di+1}')
+            for cat in dia.get('categorias', []) or []:
+                cnome = cat.get('nome', '')
+                for wkt in cat.get('workouts', []) or []:
+                    for m in _movs_do_workout(wkt):
+                        for grp in db_paren_re.findall(m.get('nome') or ''):
+                            for num_s in kg_re.findall(grp):
+                                peso = float(num_s.replace(',', '.'))
+                                if peso in dumbbells_ok or (cnome, peso) in vistos_db:
+                                    continue
+                                vistos_db.add((cnome, peso))
+                                disp = ', '.join(f'{d:g}' for d in sorted(dumbbells_ok))
+                                avisos.append({
+                                    'severidade': 'erro',
+                                    'msg': f'Dumbbell de {peso:g}kg não existe no rol de '
+                                           f'Equipamentos (disponíveis: {disp}kg)',
+                                    'onde': f'{dlabel}/{cnome}/{wkt.get("nome","?")}',
+                                })
+
+    # 9) Cronograma: slot da bateria menor que a duração estimada do workout
     avisos.extend(_avisos_cronograma(dias))
     return avisos
 

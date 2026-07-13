@@ -431,6 +431,24 @@ def test_linter_typo_anotacao_atlhetes_mas_athletes_ok():
     assert "atlhetes" in typos[0]["msg"]
 
 
+def test_linter_dumbbell_fora_do_rol_e_nao_flagga_barra():
+    """Fase 2.0: carga de dumbbell fora do rol de Equipamentos (16kg inexistente).
+    Não pode flaggar a carga de BARRA num composto ('Fat Bar 34kg + DB 15kg')."""
+    cfg = {
+        "equipamento": {"dumbbells": [10, 15, 22.5], "anilhas": [], "unidade": "kg"},
+        "dias": [{"label": "Sáb", "categorias": [{"nome": "X", "baterias": [], "workouts": [
+            {"nome": "W", "tipo": "for_time", "time_cap": "12 min", "movimentos": [
+                {"nome": "DUMBBELL FRONT SQUAT (16KG) (2 ATHLETES)", "reps": 100},
+                {"nome": "FAT BAR THRUSTER (34KG) + SINGLE-ARM DUMBBELL THRUSTER (15KG)", "reps": 20},
+                {"chegada": True}]}]}]}]}
+    avisos = validar_evento(cfg)
+    db = [a for a in avisos if "Dumbbell de" in a["msg"]]
+    assert len(db) == 1, f"esperava só o 16kg, got: {[a['msg'] for a in db]}"
+    assert "16kg" in db[0]["msg"].replace(" ", "")
+    # 34kg é barra (não dumbbell) e 15kg está no rol → nenhum outro aviso
+    assert not any("34" in a["msg"].split("disponíveis")[0] for a in db)
+
+
 def test_validar_evento_sem_roster_nao_spamma_sem_alocacoes():
     """Fase 2.0: evento sem roster (fase de planejamento) não deve gerar um aviso
     'sem alocações' por bateria — seriam 100+. Só vale quando há roster parcial."""

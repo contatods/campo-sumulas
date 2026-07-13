@@ -2500,9 +2500,27 @@ def _parse_equipamento(wb) -> Optional[dict[str, Any]]:
         tem_kg_typical = any(p in (1.25, 2.5) for p in pesos)
         if tem_lb_typical and not tem_kg_typical:
             unidade = 'lb'
+    # Dumbbells disponíveis (pro linter de carga fora do rol). Nome típico:
+    # 'Dumbbell 22,5 kg'. Barra/anilha não entram aqui.
+    dumbbells: set[float] = set()
+    db_re = re.compile(r'dumbbell[^\d]*(\d+(?:[.,]\d+)?)\s*(kg|lbs?)?', re.I)
+    for row in ws.iter_rows(values_only=True):
+        for c in row:
+            if not c or 'dumbbell' not in str(c).lower():
+                continue
+            m = db_re.search(str(c))
+            if not m:
+                continue
+            try:
+                w = float(m.group(1).replace(',', '.'))
+            except ValueError:
+                continue
+            if w > 0:
+                dumbbells.add(w)
     return {
         'anilhas': sorted(pesos, reverse=True),
         'unidade': unidade,
+        'dumbbells': sorted(dumbbells, reverse=True),
     }
 
 
