@@ -61,6 +61,32 @@ def test_for_load_janelas_por_atleta_e_notas_u2015():
                for j in janelas)
 
 
+def test_for_time_buyin_distancia_1000m_e_bloco_rounds():
+    """Stack Bad (Pwrd): buy-in '1000m Ski Erg' não pode ser dropado (o cap
+    ≥1000 'evita anos' matava distâncias), e 'then, 2 rounds of:' vira banner
+    de seção — sem multiplicar reps (o buy-in não entra na conta)."""
+    texto = (
+        '"Stack Bad"\n\nFor time:\n1000m Ski Erg\nthen, 2 rounds of:\n'
+        '30 Handstand Push-Ups\n400m Run\n30 Line-Facing Burpees\n\n'
+        'Time cap: 16 minutes'
+    )
+    wkt = parse_workout_text(texto, "STACK BAD")
+    movs = wkt["movimentos"]
+    nomes = [m.get("nome") for m in movs if m.get("nome")]
+    secoes = [m["secao"] for m in movs if m.get("secao")]
+    assert any("1000M SKI ERG" in n for n in nomes), "buy-in 1000m foi dropado"
+    assert any("2 ROUNDS OF" in s for s in secoes), "faltou banner do bloco de rounds"
+    assert not wkt.get("rounds_fixos"), "'then, N rounds of' não pode multiplicar tudo"
+
+
+def test_distancia_1000m_nao_confundida_com_ano():
+    """'1000m Row' é distância (mantém); '2026 Games Open' é ano (dropa)."""
+    w1 = parse_workout_text("For time:\n1000m Row\n10 Burpees\nTime cap: 5 min", "T")
+    assert any("1000M ROW" in (m.get("nome") or "") for m in w1["movimentos"])
+    w2 = parse_workout_text("For time:\n2026 Games Open Standard\n10 Burpees\nTime cap: 5 min", "T")
+    assert not any("2026" in (m.get("nome") or "") for m in w2["movimentos"])
+
+
 def test_parse_equipamento_formato_categoria_equipamento_kg():
     """Aba 'Equipamentos' no formato Categoria|Equipamento|Qtd (peso no nome do
     equipamento) → extrai anilhas e unidade kg; med ball em lb não contamina."""

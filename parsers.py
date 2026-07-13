@@ -203,6 +203,16 @@ def _num_ext(tok) -> Optional[int]:
     return _NUM_PALAVRA.get(t)
 
 
+# Bloco de rounds ANINHADO: 'then, 2 rounds of:', 'então, 3 rounds de:'. Vira
+# banner de seção (não multiplica reps — o buy-in antes do 'then' não entra na
+# conta). Diferente de 'N rounds for time' (que é o workout inteiro).
+_ROUNDS_BLOCK_RE = re.compile(
+    r'^\s*(?:then|ent[ãa]o|depois|after|ap[óo]s)?\s*,?\s*'
+    + _NUM_TOKEN_RE + r'\s+rounds?\s+(?:of|de)\b',
+    re.I,
+)
+
+
 # ── Texto livre de workout ──────────────────────────────────────────────────────
 def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     """Extrai (reps, nome_upper) de uma linha de movimento.
@@ -218,6 +228,7 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     """
     s = line.strip()
     # 4 formatos: NUM/NUM resto (gendered), NUM+unit+ESP, NUM-resto, NUM ESP resto
+    tem_unidade = False   # NUM colado a unidade (1000m, 20cal) — distância válida ≥1000
     m = re.match(r'^(\d{1,4})/(\d{1,4})\s+(.+)$', s)            # 30/24 cal Row
     if m:
         num_s, num_f, rest = m.group(1), m.group(2), m.group(3).strip()
@@ -227,6 +238,7 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
         if m:
             num_s, unit, rest = m.group(1), m.group(2), m.group(3).strip()
             nome = f"{num_s}{unit} {rest}".upper()
+            tem_unidade = True
         else:
             m = re.match(r'^(\d{1,4})([-\s])(.+)$', s)
             if not m: return None
@@ -237,7 +249,9 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
                 nome = rest.upper()
     try: num = int(num_s)
     except ValueError: return None
-    if num >= 1000: return None  # evita anos
+    # ≥1000 sem unidade provavelmente é ano ('2026 ...'); com unidade é distância
+    # legítima (1000m Ski Erg / Row / Run).
+    if num >= 1000 and not tem_unidade: return None
     # Rejeita frases explicativas (`2 atletas nadarão`, `5 times escolherão`, etc).
     # Antes de testar, descarta descritor `(dois atletas)` / `(N atleta)` entre
     # parens — é metadata operacional, não frase explicativa. Caso real Storm:
@@ -622,6 +636,11 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
         # janela de tempo) — NÃO são movimento, mas merecem aparecer na súmula
         # como banner. Criados como {secao: texto} pra render renderizar.
         s_clean = line.strip()
+        # Bloco de rounds aninhado ('then, 2 rounds of:') — banner, preserva o
+        # buy-in que veio antes (não vira {rounds_fixos} pra não multiplicar).
+        if _ROUNDS_BLOCK_RE.match(s_clean):
+            movs.append({"secao": s_clean.rstrip(':').upper()})
+            continue
         if (_SECTION_HEADER_RE.match(s_clean)
                 or (not re.match(r'^\d', s_clean) and _TIME_WINDOW_RE.search(s_clean))):
             movs.append({"secao": s_clean.upper()})
