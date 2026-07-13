@@ -4,10 +4,10 @@ Objetivo do 2.0: sair do "gera → testa → reporta → conserta" para um impor
 **valida, mostra preview e revisa com IA** antes de gerar — sobre uma base mais
 madura. Sem scoring digital nem novo backend (ficam pra um projeto próprio).
 
-O marco **2.0** é atingido quando Fases 1+2+3 estiverem no ar sobre a Fase 4.
-Até lá, cada entrega sobe como `1.x` incremental (com teste).
+> **✅ 2.0.0 LANÇADO.** Fases 1+2+3 no ar (v1.60→v1.66, cravado em v2.0.0). A
+> Fase 4 vira melhoria contínua do 2.x, feita quando surgir necessidade real.
 
-## Fase 1 — Linter determinístico
+## Fase 1 — Linter determinístico ✅ (v1.60, v1.61, v1.63)
 
 Estende `ai_rounds.validar_evento` (que já retorna `{severidade, msg, onde}`) e
 os `avisos_import` do parser. Cada regra nasce de um problema real do Pwrd by
@@ -25,23 +25,29 @@ Coffee 2026 encontrado à mão:
 Padronizar o shape dos avisos (hoje o parser usa `nivel`, o validador usa
 `severidade`).
 
-## Fase 2 — Preview antes de gerar
+## Fase 2 — Preview antes de gerar ✅ (v1.65)
 
-Grid das súmulas renderizadas no app **antes** do ZIP. O render já existe; é UI.
-Deixa o organizador pegar erro visual (enunciado, escala, layout) sem baixar.
+Grid das súmulas renderizadas no app **antes** do ZIP (`render_grid` +
+`/api/preview/grid` + botões "👁 Revisar dia/evento"). Fontes embutidas uma vez.
 
-## Fase 3 — Review por IA embutida
+## Fase 3 — Review por IA embutida ✅ (v1.66)
 
-Camada IA (usa `ANTHROPIC_API_KEY`, já suportada) pro que o linter determinístico
-não pega: **escalonamento invertido** (Fat Bar 10kg no PWRD Loop), padrão de
-movimento, sanidade de carga entre divisões. Estende o "explicar avisos" atual
-para "revisar programação".
+`revisar_programacao_ia` + `/api/ai/revisar-programacao` + botão "🤖 Revisar
+programação". Pega escalonamento invertido / sanidade cross-divisão. Foi ela que
+surfou o bug de carga dupla (`70kg/50kg`), corrigido junto.
 
-## Fase 4 — Robustez / polish
+## Fase 4 — Robustez / polish (contínua, opcional)
 
-- Unificar movimentos: dict interno (43) → base canônica `canonical_v2` (108).
-- Cobrir mais formatos/edge-cases de Excel; expandir testes.
-- Performance da geração em eventos grandes.
+Sem prazo — feita quando surgir necessidade. Notas de investigação:
+
+- **Unificar movimentos (43 → canônico 141)**: é decisão de ARQUITETURA. O
+  `canonical_v2` mora no produto Movimentos; o campo-sumulas roda no Render e
+  não lê aquele arquivo em runtime. Exigiria vendorizar (copiar os nomes) +
+  manter 2 cópias em sincronia. Adiado até valer o custo.
+- **Regra "movimento não reconhecido"**: baixo valor / alto risco de falso-
+  positivo — o evento é cheio de movimentos custom legítimos (Hay Bale Burpee
+  etc.). A review por IA (Fase 3) já cobre esse tipo de coisa melhor.
+- Cobrir mais formatos/edge-cases de Excel conforme aparecerem; performance.
 
 ## Histórico que pavimentou o 2.0 (v1.54–v1.59, Pwrd by Coffee 2026)
 
