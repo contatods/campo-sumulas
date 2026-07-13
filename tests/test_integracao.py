@@ -343,6 +343,55 @@ def test_parse_excel_grade_com_coluna_dia_e_sem_nenhuma_montagem():
     assert masc["workouts"] and masc["workouts"][0]["nome"] == "MUSCLE SWIM"
 
 
+def _wb_para_bytes(wb):
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_linter_categoria_da_grade_sem_bateria_avisa():
+    """Fase 2.0: categoria com workouts na grade mas que não casa com nenhuma
+    bateria do cronograma → aviso de erro (não geraria súmula silenciosamente)."""
+    wb = openpyxl.Workbook(); wb.remove(wb.active)
+    ws = wb.create_sheet("Workouts - Individuais")
+    ws.append([None, "Elite Masculino", "Categoria Fantasma"])
+    ws.append(["Sexta",
+               '"W"\nFor time:\n5 Burpees\nTime cap: 3 min',
+               '"W"\nFor time:\n5 Burpees\nTime cap: 3 min'])
+    ws = wb.create_sheet("Sexta")
+    ws.append(["Arena: Campo"])
+    ws.append(["Eventos", "Categoria", "Bateria", "Arbitragem", "Quantidade", "Aquecimento", "", "Fila"])
+    ws.append(['"W"', "Elite Masculino (Heat 1)", 1, None, "3 (3)", "08:00", None, "08:20"])
+    result = parse_excel(_wb_para_bytes(wb))
+    avisos = result.get("avisos_import", [])
+    assert any("Categoria Fantasma" in a["msg"] and a.get("nivel") == "erro" for a in avisos)
+
+
+def test_linter_colisao_de_bateria_mesma_arena_mas_nao_entre_arenas():
+    """Fase 2.0: número de bateria repetido na MESMA arena (categorias diferentes)
+    é colisão; o MESMO número em arenas diferentes NÃO é (numeração é por arena)."""
+    wb = openpyxl.Workbook(); wb.remove(wb.active)
+    ws = wb.create_sheet("Workouts - Individuais")
+    ws.append([None, "A", "B"])
+    ws.append(["Sexta",
+               '"W"\nFor time:\n5 Burpees\nTime cap: 3 min',
+               '"W"\nFor time:\n5 Burpees\nTime cap: 3 min'])
+    # Duas arenas lado a lado (Campo cols 0-7, Quadra cols 9-16)
+    ws = wb.create_sheet("Sexta")
+    ws.append(["Arena: Campo", None, None, None, None, None, None, None, None,
+               "Arena: Quadra"])
+    ws.append(["Eventos", "Categoria", "Bateria", "Arbitragem", "Quantidade", "Aquecimento", "", "Fila", None,
+               "Eventos", "Categoria", "Bateria", "Arbitragem", "Quantidade", "Aquecimento", "", "Fila"])
+    # Campo: bateria 5 com A e B (colisão). Quadra: bateria 5 com A (NÃO colide com Campo).
+    ws.append(['"W"', "A (Heat 1)", 5, None, "3 (3)", "08:00", None, "08:20", None,
+               '"W"', "A (Heat 1)", 5, None, "3 (3)", "09:00", None, "09:20"])
+    ws.append([None, "B (Heat 1)", 5, None, "3 (3)", "08:30", None, "08:50"])
+    avisos = parse_excel(_wb_para_bytes(wb)).get("avisos_import", [])
+    colisoes = [a for a in avisos if "duplicada" in a["msg"]]
+    assert len(colisoes) == 1, f"esperava 1 colisão (Campo), got: {colisoes}"
+    assert "Campo" in colisoes[0]["msg"] and "5" in colisoes[0]["msg"]
+
+
 def test_validar_evento_detecta_for_time_sem_time_cap():
     config = {
         "dias": [{

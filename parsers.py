@@ -1718,6 +1718,8 @@ def _detectar_blocos_cronograma(header_row: list[str]) -> list[dict[str, int | N
             'bateria':     _find_in_sub('bateria'),
             'aquecimento': _find_in_sub('aquecimento'),
             'fila':        _find_in_sub('fila'),
+            'lo':          lo,
+            'hi':          hi,
         })
     return blocos
 
@@ -1749,6 +1751,21 @@ def _parse_cronograma_dia(ws) -> list[dict[str, Any]]:
     blocos = _detectar_blocos_cronograma(header)
     if not blocos:
         return []
+
+    # Nome da arena por bloco: linha(s) acima do header têm 'Arena: X / Dia' na
+    # faixa de colunas do bloco. Usado pra rotular colisão de bateria (número é
+    # por arena, então mesma numeração em arenas diferentes NÃO é colisão).
+    arena_por_bloco = [""] * len(blocos)
+    for bidx, bloco in enumerate(blocos):
+        for ri in range(header_idx):
+            for ci in range(bloco['lo'], min(bloco['hi'], len(rows[ri]))):
+                cell = rows[ri][ci]
+                m = re.search(r'arena\s*:\s*(.+?)\s*(?:/|$)', str(cell), re.I) if cell else None
+                if m:
+                    arena_por_bloco[bidx] = m.group(1).strip()
+                    break
+            if arena_por_bloco[bidx]:
+                break
 
     baterias: list[dict[str, Any]] = []
     # Cada bloco tem seu próprio 'codigo_atual' sticky (arenas não compartilham)
@@ -1782,6 +1799,8 @@ def _parse_cronograma_dia(ws) -> list[dict[str, Any]]:
                 'categoria': str(cat_val).strip(),
                 'horario_aquecimento': _fmt_horario(row[col_aq]) if col_aq is not None and col_aq < len(row) else "",
                 'horario_fila': _fmt_horario(row[col_fl]) if col_fl is not None and col_fl < len(row) else "",
+                '_bloco': bidx,
+                '_arena_cron': arena_por_bloco[bidx],
             })
     return baterias
 
@@ -2728,6 +2747,9 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
     # 3-4) Pra cada dia, lê e agrupa categorias presentes
     dias_resultado: list[dict[str, Any]] = []
     avisos_import: list[dict[str, str]] = []
+    # Rastreia categorias da grade que casaram em ≥1 dia — as que sobram não
+    # geram súmula (typo de nome, categoria só na grade, etc). Linter 2.0.
+    cats_grade_casadas: set[str] = set()
     for dia_label in dias_detectados:
         # dia_norm pra comparar com wkt._dia_label (sempre normalizado)
         dia_norm_atual = _DIAS_SEMANA_NORM.get(dia_label.strip().lower(), dia_label.strip().lower())
@@ -2736,6 +2758,26 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
         cronograma = _parse_cronograma_dia(wb[sname_dia])
         montagem   = _parse_montagem_dia(wb[sname_mont]) if sname_mont else {}
         _propagar_codigos_da_montagem(cronograma, montagem)
+
+        # Linter: colisão de bateria — mesmo número na MESMA arena (bloco) com
+        # categorias diferentes (número de bateria é por arena). Pegou a #72 do
+        # Pwrd (Trio Interm Masc Heat 3 e Master 45+ ambas 72 na Quadra, 15:11).
+        _por_arena_num: dict[tuple, list[dict]] = {}
+        for b in cronograma:
+            _por_arena_num.setdefault((b.get('_bloco'), b.get('numero')), []).append(b)
+        for (_bloco, num), grupo in _por_arena_num.items():
+            cats_distintas = {b.get('categoria', '').strip() for b in grupo}
+            if len(cats_distintas) > 1:
+                arena = grupo[0].get('_arena_cron') or f'arena {(_bloco or 0) + 1}'
+                horarios = sorted({b.get('horario_fila', '') for b in grupo if b.get('horario_fila')})
+                avisos_import.append({
+                    'nivel': 'erro',
+                    'msg':   f'Bateria {num} duplicada na arena "{arena}" — '
+                             f'{len(cats_distintas)} categorias diferentes com o mesmo número'
+                             + (f' (horários {", ".join(horarios)})' if horarios else '')
+                             + '. Renumere ou separe.',
+                    'onde':  f'{dia_label}/{arena}',
+                })
 
         # Conjunto de categorias (normalizadas) presentes neste dia — coleta as
         # duas formas pra suportar match estrito ou relaxado.
@@ -2832,6 +2874,7 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             )
             if not (casou_por_nome or casou_por_faixa):
                 continue
+            cats_grade_casadas.add(cat_grade)
 
             # Workouts deste DIA específico (filtra wkts da grade pelo _dia_label).
             # Usado tanto pra match de codigo_evento (nome do workout) quanto pra
@@ -3009,6 +3052,18 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             })
 
         dias_resultado.append({'label': dia_label, 'categorias': cats_resultado})
+
+    # Linter: categoria da grade que não casou com NENHUMA bateria — não gera
+    # súmula. Quase sempre é nome divergente entre grade e cronograma/Inscritos.
+    for cat_grade in grade_por_categoria:
+        if cat_grade not in cats_grade_casadas:
+            avisos_import.append({
+                'nivel': 'erro',
+                'msg':   f'Categoria "{cat_grade}" tem workouts na grade mas não '
+                         f'aparece em nenhuma bateria do cronograma — não vai gerar súmula. '
+                         f'Confira se o nome bate com o Inscritos/cronograma.',
+                'onde':  'grade × cronograma',
+            })
 
     return {
         'tipo':         'evento_multidia',
