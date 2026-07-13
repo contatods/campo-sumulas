@@ -495,8 +495,39 @@ function removerThinking() {
   if (last) last.remove();
 }
 
+// Renderiza a lista de avisos no modal (erros primeiro). Compartilhado pelo
+// snapshot do import e pela re-validação do config.
+function _renderValidacao(avisos) {
+  const status = document.getElementById('validacaoStatus');
+  const lista  = document.getElementById('validacaoLista');
+  avisos = avisos || [];
+  if (!avisos.length) {
+    status.innerHTML = '<strong style="color:var(--green)">✓ Nenhum problema encontrado.</strong>';
+    lista.innerHTML = '';
+    return;
+  }
+  const erros = avisos.filter(a => a.severidade === 'erro');
+  const aviso = avisos.filter(a => a.severidade !== 'erro');
+  status.innerHTML = `${erros.length} erro${erros.length !== 1 ? 's' : ''}, ${aviso.length} aviso${aviso.length !== 1 ? 's' : ''}.`;
+  lista.innerHTML = [...erros, ...aviso].map(a => `
+    <div class="valid-row valid-${a.severidade}">
+      <span class="valid-icon">${a.severidade === 'erro' ? '✗' : '⚠'}</span>
+      <div class="valid-body">
+        <div class="valid-msg">${esc(a.msg)}</div>
+        <div class="valid-onde">${esc(a.onde || '')}</div>
+      </div>
+    </div>`).join('');
+}
+
 function abrirValidacao() {
   setDialogOpen('validModal', true);
+  // Snapshot do import (parser + validar unificados) inclui avisos que só
+  // existem no momento do import: categoria órfã, colisão de bateria.
+  if (_ultimosAvisos && _ultimosAvisos.length) {
+    _renderValidacao(_ultimosAvisos);
+    return;
+  }
+  // Sem snapshot (estado carregado sem import recente): revalida o config atual.
   document.getElementById('validacaoStatus').textContent = 'Analisando…';
   document.getElementById('validacaoLista').innerHTML = '';
   apiFetch('/api/ai/validar-evento', {
@@ -505,25 +536,7 @@ function abrirValidacao() {
     body: JSON.stringify({ config })
   }).then(r => r.json()).then(res => {
     if (res.error) throw new Error(res.error);
-    const avisos = res.avisos || [];
-    const status = document.getElementById('validacaoStatus');
-    const lista  = document.getElementById('validacaoLista');
-    if (!avisos.length) {
-      status.innerHTML = '<strong style="color:var(--green)">✓ Nenhum problema encontrado.</strong>';
-      lista.innerHTML = '';
-      return;
-    }
-    const erros = avisos.filter(a => a.severidade === 'erro');
-    const aviso = avisos.filter(a => a.severidade === 'aviso');
-    status.innerHTML = `${erros.length} erro${erros.length !== 1 ? 's' : ''}, ${aviso.length} aviso${aviso.length !== 1 ? 's' : ''}.`;
-    lista.innerHTML = avisos.map(a => `
-      <div class="valid-row valid-${a.severidade}">
-        <span class="valid-icon">${a.severidade === 'erro' ? '✗' : '⚠'}</span>
-        <div class="valid-body">
-          <div class="valid-msg">${esc(a.msg)}</div>
-          <div class="valid-onde">${esc(a.onde || '')}</div>
-        </div>
-      </div>`).join('');
+    _renderValidacao(res.avisos || []);
   }).catch(e => {
     document.getElementById('validacaoStatus').textContent = 'Erro: ' + e.message;
   });
@@ -2123,6 +2136,7 @@ function aplicarImport(result) {
   invalidatePreviewCache();   // dados novos — cache antigo é inválido
   config.dias = result.dias;
   config.roster = result.roster || [];
+  config.equipamento = result.equipamento || null;   // pro linter (carga fora do rol)
   if (result.evento_nome && !config.evento.nome) {
     config.evento.nome = result.evento_nome;
     document.getElementById('evNome').value = result.evento_nome;
@@ -2163,12 +2177,26 @@ function aplicarImport(result) {
   };
   const aiBtn = document.getElementById('pibAIBtn');
   if (aiBtn) aiBtn.style.display = (avisos.length && chatAIAtiva) ? '' : 'none';
+  // Reflete a contagem no ícone + rótulo do botão Validar (não depende do
+  // resumo assíncrono que sobrescreve o pibMsg). Erros mudam o ícone pra ✗.
+  const nErros = avisos.filter(a => a.severidade === 'erro').length;
+  const icon = document.getElementById('pibIcon');
+  const validBtn = document.getElementById('pibValidarBtn');
+  if (icon) icon.textContent = nErros ? '✗' : (avisos.length ? '⚠' : '✓');
+  if (validBtn) {
+    validBtn.textContent = avisos.length
+      ? (nErros ? `✗ ${nErros} erro${nErros > 1 ? 's' : ''}` +
+                  (avisos.length - nErros ? ` · ${avisos.length - nErros} aviso(s)` : '')
+                : `⚠ ${avisos.length} aviso${avisos.length > 1 ? 's' : ''}`)
+      : 'Validar';
+    validBtn.classList.toggle('pib-cta-alerta', avisos.length > 0);
+  }
   if (avisos.length) {
     console.warn(`Import com ${avisos.length} aviso(s):`, avisos);
-    const msgToast = chatAIAtiva
-      ? `${avisos.length} aviso(s) — clique "🤖 Explicar com IA" pra detalhes`
-      : `${avisos.length} aviso(s) — veja console (F12) ou rode Validar`;
-    toast(msgToast, 'warn');
+    const msgToast = nErros
+      ? `${nErros} erro(s) e ${avisos.length - nErros} aviso(s) — clique "${validBtn ? validBtn.textContent : 'Validar'}"`
+      : `${avisos.length} aviso(s) — clique em Validar pra ver`;
+    toast(msgToast, nErros ? 'err' : 'warn');
   }
 }
 
