@@ -431,6 +431,31 @@ def test_linter_typo_anotacao_atlhetes_mas_athletes_ok():
     assert "atlhetes" in typos[0]["msg"]
 
 
+def test_validar_evento_sem_roster_nao_spamma_sem_alocacoes():
+    """Fase 2.0: evento sem roster (fase de planejamento) não deve gerar um aviso
+    'sem alocações' por bateria — seriam 100+. Só vale quando há roster parcial."""
+    cfg = {"dias": [{"label": "Sáb", "categorias": [{"nome": "X", "workouts": [
+        {"nome": "W", "tipo": "for_time", "time_cap": "5 min",
+         "movimentos": [{"nome": "PULL-UPS", "reps": 10}, {"chegada": True}]}],
+        "baterias": [
+            {"numero": "1", "codigo_evento": '"W"', "workouts_que_rodam": [1], "alocacoes": []},
+            {"numero": "2", "codigo_evento": '"W"', "workouts_que_rodam": [1], "alocacoes": []},
+        ]}]}]}
+    avisos = validar_evento(cfg)
+    assert not any("sem alocações" in a["msg"] for a in avisos)
+
+
+def test_validar_evento_composto_com_movimentos_nao_avisa_vazio():
+    """Fase 2.0: composto guarda movimentos em f1/f2 — não pode ser flaggado como
+    'sem movimentos' (Muscle Swim + 3k)."""
+    cfg = {"dias": [{"label": "Sex", "categorias": [{"nome": "X", "baterias": [], "workouts": [
+        {"nome": "MUSCLE SWIM + 3K", "tipo": "composto",
+         "f1": {"nome": "MUSCLE SWIM", "movimentos": [{"nome": "50M SWIM", "reps": 50}]},
+         "f2": {"nome": "3K", "movimentos": [{"nome": "3K RUN", "reps": 3000}]}}]}]}]}
+    avisos = validar_evento(cfg)
+    assert not any("sem movimentos" in a["msg"] for a in avisos)
+
+
 def test_validar_evento_detecta_for_time_sem_time_cap():
     config = {
         "dias": [{

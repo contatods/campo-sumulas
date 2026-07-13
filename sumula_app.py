@@ -19,7 +19,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.61.0'
+VERSION = '1.62.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -865,6 +865,19 @@ class SumulaHandler(BaseHTTPRequestHandler):
         # Numeração contínua por categoria atravessando dias — já vem assignada
         # pro frontend usar na sidebar e no editor, sem precisar recomputar.
         assign_workout_numbers_global(result.get('dias') or [])
+        # Linter 2.0: unifica avisos do parser (avisos_import, chave legada
+        # 'nivel') com os do validar_evento (chave 'severidade') numa lista só,
+        # pro frontend mostrar tudo num painel antes de gerar.
+        avisos_parser = []
+        for a in (result.get('avisos_import') or []):
+            a = dict(a)
+            a.setdefault('severidade', a.get('nivel', 'aviso'))
+            avisos_parser.append(a)
+        try:
+            avisos_valid = validar_evento(result)
+        except Exception:
+            avisos_valid = []
+        result['avisos_import'] = avisos_parser + avisos_valid
         self._send(200, 'application/json; charset=utf-8',
                    json.dumps(result, ensure_ascii=False).encode('utf-8'))
 

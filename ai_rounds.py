@@ -337,18 +337,25 @@ def validar_evento(config: dict) -> list[dict]:
                 'onde': f'{cat_nome}: {", ".join(posicoes)}',
             })
 
-    # 2) Bateria com código mas sem alocação
-    for di, dia in enumerate(dias):
-        dlabel = dia.get('label', f'Dia {di+1}')
-        for cat in dia.get('categorias', []) or []:
-            cnome = cat.get('nome', '')
-            for b in cat.get('baterias', []) or []:
-                if b.get('codigo_evento') and not (b.get('alocacoes') or []):
-                    avisos.append({
-                        'severidade': 'aviso',
-                        'msg': f'Bateria {b.get("numero")} ({b.get("codigo_evento")}) sem alocações',
-                        'onde': f'{dlabel}/{cnome}',
-                    })
+    # 2) Bateria com código mas sem alocação. SÓ vale se o evento tem roster em
+    #    algum lugar — se está TODO sem alocação (fase de planejamento, sem
+    #    montagem), avisar bateria-a-bateria é ruído (seriam 100+ avisos).
+    tem_algum_atleta = any(
+        (b.get('alocacoes') or [])
+        for dia in dias for cat in (dia.get('categorias') or []) for b in (cat.get('baterias') or [])
+    )
+    if tem_algum_atleta:
+        for di, dia in enumerate(dias):
+            dlabel = dia.get('label', f'Dia {di+1}')
+            for cat in dia.get('categorias', []) or []:
+                cnome = cat.get('nome', '')
+                for b in cat.get('baterias', []) or []:
+                    if b.get('codigo_evento') and not (b.get('alocacoes') or []):
+                        avisos.append({
+                            'severidade': 'aviso',
+                            'msg': f'Bateria {b.get("numero")} ({b.get("codigo_evento")}) sem alocações',
+                            'onde': f'{dlabel}/{cnome}',
+                        })
 
     # 3) Categoria sem workouts
     for di, dia in enumerate(dias):
@@ -375,6 +382,17 @@ def validar_evento(config: dict) -> list[dict]:
                         avisos.append({
                             'severidade': 'aviso',
                             'msg': f'Express "{wkt.get("nome", "?")}" sem movimentos em F1 nem F2',
+                            'onde': f'{dlabel}/{cnome}',
+                        })
+                elif tipo == 'composto':
+                    # Composto guarda movimentos em f1/f2 (Muscle Swim + 3k),
+                    # não no topo — só avisa se AMBOS vierem vazios.
+                    f1 = wkt.get('f1', {}) or {}
+                    f2 = wkt.get('f2', {}) or {}
+                    if not (f1.get('movimentos') or []) and not (f2.get('movimentos') or []):
+                        avisos.append({
+                            'severidade': 'aviso',
+                            'msg': f'Composto "{wkt.get("nome", "?")}" sem movimentos em F1 nem F2',
                             'onde': f'{dlabel}/{cnome}',
                         })
                 elif tipo == 'for_load':
