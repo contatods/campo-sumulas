@@ -462,7 +462,16 @@ def _parse_for_load(lines: list[str], wkt: Workout, full: str) -> Workout:
     # não bagunçar a súmula com regulamento que estoura A4.
     wkt["descricao"] = _truncar_descricao_em_notas(lines)
     wkt["movimentos"] = []
-    wkt["sequencia_movimentos"] = _extrair_sequencia_for_load(lines, wkt.get("nome", ""))
+    seq = _extrair_sequencia_for_load(lines, wkt.get("nome", ""))
+    wkt["sequencia_movimentos"] = seq
+    # Múltiplas janelas (Muscle Coffee): cada janela é um complex INDEPENDENTE,
+    # pontuado e SOMADO ('soma das cargas máximas dos N complex'). A régua ganha
+    # 1 linha por janela e o total vira soma — não 'melhor de N tentativas'.
+    janelas = seq.get("janelas") or []
+    if len(janelas) >= 2:
+        wkt["tentativas"] = len(janelas)
+        wkt["soma_complexes"] = True
+        wkt["janela_labels"] = [j.get("atleta") or f"Complex {j['label']}" for j in janelas]
     return wkt
 
 
@@ -754,11 +763,14 @@ def _aplicar_progressao_reps(wkt: Workout) -> None:
 _COMPOSTO_HEADER_RE = re.compile(
     r'^["“‘](?P<f1>.+?)["”’]\s*\+\s*["“‘](?P<f2>.+?)["”’]\s*$'
 )
-# Linha que é SÓ um título entre aspas + janela de tempo opcional — cabeçalho de
-# um sub-workout ('"Muscle Swim" (00:00-08:00)', '"3k" (20:00-35:00)').
+# Linha que é SÓ um título entre aspas + janela de tempo OU '— Atleta N' opcional
+# — cabeçalho de um sub-workout. Cobre o individual ('"Muscle Swim" (00:00-08:00)')
+# e a dupla ('"Muscle Swim" — Atleta 1' / '"2k" — Atleta 2').
 _COMPOSTO_TITULO_RE = re.compile(
     r'^\s*["“‘](?P<t>.+?)["”’]\s*'
-    r'(?:\(\s*\d+:\d+\s*[-–—]\s*\d+:\d+\s*\)\s*)?$'
+    r'(?:\(\s*\d+:\d+\s*[-–—]\s*\d+:\d+\s*\)\s*)?'          # janela opcional
+    r'(?:[—–-]\s*(?:athlete|atleta)\s*\d+\s*)?$',           # '— Atleta N' opcional
+    re.I,
 )
 # NOTAS com qualquer traço decorativo (inclui U+2015 do Pwrd).
 _COMPOSTO_NOTAS_RE = re.compile(r'[─―—–]{2,}\s*NOTAS\s*[─―—–]{2,}', re.I)
@@ -827,17 +839,20 @@ def _detectar_composto_por_titulos(
     bloco tem seu 'For time:' e é pontuado separadamente. Retorna a mesma tupla
     de `_detectar_composto` ou None.
     """
+    # NOTAS/regulamento pode conter aspas ('"Muscle Swim" e "2k"') — conta
+    # títulos só ANTES das notas pra não inflar a contagem.
+    idx_notas = next((i for i, ln in enumerate(lines)
+                      if _COMPOSTO_NOTAS_RE.search(ln)), None)
+    lim = idx_notas if idx_notas is not None else len(lines)
     titulos = [(i, m.group('t').strip())
-               for i, ln in enumerate(lines)
+               for i, ln in enumerate(lines[:lim])
                if (m := _COMPOSTO_TITULO_RE.match(ln)) and m.group('t').strip()]
     if len(titulos) != 2:
         return None
     (i1, nome_f1), (i2, nome_f2) = titulos
     if nome_f1.lower() == nome_f2.lower() or i2 <= i1:
         return None
-    idx_notas = next((i for i, ln in enumerate(lines)
-                      if _COMPOSTO_NOTAS_RE.search(ln)), None)
-    fim_f2 = idx_notas if idx_notas is not None else len(lines)
+    fim_f2 = lim
     if fim_f2 <= i2:
         fim_f2 = len(lines)
     texto_f1 = '\n'.join(lines[i1:i2])

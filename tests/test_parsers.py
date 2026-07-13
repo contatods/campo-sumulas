@@ -86,6 +86,37 @@ def test_workout_titulo_unico_nao_vira_composto():
     assert wkt["tipo"] != "composto"
 
 
+def test_composto_dupla_titulo_com_sufixo_atleta():
+    """Dupla Muscle Swim & 2k: títulos com sufixo '— Atleta N' (Pwrd) também
+    viram composto (auditoria: individual virava, dupla não)."""
+    texto = (
+        'Os dois eventos são disputados ao mesmo tempo (00:00-10:00).\n\n'
+        '"Muscle Swim" — Atleta 1\nFor time:\n50m Swim\n10 Devil Presses\n\n'
+        '"2k" — Atleta 2\nFor time:\n2k Treadmill Run\n\nTime cap: 10 minutes\n\n'
+        '――― NOTAS ―――\n- Serão duas pontuações: "Muscle Swim" e "2k".'
+    )
+    wkt = parse_workout_text(texto, 1)
+    assert wkt["tipo"] == "composto"
+    assert wkt["f1"]["nome"] == "MUSCLE SWIM"
+    assert wkt["f2"]["nome"] == "2K"
+
+
+def test_for_load_multi_janela_soma_e_uma_linha_por_complex():
+    """Muscle Coffee individual: 2 janelas → 2 tentativas (1 por complex) e flag
+    de soma — não 'melhor de N' (auditoria: individual mostrava 1 linha + melhor)."""
+    texto = (
+        '"Muscle Coffee"\n\nFor load:\n'
+        '(00:00 - 03:00)\n1 Snatch + 3 Overhead Squat\n'
+        '(04:00 - 07:00)\n1 Clean + 3 Shoulder-to-Overhead\n\n'
+        'Time cap: 7 minutes\n\n――― NOTAS ―――\n'
+        '- Soma das cargas máximas dos 2 complex.\n- Cada complex validará 1 tentativa única.'
+    )
+    wkt = parse_workout_text(texto, 1)
+    assert wkt["tipo"] == "for_load"
+    assert wkt["tentativas"] == 2          # 1 linha por complex, não '1 tentativa'
+    assert wkt["soma_complexes"] is True
+
+
 def test_for_time_buyin_distancia_1000m_e_bloco_rounds():
     """Stack Bad (Pwrd): buy-in '1000m Ski Erg' não pode ser dropado (o cap
     ≥1000 'evita anos' matava distâncias), e 'then, 2 rounds of:' vira banner

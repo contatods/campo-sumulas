@@ -1619,6 +1619,9 @@ FOR_LOAD_TABLE_MACRO = r"""
 {% set barra    = wkt.barra_feminina if genero == 'F' else wkt.barra_masculina %}
 {% set barra_label = 'Feminina' if genero == 'F' else 'Masculina' %}
 {% set tentativas = wkt.tentativas | default(3) %}
+{# Múltiplos complexes independentes somados (Muscle Coffee): a régua tem 1
+   linha por complex e o total é SOMA, não 'melhor de N tentativas'. #}
+{% set soma_complexes = wkt.soma_complexes | default(false) %}
 {% set anilhas  = wkt.anilhas | default([25, 20, 15, 10, 5, 2.5, 1.25]) %}
 {% set modalidade = wkt.modalidade | default('individual') %}
 {% set n_atletas = wkt.n_atletas_time | default(wkt._n_atletas_time | default(1)) %}
@@ -1696,13 +1699,15 @@ FOR_LOAD_TABLE_MACRO = r"""
       {{ for_load_tentativa(i, anilhas, barra, unidade) }}
     {% endfor %}
     <div class="fl-melhor">
-      <span class="fl-melhor-lbl">Melhor Carga</span>
+      <span class="fl-melhor-lbl">{{ 'Soma dos Complexes' if soma_complexes else 'Melhor Carga' }}</span>
       <div class="fl-melhor-line"></div>
       <span class="fl-melhor-unidade">{{ unidade }}</span>
+      {% if not soma_complexes %}
       <div class="fl-melhor-ref">
         <span>Ref. T</span>
         <div class="fl-melhor-ref-box"></div>
       </div>
+      {% endif %}
     </div>
   {% endif %}
 </div>
