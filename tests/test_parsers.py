@@ -61,6 +61,31 @@ def test_for_load_janelas_por_atleta_e_notas_u2015():
                for j in janelas)
 
 
+def test_composto_por_dois_titulos_muscle_swim_3k():
+    """Muscle Swim + 3k (Pwrd): dois títulos entre aspas em linhas próprias,
+    cada um com sua janela e 'For time:' → composto F1/F2 (2 pontuações)."""
+    texto = (
+        '"Muscle Swim" (00:00-08:00)\n\nFor time:\n50m Swim\n'
+        "10 Devil's Presses (22,5kg)\n50m Swim\n\n"
+        '"3k" (20:00-35:00)\n\nFor time:\n3k Treadmill Run\n\n'
+        'Time cap: 35 minutes\n\n――― NOTAS ―――\nPontuação\n- Duas independentes.'
+    )
+    wkt = parse_workout_text(texto, 1)
+    assert wkt["tipo"] == "composto"
+    assert wkt["f1"]["nome"] == "MUSCLE SWIM"
+    assert wkt["f2"]["nome"] == "3K"
+    assert wkt["f1"]["janela"] == "00:00–08:00"
+    assert wkt["f2"]["janela"] == "20:00–35:00"
+    # NOTAS não vaza pra F2
+    assert not any("NOTAS" in (m.get("nome") or "") for m in wkt["f2"]["movimentos"])
+
+
+def test_workout_titulo_unico_nao_vira_composto():
+    """Um único título entre aspas (nome do workout) NÃO pode virar composto."""
+    wkt = parse_workout_text('"Stack Bad"\n\nFor time:\n30 Pull-Ups\nTime cap: 5 min', 1)
+    assert wkt["tipo"] != "composto"
+
+
 def test_for_time_buyin_distancia_1000m_e_bloco_rounds():
     """Stack Bad (Pwrd): buy-in '1000m Ski Erg' não pode ser dropado (o cap
     ≥1000 'evita anos' matava distâncias), e 'then, 2 rounds of:' vira banner

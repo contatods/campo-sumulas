@@ -754,6 +754,14 @@ def _aplicar_progressao_reps(wkt: Workout) -> None:
 _COMPOSTO_HEADER_RE = re.compile(
     r'^["“‘](?P<f1>.+?)["”’]\s*\+\s*["“‘](?P<f2>.+?)["”’]\s*$'
 )
+# Linha que é SÓ um título entre aspas + janela de tempo opcional — cabeçalho de
+# um sub-workout ('"Muscle Swim" (00:00-08:00)', '"3k" (20:00-35:00)').
+_COMPOSTO_TITULO_RE = re.compile(
+    r'^\s*["“‘](?P<t>.+?)["”’]\s*'
+    r'(?:\(\s*\d+:\d+\s*[-–—]\s*\d+:\d+\s*\)\s*)?$'
+)
+# NOTAS com qualquer traço decorativo (inclui U+2015 do Pwrd).
+_COMPOSTO_NOTAS_RE = re.compile(r'[─―—–]{2,}\s*NOTAS\s*[─―—–]{2,}', re.I)
 
 
 def _extrair_janela(texto: str, nome: str) -> str:
@@ -783,7 +791,10 @@ def _detectar_composto(lines: list[str]) -> Optional[tuple[str, str, str, str]]:
         return None
     m = _COMPOSTO_HEADER_RE.match(lines[0])
     if not m:
-        return None
+        # Estratégia 2: dois títulos entre aspas em linhas próprias, cada um
+        # abrindo um sub-workout com sua janela ('"Muscle Swim" (00:00-08:00)'
+        # … '"3k" (20:00-35:00)'). Vira composto F1/F2 (2 pontuações).
+        return _detectar_composto_por_titulos(lines)
     nome_f1 = m.group('f1').strip()
     nome_f2 = m.group('f2').strip()
     # Acha onde F2 começa: linha que abre com `"NOME2"`
@@ -803,6 +814,34 @@ def _detectar_composto(lines: list[str]) -> Optional[tuple[str, str, str, str]]:
     # F1 começa em 1 (pula header) e vai até início de F2
     texto_f1 = '\n'.join(lines[1:idx_f2])
     texto_f2 = '\n'.join(lines[idx_f2:fim_f2])
+    return nome_f1, nome_f2, texto_f1, texto_f2
+
+
+def _detectar_composto_por_titulos(
+    lines: list[str],
+) -> Optional[tuple[str, str, str, str]]:
+    """Composto sem header `X + Y`: dois títulos entre aspas em linhas próprias,
+    cada um abrindo um sub-workout (Muscle Swim + 3k do Pwrd by Coffee).
+
+    Só dispara com EXATAMENTE 2 títulos distintos (3+ é outro formato). Cada
+    bloco tem seu 'For time:' e é pontuado separadamente. Retorna a mesma tupla
+    de `_detectar_composto` ou None.
+    """
+    titulos = [(i, m.group('t').strip())
+               for i, ln in enumerate(lines)
+               if (m := _COMPOSTO_TITULO_RE.match(ln)) and m.group('t').strip()]
+    if len(titulos) != 2:
+        return None
+    (i1, nome_f1), (i2, nome_f2) = titulos
+    if nome_f1.lower() == nome_f2.lower() or i2 <= i1:
+        return None
+    idx_notas = next((i for i, ln in enumerate(lines)
+                      if _COMPOSTO_NOTAS_RE.search(ln)), None)
+    fim_f2 = idx_notas if idx_notas is not None else len(lines)
+    if fim_f2 <= i2:
+        fim_f2 = len(lines)
+    texto_f1 = '\n'.join(lines[i1:i2])
+    texto_f2 = '\n'.join(lines[i2:fim_f2])
     return nome_f1, nome_f2, texto_f1, texto_f2
 
 
