@@ -546,6 +546,33 @@ function fecharValidacao() {
   setDialogOpen('validModal', false);
 }
 
+// Preview em grade: abre TODAS as súmulas (dia ou evento) numa aba nova, em
+// branco, pra revisar o visual antes de gerar o ZIP. escopo: 'dia' | 'evento'.
+function previewGrid(escopo) {
+  if (!temDados()) { toast('Importe ou monte um evento primeiro', 'warn'); return; }
+  const body = { config };
+  if (escopo === 'dia') body.dia_idx = diaAtual;
+  // Abre a aba ANTES do await pra não ser bloqueada como popup.
+  const win = window.open('', '_blank');
+  if (win) win.document.write('<!doctype html><meta charset="utf-8"><title>Pré-visualização…</title>' +
+    '<p style="font:15px system-ui,sans-serif;padding:24px;color:#333">Gerando pré-visualização das súmulas…</p>');
+  toast('Gerando pré-visualização…', 'info');
+  apiFetch('/api/preview/grid', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  }).then(async r => {
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || ('HTTP ' + r.status)); }
+    return r.text();
+  }).then(html => {
+    const url = URL.createObjectURL(new Blob([html], {type: 'text/html'}));
+    if (win) win.location = url; else window.open(url, '_blank');
+  }).catch(e => {
+    if (win) win.close();
+    toast('Erro no preview: ' + e.message, 'err');
+  });
+}
+
 // Atualiza o banner pós-import com resumo curto + botão validar
 function atualizarBannerPosImport() {
   if (!temDados()) return;

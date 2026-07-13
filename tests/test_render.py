@@ -1,5 +1,21 @@
 """Render de súmulas: HTML único e HTML combinado por workout."""
-from campo_generator import render_workout, render_workout_combined, render_for_load_team_summary
+from campo_generator import (render_workout, render_workout_combined,
+                             render_for_load_team_summary, render_grid)
+
+
+def test_render_grid_um_doc_varias_paginas(evento_basico, workout_for_time, fonts_empty):
+    """Fase 2.0 (preview): N súmulas num doc só, 1 page cada, wrapper de
+    documento (html/body) UMA vez — senão 156× as fontes estouraria."""
+    itens = [
+        ({**evento_basico, 'categoria': 'Cat A'}, workout_for_time),
+        ({**evento_basico, 'categoria': 'Cat B'}, workout_for_time),
+        ({**evento_basico, 'categoria': 'Cat C'}, workout_for_time),
+    ]
+    html = render_grid(itens, fonts_empty)
+    assert html.count("<html") == 1
+    assert html.count("<body>") == 1
+    assert html.count('<div class="page">') == 3
+    assert "CAT A" in html.upper() and "CAT C" in html.upper()
 
 
 def test_render_workout_for_time_emite_doc_completo(evento_basico, workout_for_time, fonts_empty):

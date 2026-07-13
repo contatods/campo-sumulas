@@ -2097,3 +2097,16 @@ def render_workout_combined(ev, wkt, fonts, logo_src, logo_evento, atletas):
     logo_evt_src = logo_evento or ""
     pages = [_render_page(ev, wkt, logo_src, logo_evt_src, a) for a in atletas]
     return _DOC_TMPL.render(wkt=wkt, fonts=fonts, css=CSS, pages=pages)
+
+
+def render_grid(itens, fonts, logo_src="", logo_evento=""):
+    """Preview em grade: N súmulas (1 página em branco cada) num único HTML,
+    com fontes/CSS embutidos UMA vez (senão 156× as fontes estouraria).
+
+    `itens`: lista de (ev, wkt) já com categoria/data resolvidas. Cada item vira
+    uma página A4 (page-break entre elas). Usado pra revisar visualmente todas as
+    súmulas antes de gerar o ZIP.
+    """
+    pages = [_render_page(ev, wkt, logo_src, logo_evento or "", None) for ev, wkt in itens]
+    wkt0 = itens[0][1] if itens else {}
+    return _DOC_TMPL.render(wkt=wkt0, fonts=fonts, css=CSS, pages=pages)

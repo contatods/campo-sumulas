@@ -61,6 +61,14 @@
           <input type="checkbox" id="chkIncluirCompetidores" checked onchange="onGerarOptChange()">
           <span>Incluir competidores</span>
         </label>
+        <button class="btn-gerar-escopo" id="btnPreviewDia" onclick="previewGrid('dia')" title="Abre todas as súmulas do dia atual numa aba nova, pra revisar o visual antes de gerar o ZIP">
+          <span class="bge-main">👁 Revisar dia (preview)</span>
+          <span class="bge-sub">todas as súmulas do dia numa aba</span>
+        </button>
+        <button class="btn-gerar-escopo" id="btnPreviewEvento" onclick="previewGrid('evento')" title="Abre todas as súmulas do evento inteiro numa aba nova">
+          <span class="bge-main">👁 Revisar evento (preview)</span>
+          <span class="bge-sub">todas as súmulas do evento</span>
+        </button>
         <button class="btn-gerar-escopo" id="btnGerarDia" onclick="gerarZIPEscopo('dia')" disabled>
           <span class="bge-main">Dia atual</span>
           <span class="bge-sub" id="bgeSubDia">—</span>

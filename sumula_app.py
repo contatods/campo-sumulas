@@ -11,7 +11,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from campo_generator import render_workout, render_workout_combined, render_for_load_team_summary, load_fonts, img_b64, sanitize
+from campo_generator import render_workout, render_workout_combined, render_for_load_team_summary, render_grid, load_fonts, img_b64, sanitize
 
 PORT = int(os.environ.get('PORT', 8765))
 # Render sempre define PORT via env — usa isso para detectar ambiente cloud
@@ -19,7 +19,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '1.64.0'
+VERSION = '1.65.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -347,6 +347,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 raise BadRequest("body precisa ser objeto JSON")
             routes = {
                 '/api/preview':            self._handle_preview,
+                '/api/preview/grid':       self._handle_preview_grid,
                 '/api/generate':           self._handle_generate,
                 '/api/gerar-pdfs':         self._handle_generate_pdfs,
                 '/api/generate/pre-evento': self._handle_generate_pre_evento,
@@ -448,6 +449,67 @@ class SumulaHandler(BaseHTTPRequestHandler):
             'data':      dias[dia_idx].get('data', '') or ev.get('data', ''),
         }
         html = render_workout(ev_local, wkt, FONTS, logo, logo_evt)
+        self._send(200, 'text/html; charset=utf-8', html.encode('utf-8'))
+
+    def _handle_preview_grid(self, body):
+        """Preview em GRADE: renderiza todas as súmulas (em branco) de um dia — ou
+        do evento todo se `dia_idx` ausente — num HTML só, pra revisão visual
+        antes do ZIP. Respeita workouts_que_rodam (só o que roda por categoria) e
+        embute fontes uma vez. Sem IA: n_rounds de AMRAP vem do algoritmo.
+        """
+        cfg = body.get('config')
+        if not isinstance(cfg, dict):
+            raise BadRequest("config (objeto) é obrigatório")
+        dias = cfg.get('dias')
+        if not isinstance(dias, list) or not dias:
+            raise BadRequest("config.dias deve ser lista não-vazia")
+        dia_idx = body.get('dia_idx')
+        if dia_idx is not None:
+            try:
+                dia_idx = int(dia_idx)
+            except (TypeError, ValueError):
+                raise BadRequest("dia_idx inválido")
+            if not (0 <= dia_idx < len(dias)):
+                raise BadRequest(f"dia_idx fora do range (0..{len(dias) - 1})")
+            dias_sel = [dias[dia_idx]]
+        else:
+            dias_sel = dias
+
+        ev       = cfg.get('evento', {}) or {}
+        logo     = _resolve_logo(ev.get('logo_empresa', ''))
+        logo_evt = _resolve_logo(ev.get('logo_evento', ''))
+        from ai_rounds import _estimar_rounds_algoritmico
+        itens: list[tuple[dict, dict]] = []
+        for dia in dias_sel:
+            for cat in dia.get('categorias', []) or []:
+                workouts = cat.get('workouts', []) or []
+                if not workouts:
+                    continue
+                _validate_workout_tipos(workouts)
+                assign_workout_numbers(workouts)
+                # Pré-popula n_rounds (algoritmo) pra enriquecer_workouts não bater na IA.
+                for w in workouts:
+                    if w.get('tipo') == 'amrap' and 'n_rounds' not in w:
+                        w['n_rounds'] = _estimar_rounds_algoritmico(
+                            w.get('movimentos', []), w.get('time_cap', '') or '')
+                enriquecer_workouts(workouts)
+                baterias       = cat.get('baterias', []) or []
+                bat_com_cron   = [b for b in baterias if b.get('workouts_que_rodam')]
+                algum_sem_cron = any(not b.get('workouts_que_rodam') for b in baterias)
+                ev_local = {
+                    **ev,
+                    'categoria': cat.get('nome', '') or ev.get('categoria', ''),
+                    'data':      dia.get('data', '') or ev.get('data', ''),
+                }
+                for wp, wkt in enumerate(workouts, start=1):
+                    roda = algum_sem_cron or any(
+                        wp in (b.get('workouts_que_rodam') or []) for b in bat_com_cron)
+                    if baterias and not roda:
+                        continue
+                    itens.append((ev_local, wkt))
+        if not itens:
+            raise BadRequest("nenhuma súmula pra pré-visualizar")
+        html = render_grid(itens, FONTS, logo, logo_evt)
         self._send(200, 'text/html; charset=utf-8', html.encode('utf-8'))
 
     def _handle_generate(self, body):
