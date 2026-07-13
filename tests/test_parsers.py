@@ -8,10 +8,35 @@ from parsers import (
     _parse_inscritos, _parse_inscritos_full,
     _bateria_tem_atleta_na_faixa, _alocacoes_tem_atleta_na_faixa,
     _normalizar_categoria, _normalizar_categoria_relaxada,
+    _chave_categoria_fuzzy,
     _workout_numero_de_codigo,
     _roster_de_abas_atletas,
     _workouts_que_rodam_da_bateria,
 )
+
+
+def test_chave_categoria_fuzzy_casa_ordem_genero_e_sinal():
+    """Casa variações humanas da MESMA categoria (Pwrd by Coffee 2026):
+    ordem das palavras, concordância de gênero e posição do '+'."""
+    pares = [
+        ("Master Masculino 40-44", "Master 40-44 Masculino"),   # ordem
+        ("Master 45+ Masculino",   "Master Masculino 45+"),     # ordem + sinal
+        ("Master Feminino 40+",    "Master 40+ Feminino"),      # ordem + sinal
+        ("Dupla Rx Masculino",     "Dupla Rx Masculina"),       # gênero
+        ("Dupla Rx Feminino",      "Dupla Rx Feminina"),        # gênero
+        ("Dupla Rx Misto",         "Dupla Rx Mista"),           # gênero
+        ("Trio Master Misto 110+", "Trio Master Misto +110"),   # sinal
+    ]
+    for a, b in pares:
+        assert _chave_categoria_fuzzy(a) == _chave_categoria_fuzzy(b), f"{a!r} != {b!r}"
+
+
+def test_chave_categoria_fuzzy_nao_cruza_generos_nem_categorias():
+    """Gêneros e categorias distintas NÃO podem colapsar na mesma chave."""
+    assert _chave_categoria_fuzzy("Elite Masculino") != _chave_categoria_fuzzy("Elite Feminino")
+    assert _chave_categoria_fuzzy("Dupla Rx Masculino") != _chave_categoria_fuzzy("Trio Rx Masculino")
+    assert _chave_categoria_fuzzy("Master 40-44 Masculino") != _chave_categoria_fuzzy("Master 45+ Masculino")
+    assert _chave_categoria_fuzzy("Trio Scaled Masculino") != _chave_categoria_fuzzy("Trio Scaled Feminino")
 
 
 def test_parse_workout_text_for_time_extrai_movimentos_e_time_cap():

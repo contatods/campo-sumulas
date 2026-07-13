@@ -177,6 +177,28 @@ def _safe_int(s, default: Optional[int] = None) -> Optional[int]:
         return default
 
 
+# Números por extenso (EN + PT) 1-10 — usados na detecção de "Three rounds…".
+_NUM_PALAVRA = {
+    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+    'um': 1, 'uma': 1, 'dois': 2, 'duas': 2, 'tres': 3, 'três': 3,
+    'quatro': 4, 'cinco': 5, 'seis': 6, 'sete': 7, 'oito': 8, 'nove': 9, 'dez': 10,
+}
+# Alternância de regex que casa dígito OU palavra (EN/PT).
+_NUM_TOKEN_RE = (r'(\d+|one|two|three|four|five|six|seven|eight|nine|ten|'
+                 r'um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez)')
+
+
+def _num_ext(tok) -> Optional[int]:
+    """'three'/'três'/'3' → int. None se não reconhece."""
+    if tok is None:
+        return None
+    t = str(tok).strip().lower()
+    if t.isdigit():
+        return int(t)
+    return _NUM_PALAVRA.get(t)
+
+
 # ── Texto livre de workout ──────────────────────────────────────────────────────
 def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     """Extrai (reps, nome_upper) de uma linha de movimento.
@@ -387,14 +409,16 @@ def _detectar_directives(full: str, lines: list[str], wkt: Workout) -> None:
     # 'For time, X rounds of:'. Atleta faz a sequência completa X vezes,
     # score = tempo total. Marca wkt.rounds_fixos pra render mostrar banner
     # + calcular acumulado total (reps × X).
+    # Aceita número por extenso ('Three rounds for time of') e 'For time:' em
+    # linha separada do 'Four Rounds of' (separador [:,\s]* cobre ':' + \n).
     m_rounds = (
-        re.search(r'(\d+)\s+rounds?\s+for\s+time', full, re.I)
-        or re.search(r'(\d+)\s+rounds?\s+por\s+tempo', full, re.I)
-        or re.search(r'for\s+time[,\s]+(\d+)\s+rounds?', full, re.I)
-        or re.search(r'por\s+tempo[,\s]+(\d+)\s+rounds?', full, re.I)
+        re.search(_NUM_TOKEN_RE + r'\s+rounds?\s+for\s+time', full, re.I)
+        or re.search(_NUM_TOKEN_RE + r'\s+rounds?\s+por\s+tempo', full, re.I)
+        or re.search(r'for\s+time[:,\s]*' + _NUM_TOKEN_RE + r'\s+rounds?(?:\s+of\b)?', full, re.I)
+        or re.search(r'por\s+tempo[:,\s]*' + _NUM_TOKEN_RE + r'\s+rounds?(?:\s+de\b)?', full, re.I)
     )
     if m_rounds:
-        n = _safe_int(m_rounds.group(1))
+        n = _num_ext(m_rounds.group(1))
         if n is not None and 2 <= n <= 30:   # sanity cap
             wkt["rounds_fixos"] = n
             wkt["tipo"] = "for_time"
@@ -1831,6 +1855,37 @@ def _normalizar_categoria_relaxada(s: str) -> str:
     return s
 
 
+# Folding de gênero pra chave fuzzy: radical comum por gênero. NÃO cruza entre
+# si (masc/fem/mist são disjuntos), então não confunde categorias distintas.
+_GENERO_FOLD = {
+    'masculino': 'masc', 'masculina': 'masc', 'masculinos': 'masc', 'masculinas': 'masc',
+    'feminino': 'fem', 'feminina': 'fem', 'femininos': 'fem', 'femininas': 'fem',
+    'misto': 'mist', 'mista': 'mist', 'mistos': 'mist', 'mistas': 'mist', 'mixto': 'mist',
+}
+
+
+def _chave_categoria_fuzzy(s: str) -> str:
+    """Chave tolerante a ordem das palavras, concordância de gênero e posição
+    do '+'. Casa variações humanas que descrevem a MESMA categoria:
+
+      'Master Masculino 40-44'  ==  'Master 40-44 Masculino'   (ordem)
+      'Dupla Rx Masculino'      ==  'Dupla Rx Masculina'       (gênero)
+      'Trio Master Misto 110+'  ==  'Trio Master Misto +110'   (sinal +)
+
+    Gênero é folded pra radical comum (masc/fem/mist) — disjuntos, não cruzam.
+    Tokens são ordenados pra ignorar a ordem. Só deve ser usada como camada de
+    match com guarda anti-ambiguidade (duas cats da grade com mesma chave fuzzy
+    não podem usar essa camada).
+    """
+    s = _normalizar_categoria_relaxada(s)
+    if not s:
+        return ""
+    s = s.replace('+', ' ')            # +110 / 110+ → 110
+    s = re.sub(r'\s+', ' ', s).strip()
+    toks = [_GENERO_FOLD.get(t, t) for t in s.split()]
+    return ' '.join(sorted(toks))
+
+
 def _split_codigo_evento(codigo: str) -> list[str]:
     """Quebra um código tipo '#2 & #3' em ['#2', '#3']. Códigos simples viram [codigo]."""
     if not codigo:
@@ -2103,6 +2158,8 @@ def _bateria_casa_categoria(
     cat_grade_norm: str,
     cat_grade_relaxada: str | None = None,
     permite_relaxado: bool = False,
+    cat_grade_fuzzy: str | None = None,
+    permite_fuzzy: bool = False,
 ) -> bool:
     """Match exato (após normalização e quebra de '&').
 
@@ -2119,6 +2176,11 @@ def _bateria_casa_categoria(
         partes_relax = [_normalizar_categoria_relaxada(p)
                         for p in _split_partes_categoria(bateria_categoria)]
         if cat_grade_relaxada in partes_relax:
+            return True
+    if permite_fuzzy and cat_grade_fuzzy:
+        partes_fuzzy = [_chave_categoria_fuzzy(p)
+                        for p in _split_partes_categoria(bateria_categoria)]
+        if cat_grade_fuzzy in partes_fuzzy:
             return True
     return False
 
@@ -2448,6 +2510,16 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
     cats_ambiguas = {cat for cat, r in cats_grade_relaxadas.items()
                      if _contagem_relaxada[r] > 1}
 
+    # Chave fuzzy (ordem/gênero/±) por categoria da grade + guarda de ambiguidade:
+    # duas cats da grade com a mesma chave fuzzy não podem usar essa camada.
+    cats_grade_fuzzy = {cat: _chave_categoria_fuzzy(cat)
+                        for cat in grade_por_categoria}
+    _contagem_fuzzy: dict[str, int] = {}
+    for f in cats_grade_fuzzy.values():
+        _contagem_fuzzy[f] = _contagem_fuzzy.get(f, 0) + 1
+    cats_ambiguas_fuzzy = {cat for cat, f in cats_grade_fuzzy.items()
+                           if f and _contagem_fuzzy[f] > 1}
+
     # 2) Dias detectados — em ordem de preferência:
     #    (a) abas <Dia> que TÊM par <Dia> - Montagem (atletas alocados)
     #    (b) abas <Dia> sozinhas (planejamento; gera súmulas em branco)
@@ -2503,11 +2575,16 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
         # duas formas pra suportar match estrito ou relaxado.
         cats_no_dia_norm: set[str] = set()
         cats_no_dia_relax: set[str] = set()
+        cats_no_dia_fuzzy: set[str] = set()
         for b in cronograma:
             cat_str = b.get('categoria', '')
             cats_no_dia_norm.update(_quebrar_categoria_composta(cat_str))
             cats_no_dia_relax.update(
                 _normalizar_categoria_relaxada(p)
+                for p in _split_partes_categoria(cat_str)
+            )
+            cats_no_dia_fuzzy.update(
+                _chave_categoria_fuzzy(p)
                 for p in _split_partes_categoria(cat_str)
             )
 
@@ -2534,6 +2611,8 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             cat_grade_norm = _normalizar_categoria(cat_grade)
             cat_grade_relax = cats_grade_relaxadas[cat_grade]
             permite_relax = cat_grade not in cats_ambiguas
+            cat_grade_fuzzy = cats_grade_fuzzy[cat_grade]
+            permite_fuzzy = cat_grade not in cats_ambiguas_fuzzy
             # Faixa de número desta categoria no Inscritos (se houver).
             # Usado pra 3ª camada de match: bateria onde o nome textual não
             # menciona a cat, mas a Montagem tem atletas dela.
@@ -2578,6 +2657,8 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             casou_por_nome = (
                 cat_grade_norm in cats_no_dia_norm
                 or (permite_relax and cat_grade_relax in cats_no_dia_relax)
+                or (permite_fuzzy and cat_grade_fuzzy
+                    and cat_grade_fuzzy in cats_no_dia_fuzzy)
             )
             casou_por_faixa = faixa_cat_unica is not None and any(
                 _bateria_tem_atleta_na_faixa(b.get('numero', ''), montagem, faixa_cat_unica)
@@ -2597,7 +2678,8 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             baterias_da_cat = [
                 b for b in cronograma
                 if _bateria_casa_categoria(b.get('categoria', ''), cat_grade_norm,
-                                           cat_grade_relax, permite_relax)
+                                           cat_grade_relax, permite_relax,
+                                           cat_grade_fuzzy, permite_fuzzy)
                 or (faixa_cat_unica is not None
                     and _bateria_tem_atleta_na_faixa(b.get('numero', ''), montagem, faixa_cat_unica))
             ]
@@ -2622,6 +2704,7 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                     chave_cod, chave_cat, chave_bat = chave
                     cat_bate = _bateria_casa_categoria(
                         chave_cat, cat_grade_norm, cat_grade_relax, permite_relax,
+                        cat_grade_fuzzy, permite_fuzzy,
                     )
                     # 3ª camada: nome textual não bateu mas a Montagem tem
                     # atletas dentro da faixa de número desta categoria.
