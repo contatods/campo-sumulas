@@ -8,11 +8,34 @@ from parsers import (
     _parse_inscritos, _parse_inscritos_full,
     _bateria_tem_atleta_na_faixa, _alocacoes_tem_atleta_na_faixa,
     _normalizar_categoria, _normalizar_categoria_relaxada,
-    _chave_categoria_fuzzy,
+    _chave_categoria_fuzzy, _extrair_carga,
     _workout_numero_de_codigo,
     _roster_de_abas_atletas,
     _workouts_que_rodam_da_bateria,
 )
+
+
+def test_extrair_carga_dupla_unidade_por_numero():
+    """Carga misto/scaled com unidade em CADA número ('70kg/50kg') — antes o
+    regex pegava só o 2º e deixava '(70kg/' no nome. Não pode quebrar '50/35 lb'
+    (unidade só no fim) nem carga simples."""
+    assert _extrair_carga("Sync. Deadlifts (70kg/50kg)") == ("Sync. Deadlifts", "70/50 KG")
+    assert _extrair_carga("Overhead Squats (22,5kg/15kg)") == ("Overhead Squats", "22,5/15 KG")
+    assert _extrair_carga("Wall-Ball Shots (20lbs/14lbs)") == ("Wall-Ball Shots", "20/14 LBS")
+    # sem regressão:
+    assert _extrair_carga("Deadlifts (84kg)") == ("Deadlifts", "84 KG")
+    nome, carga = _extrair_carga("50/35 lb Thrusters")   # unidade só no fim, no início
+    assert carga == "50/35 LB" and nome == "Thrusters"
+
+
+def test_parse_findings_json_ia_tolerante():
+    """O parser de findings da IA tolera cerca ```json, texto ao redor e lixo."""
+    from ai_rounds import _parse_findings_json
+    ok = _parse_findings_json('Segue: [{"severidade":"erro","msg":"X","onde":"Y"},{"msg":"sem sev"}]')
+    assert len(ok) == 2 and ok[0]["severidade"] == "erro" and ok[1]["severidade"] == "aviso"
+    assert all(a["fonte"] == "ia" for a in ok)
+    assert _parse_findings_json("não achei problemas") == []
+    assert _parse_findings_json('```json\n[{"msg":"z"}]\n```')[0]["msg"] == "z"
 
 
 def test_chave_categoria_fuzzy_casa_ordem_genero_e_sinal():

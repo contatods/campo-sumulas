@@ -317,6 +317,8 @@ function dispensarBanner() {
   document.getElementById('postImportBanner').style.display = 'none';
   document.getElementById('pibAIBox').style.display = 'none';
   document.getElementById('pibAIBtn').style.display = 'none';
+  const rev = document.getElementById('pibRevBtn');
+  if (rev) rev.style.display = 'none';
 }
 function mostrarBannerPosImport(msg) {
   const banner = document.getElementById('postImportBanner');
@@ -570,6 +572,37 @@ function previewGrid(escopo) {
   }).catch(e => {
     if (win) win.close();
     toast('Erro no preview: ' + e.message, 'err');
+  });
+}
+
+// Review de PROGRAMAÇÃO por IA: escalonamento invertido, sanidade cross-divisão
+// (o que o linter de regras não pega). Mostra no modal, mesclado com os avisos
+// determinísticos do import pra dar a visão completa.
+function revisarProgramacaoIA() {
+  if (!temDados()) { toast('Importe ou monte um evento primeiro', 'warn'); return; }
+  setDialogOpen('validModal', true);
+  document.getElementById('validacaoStatus').textContent = 'Revisando programação com IA…';
+  document.getElementById('validacaoLista').innerHTML = '';
+  apiFetch('/api/ai/revisar-programacao', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ config }),
+  }).then(r => r.json()).then(res => {
+    if (res.error) throw new Error(res.error);
+    const ia  = (res.avisos || []).map(a => ({...a, msg: '🤖 ' + a.msg}));
+    const det = _ultimosAvisos || [];
+    if (!ia.length && !det.length) {
+      document.getElementById('validacaoStatus').innerHTML =
+        '<strong style="color:var(--green)">✓ IA não encontrou problemas de programação.</strong>';
+      return;
+    }
+    _renderValidacao([...det, ...ia]);
+    if (!ia.length) {
+      document.getElementById('validacaoStatus').innerHTML +=
+        ' <span style="color:var(--muted)">(IA não achou nada novo na programação)</span>';
+    }
+  }).catch(e => {
+    document.getElementById('validacaoStatus').textContent = 'Erro na IA: ' + e.message;
   });
 }
 
@@ -2204,6 +2237,10 @@ function aplicarImport(result) {
   };
   const aiBtn = document.getElementById('pibAIBtn');
   if (aiBtn) aiBtn.style.display = (avisos.length && chatAIAtiva) ? '' : 'none';
+  // Review de programação por IA fica disponível sempre que a IA está ativa —
+  // acha problemas mesmo sem aviso determinístico (escalonamento, sanidade).
+  const revBtn = document.getElementById('pibRevBtn');
+  if (revBtn) revBtn.style.display = chatAIAtiva ? '' : 'none';
   // Reflete a contagem no ícone + rótulo do botão Validar (não depende do
   // resumo assíncrono que sobrescreve o pibMsg). Erros mudam o ícone pra ✗.
   const nErros = avisos.filter(a => a.severidade === 'erro').length;

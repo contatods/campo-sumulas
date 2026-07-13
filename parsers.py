@@ -141,6 +141,17 @@ _CARGA_AT_START_RE = re.compile(
     r'\s+(\S.+)$',                                   # resto = nome
     re.IGNORECASE,
 )
+# Carga dupla com unidade em CADA número: '70kg/50kg', '22,5kg/15kg', '20lbs/14lbs'
+# (Rx/scaled ou M/F). Diferente de '50/35 lb' (unidade só no fim, tratada pelo
+# _CARGA_END_RE). Normaliza pra 'N1/N2 UNIT'.
+_CARGA_DUAL_UNIT_RE = re.compile(
+    r'\s*\(?\s*'
+    r'(\d+(?:[\.,]\d+)?)\s*(kg|lb|lbs|#|pood)\s*'    # 1º número + unidade
+    r'/\s*'
+    r'(\d+(?:[\.,]\d+)?)\s*(kg|lb|lbs|#|pood)?'      # 2º número + unidade (opcional)
+    r'\s*\)?\s*$',
+    re.IGNORECASE,
+)
 
 
 def _extrair_carga(nome: str) -> tuple[str, Optional[str]]:
@@ -156,6 +167,15 @@ def _extrair_carga(nome: str) -> tuple[str, Optional[str]]:
         num, unit, resto = m_start.group(1), m_start.group(2).upper(), m_start.group(3).strip()
         if resto and len(resto) >= 3:
             return (resto, f"{num} {unit}")
+    # Carga dupla com unidade em cada número ('70kg/50kg') ANTES do fallback —
+    # senão o _CARGA_END_RE pega só o 2º ('50kg') e deixa '(70kg/' no nome.
+    m_dual = _CARGA_DUAL_UNIT_RE.search(nome)
+    if m_dual:
+        nome_limpo = nome[:m_dual.start()].rstrip(' ,-()@').strip()
+        if nome_limpo:
+            n1, u1, n2, u2 = m_dual.groups()
+            unit = (u2 or u1 or '').upper()
+            return (nome_limpo, f"{n1}/{n2} {unit}".strip())
     # Senão tenta no FIM (com unidade obrigatória) ou @-prefixed
     m = _CARGA_END_RE.search(nome) or _CARGA_AT_END_RE.search(nome)
     if not m: return (nome, None)

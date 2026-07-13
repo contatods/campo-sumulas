@@ -707,6 +707,122 @@ def explicar_avisos_import(stats: dict, avisos: list[dict]) -> str:
     return resp.content[0].text or ""
 
 
+# ── Review de PROGRAMAÇÃO por IA (Fase 2.0) ─────────────────────────────────
+def _presc_movimentos(movs: list) -> list[str]:
+    """Lista compacta 'Nx NOME @carga' dos movimentos de um workout."""
+    out = []
+    for m in movs or []:
+        if not isinstance(m, dict) or not m.get('nome'):
+            continue
+        s = f"{m.get('reps', '?')}x {m['nome']}"
+        if m.get('carga'):
+            s += f" @{m['carga']}"
+        out.append(s)
+    return out
+
+
+def _resumo_programacao_por_workout(config: dict) -> dict:
+    """Agrupa a programação por NOME de workout → versões por categoria, com a
+    prescrição compacta (movs/cargas). Deixa a IA comparar o escalonamento entre
+    divisões (ex: Fat Bar 10kg numa divisão vs 34kg nas outras). Dedupe por
+    (workout, categoria) — o mesmo workout repete entre dias."""
+    grupos: dict[str, list] = {}
+    vistos: set = set()
+    for dia in config.get('dias', []) or []:
+        for cat in dia.get('categorias', []) or []:
+            cnome = cat.get('nome', '')
+            for wkt in cat.get('workouts', []) or []:
+                wn = wkt.get('nome', '?')
+                if (wn, cnome) in vistos:
+                    continue
+                vistos.add((wn, cnome))
+                if wkt.get('tipo') == 'composto':
+                    presc = {
+                        'F1': _presc_movimentos((wkt.get('f1') or {}).get('movimentos')),
+                        'F2': _presc_movimentos((wkt.get('f2') or {}).get('movimentos')),
+                    }
+                elif wkt.get('tipo') == 'for_load':
+                    seq = wkt.get('sequencia_movimentos') or {}
+                    presc = {'for_load': [j.get('complex') for j in (seq.get('janelas') or [])]
+                                         or [seq.get('complex')]}
+                else:
+                    presc = {'movs': _presc_movimentos(wkt.get('movimentos'))}
+                grupos.setdefault(wn, []).append({'categoria': cnome, **presc})
+    # Só workouts com 2+ divisões interessam pra comparação de escalonamento.
+    return {k: v for k, v in grupos.items() if len(v) >= 2}
+
+
+def _parse_findings_json(txt: str) -> list[dict]:
+    """Extrai a lista JSON de findings da resposta da IA (tolera cerca ```json)."""
+    import json as _json
+    if not txt:
+        return []
+    m = re.search(r'\[.*\]', txt, re.S)   # primeiro array JSON no texto
+    if not m:
+        return []
+    try:
+        dados = _json.loads(m.group(0))
+    except (ValueError, TypeError):
+        return []
+    out = []
+    for d in dados if isinstance(dados, list) else []:
+        if not isinstance(d, dict) or not d.get('msg'):
+            continue
+        sev = d.get('severidade')
+        out.append({
+            'severidade': sev if sev in ('erro', 'aviso') else 'aviso',
+            'msg': str(d['msg'])[:300],
+            'onde': str(d.get('onde', ''))[:120],
+            'fonte': 'ia',
+        })
+    return out
+
+
+def revisar_programacao_ia(config: dict) -> list[dict]:
+    """Review de PROGRAMAÇÃO por IA — pega o que o linter determinístico NÃO vê:
+    escalonamento invertido entre divisões, carga fora de padrão, sanidade
+    cross-divisão, movimento estranho pro nível. Retorna lista de
+    {severidade, msg, onde, fonte:'ia'}. RuntimeError se IA inativa.
+    """
+    if not AI_ATIVO:
+        raise RuntimeError('IA inativa — defina ANTHROPIC_API_KEY pra usar a review.')
+    import json as _json
+    grupos = _resumo_programacao_por_workout(config)
+    if not grupos:
+        return []
+    contexto = _json.dumps(grupos, ensure_ascii=False)[:AI_CONTEXT_MAX_CHARS]
+    system = (
+        "Você é revisor experiente de programação de CrossFit conferindo a "
+        "planilha de um evento ANTES da impressão das súmulas. Recebe os workouts "
+        "agrupados por nome, com a versão de cada categoria/divisão.\n\n"
+        "Aponte APENAS problemas REAIS e acionáveis que um checador de regras não "
+        "pega, priorizando:\n"
+        "1. Escalonamento invertido/incoerente entre divisões (ex: carga menor "
+        "   numa divisão mais forte, ou uma carga destoando das demais — tipo "
+        "   uma barra a 10kg quando as outras versões usam 34kg).\n"
+        "2. Carga/reps fora de padrão pro movimento ou pro nível.\n"
+        "3. Movimento que não faz sentido pra divisão (ex: Rx fazendo scaled).\n"
+        "4. Inconsistência entre versões que deveriam ser paralelas.\n\n"
+        "NÃO aponte: falta de carga (já checado), typos, cronograma. Seja "
+        "conservador — se não tem certeza, não inclua. Melhor 3 achados certeiros "
+        "que 15 duvidosos.\n\n"
+        "Responda SOMENTE com um array JSON (sem texto fora dele). Cada item:\n"
+        '{"severidade":"aviso"|"erro","msg":"<problema + correção sugerida, 1 frase>",'
+        '"onde":"<workout / categoria>"}\n'
+        "Array vazio [] se nada relevante.\n\n"
+        f"Programação:\n{contexto}"
+    )
+    client = anthropic.Anthropic(api_key=AI_KEY, timeout=AI_TIMEOUT_CHAT_S)
+    resp = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=1500,
+        system=system,
+        messages=[{"role": "user", "content": "Revise a programação e liste só os problemas reais em JSON."}],
+    )
+    txt = (resp.content[0].text if resp.content else "") or ""
+    return _parse_findings_json(txt)
+
+
 # ── Resumo natural do evento (curto, conciso) ───────────────────────────────
 def resumo_evento(config: dict) -> str:
     """Retorna 1-2 frases descrevendo o evento importado.
