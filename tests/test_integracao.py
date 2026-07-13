@@ -392,6 +392,45 @@ def test_linter_colisao_de_bateria_mesma_arena_mas_nao_entre_arenas():
     assert "Campo" in colisoes[0]["msg"] and "5" in colisoes[0]["msg"]
 
 
+def _cfg_wkt(mov):
+    return {"dias": [{"label": "Dom", "categorias": [
+        {"nome": "X", "baterias": [], "workouts": [
+            {"nome": "W", "tipo": "for_time", "time_cap": "8 min", "movimentos": mov}]}]}]}
+
+
+def test_linter_carga_faltando_entre_levantamentos():
+    """Fase 2.0: levantamento de barra sem carga onde outro do mesmo workout tem
+    carga → aviso (Rocket Master F original: DL 34kg + Snatch/OHS sem carga)."""
+    avisos = validar_evento(_cfg_wkt([
+        {"nome": "DEADLIFTS", "reps": 12, "carga": "50 KG"},
+        {"nome": "HANG POWER SNATCH", "reps": 9},
+        {"nome": "OVERHEAD SQUATS", "reps": 6},
+        {"chegada": True},
+    ]))
+    faltando = [a for a in avisos if "carga esquecida" in a["msg"]]
+    assert len(faltando) == 1
+    assert "HANG POWER SNATCH" in faltando[0]["msg"] and "OVERHEAD SQUATS" in faltando[0]["msg"]
+    # Se todos têm carga, nenhum aviso
+    ok = validar_evento(_cfg_wkt([
+        {"nome": "DEADLIFTS", "reps": 12, "carga": "50 KG"},
+        {"nome": "OVERHEAD SQUATS", "reps": 6, "carga": "50 KG"},
+        {"chegada": True},
+    ]))
+    assert not any("carga esquecida" in a["msg"] for a in ok)
+
+
+def test_linter_typo_anotacao_atlhetes_mas_athletes_ok():
+    """Fase 2.0: 'atlhetes' (typo de athletes) avisa; 'athletes' correto não."""
+    avisos = validar_evento(_cfg_wkt([
+        {"nome": "SYNC. PULL-UPS (2 ATLHETES)", "reps": 40},
+        {"nome": "400M RUN (3 ATHLETES)", "reps": 400},
+        {"chegada": True},
+    ]))
+    typos = [a for a in avisos if "typo" in a["msg"]]
+    assert len(typos) == 1
+    assert "atlhetes" in typos[0]["msg"]
+
+
 def test_validar_evento_detecta_for_time_sem_time_cap():
     config = {
         "dias": [{

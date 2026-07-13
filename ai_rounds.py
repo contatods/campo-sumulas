@@ -254,6 +254,50 @@ def auto_descricao(workout: Workout) -> list[str]:
 
 
 # ── Validação algorítmica de evento ────────────────────────────────────────
+
+# Movimentos de barra que exigem carga. Se aparecem sem carga num workout onde
+# OUTRO movimento de barra tem carga, provável carga esquecida (Rocket Master F:
+# Deadlift 34kg + Hang Power Snatch/Overhead Squat sem carga).
+_LIFTS_COM_CARGA = (
+    'snatch', 'clean', 'jerk', 'deadlift', 'thruster',
+    'overhead squat', 'front squat', 'back squat',
+    'push press', 'shoulder press', 'strict press', 'shoulder-to-overhead',
+)
+# Palavras-chave de anotação (não-movimento) sujeitas a typo. 'atlhetes' cai aqui.
+_KEYWORDS_ANOTACAO = ('athletes', 'athlete', 'atletas', 'atleta', 'sync', 'reps')
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """Distância de edição simples (iterativa, O(len(a)*len(b)))."""
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _typo_de_anotacao(nome: str) -> Optional[tuple[str, str]]:
+    """Procura um token quase-igual a uma palavra-chave de anotação (typo).
+
+    Retorna (token_errado, palavra_certa) ou None. Conservador: só flagga
+    tokens ≥5 letras, com mesmas 2 primeiras letras e distância 1-2 — evita
+    falso-positivo com palavras curtas.
+    """
+    for tok in re.findall(r'[a-zA-ZÀ-ÿ]{5,}', nome.lower()):
+        if tok in _KEYWORDS_ANOTACAO:
+            continue   # é exatamente uma palavra-chave correta ('athletes' etc.)
+        for kw in _KEYWORDS_ANOTACAO:
+            if len(kw) < 5 or tok[:2] != kw[:2]:
+                continue
+            if 1 <= _levenshtein(tok, kw) <= 2:
+                return tok, kw
+    return None
+
+
 def validar_evento(config: dict) -> list[dict]:
     """Detecta problemas pré-evento sem precisar de IA.
 
@@ -367,7 +411,51 @@ def validar_evento(config: dict) -> list[dict]:
                         'onde': f'{dlabel}/{cnome}',
                     })
 
-    # 6) Cronograma: slot da bateria menor que a duração estimada do workout
+    # Helper: movimentos de um workout, incluindo sub-workouts de composto.
+    def _movs_do_workout(wkt: dict) -> list:
+        if wkt.get('tipo') == 'composto':
+            return ((wkt.get('f1', {}) or {}).get('movimentos') or []) \
+                 + ((wkt.get('f2', {}) or {}).get('movimentos') or [])
+        return wkt.get('movimentos') or []
+
+    # 6) Carga faltando: levantamento de barra sem carga onde OUTRO levantamento
+    #    do mesmo workout tem carga (Rocket Master F: DL 34kg + Snatch/OHS s/ carga).
+    for di, dia in enumerate(dias):
+        dlabel = dia.get('label', f'Dia {di+1}')
+        for cat in dia.get('categorias', []) or []:
+            cnome = cat.get('nome', '')
+            for wkt in cat.get('workouts', []) or []:
+                lifts = [m for m in _movs_do_workout(wkt)
+                         if m.get('nome') and any(k in m['nome'].lower() for k in _LIFTS_COM_CARGA)]
+                sem_carga = [m for m in lifts if not m.get('carga')]
+                if lifts and any(m.get('carga') for m in lifts) and sem_carga:
+                    nomes = ', '.join(m['nome'] for m in sem_carga)
+                    avisos.append({
+                        'severidade': 'aviso',
+                        'msg': f'Workout "{wkt.get("nome","?")}": {nomes} sem carga '
+                               f'(outros levantamentos têm) — carga esquecida?',
+                        'onde': f'{dlabel}/{cnome}',
+                    })
+
+    # 7) Typo em palavra-chave de anotação (athletes/atletas/sync). Ex: 'atlhetes'
+    #    em '(2 atlhetes)' — vai literal pra súmula. Dedupe global por token.
+    vistos_typo: set = set()
+    for di, dia in enumerate(dias):
+        dlabel = dia.get('label', f'Dia {di+1}')
+        for cat in dia.get('categorias', []) or []:
+            cnome = cat.get('nome', '')
+            for wkt in cat.get('workouts', []) or []:
+                for m in _movs_do_workout(wkt):
+                    t = _typo_de_anotacao(m.get('nome') or '')
+                    if t and t[0] not in vistos_typo:
+                        vistos_typo.add(t[0])
+                        avisos.append({
+                            'severidade': 'aviso',
+                            'msg': f'Provável typo "{t[0]}" (seria "{t[1]}"?) — sai literal na súmula',
+                            'onde': f'{dlabel}/{cnome}/{wkt.get("nome","?")}',
+                        })
+
+    # 8) Cronograma: slot da bateria menor que a duração estimada do workout
     avisos.extend(_avisos_cronograma(dias))
     return avisos
 

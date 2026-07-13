@@ -19,7 +19,8 @@ Coffee 2026 encontrado à mão:
 | Colisão de bateria (número duplicado na arena / horário sobreposto) | bateria #72 | `validar_evento` (config) |
 | Carga fora do rol de Equipamentos | dumbbell 16kg | `validar_evento` + `equipamento` |
 | Carga faltando (mov de barra sem carga onde outras divisões têm) | Rocket Master F | `validar_evento` |
-| Movimento não reconhecido / provável typo | "atlhetes" (Flex) | `validar_evento` + dict de movimentos |
+| Movimento não reconhecido (typo no NOME do movimento) | — | `validar_evento` + dict de movimentos |
+| Typo em palavra-chave de anotação (`athletes`/`atletas`/`sync`/`reps`/`cal`) | "**atlhetes**" (Flex) — é o marcador de nº de atletas, NÃO um movimento | spell-check dirigido |
 
 Padronizar o shape dos avisos (hoje o parser usa `nivel`, o validador usa
 `severidade`).
