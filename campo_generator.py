@@ -1059,6 +1059,8 @@ body{
 .fl-sequencia-text{font-size:9pt;font-weight:900;color:var(--ink);
   letter-spacing:.02em;text-transform:uppercase;line-height:1.2}
 .fl-sequencia-text-buyin{color:var(--mid)}
+.fl-sequencia-janela{font-size:7pt;font-weight:700;color:var(--mid);
+  letter-spacing:0;white-space:nowrap}
 .fl-zone-compact .fl-sequencia{padding:1mm 3mm}
 .fl-zone-compact .fl-sequencia-text{font-size:8pt}
 .fl-zone-super-compact .fl-sequencia{padding:0.7mm 2.5mm}
@@ -1643,7 +1645,8 @@ FOR_LOAD_TABLE_MACRO = r"""
   {# Lembrete pro árbitro: só buy-in (opcional) + complex.
      Strings preservadas como o organizador digitou. #}
   {% set seq = wkt.sequencia_movimentos | default({}) %}
-  {% if seq.buy_in or seq.complex %}
+  {% set janelas = seq.janelas | default([]) %}
+  {% if seq.buy_in or seq.complex or janelas %}
   <div class="fl-sequencia">
     {% if seq.buy_in %}
     <div class="fl-sequencia-item">
@@ -1651,7 +1654,15 @@ FOR_LOAD_TABLE_MACRO = r"""
       <span class="fl-sequencia-text fl-sequencia-text-buyin">{{ seq.buy_in }}</span>
     </div>
     {% endif %}
-    {% if seq.complex %}
+    {% if janelas %}
+      {# For Load com janelas por atleta/tempo (A/B/C): cada bloco separado. #}
+      {% for j in janelas %}
+      <div class="fl-sequencia-item">
+        <span class="fl-sequencia-tag">{{ j.atleta or ('Complex ' ~ j.label) }}</span>
+        <span class="fl-sequencia-text">{{ j.complex }}{% if j.janela %} <span class="fl-sequencia-janela">({{ j.janela }})</span>{% endif %}</span>
+      </div>
+      {% endfor %}
+    {% elif seq.complex %}
     <div class="fl-sequencia-item">
       <span class="fl-sequencia-tag">Complex</span>
       <span class="fl-sequencia-text">{{ seq.complex }}</span>

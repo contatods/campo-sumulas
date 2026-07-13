@@ -39,6 +39,48 @@ def test_chave_categoria_fuzzy_nao_cruza_generos_nem_categorias():
     assert _chave_categoria_fuzzy("Trio Scaled Masculino") != _chave_categoria_fuzzy("Trio Scaled Feminino")
 
 
+def test_for_load_janelas_por_atleta_e_notas_u2015():
+    """Muscle Coffee (Pwrd): janelas de tempo por atleta viram blocos A/B/C, e
+    o marcador '――― NOTAS ―――' (U+2015) é cortado do complex."""
+    texto = (
+        '"Muscle Coffee"\n\nFor load:\n'
+        '(00:00 - 03:00) Athlete A\n1 Snatch + 3 Overhead Squat\n'
+        '(04:00 - 07:00) Athlete B\n1 Clean + 3 Shoulder-to-Overhead\n'
+        '(08:00 - 11:00) Athlete C\n1 Clean + 3 Front Squat\n\n'
+        'Time cap: 11 minutes\n\n'
+        '――― NOTAS ―――\n\nPontuação\n- Soma das cargas máximas.'
+    )
+    wkt = parse_workout_text(texto, "MUSCLE COFFEE")
+    assert wkt["tipo"] == "for_load"
+    janelas = wkt["sequencia_movimentos"]["janelas"]
+    assert [j["label"] for j in janelas] == ["A", "B", "C"]
+    assert janelas[0]["atleta"] == "Athlete A"
+    assert "SNATCH" in janelas[0]["complex"]
+    # NOTAS não pode vazar pra nenhum bloco
+    assert all("NOTAS" not in j["complex"] and "PONTUAÇÃO" not in j["complex"].upper()
+               for j in janelas)
+
+
+def test_parse_equipamento_formato_categoria_equipamento_kg():
+    """Aba 'Equipamentos' no formato Categoria|Equipamento|Qtd (peso no nome do
+    equipamento) → extrai anilhas e unidade kg; med ball em lb não contamina."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet("Equipamentos")
+    ws.append(["Categoria", "Equipamento", "Qtd.", "Observações"])
+    ws.append(["Barras", "Barra EVOBLACK 20 kg", 30, ""])
+    ws.append(["Anilhas", "Anilha Color 25 kg", 60, ""])
+    ws.append(["Anilhas", "Anilha Color 5 kg", 120, ""])
+    ws.append(["Anilhas", "Anilha 1 kg", 60, ""])
+    ws.append(["Implementos", "Medicine Ball 20 lb", 30, ""])  # não pode virar lb
+    from parsers import _parse_equipamento
+    equip = _parse_equipamento(wb)
+    assert equip is not None
+    assert equip["unidade"] == "kg"
+    assert 25.0 in equip["anilhas"] and 1.0 in equip["anilhas"]
+    assert 20.0 not in equip["anilhas"]  # 20 é da BARRA, não anilha
+
+
 def test_parse_workout_text_for_time_extrai_movimentos_e_time_cap():
     texto = (
         '"TWENTIES"\n'

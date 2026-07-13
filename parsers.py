@@ -44,11 +44,15 @@ _ATLETA_HEADER_RE = re.compile(r'^\s*(?:atleta|athlete)\s+(\d+)\s*[:\.]?\s*$', r
 # regras/observações/regulamento que NÃO devem aparecer na súmula impressa.
 # A súmula deve conter só o essencial pro atleta executar; o resto é regulamento
 # e atleta/árbitro consultam à parte.
+# Classe de traços "decorativos" usados como moldura de seção. Inclui U+2015
+# (―, HORIZONTAL BAR) além de U+2500/2014/2013 — o Pwrd usa `――― NOTAS ―――`
+# com U+2015, que antes escapava do corte.
+_TRACO = r'─—–―\-'
 _DESC_CUT_RE = re.compile(
-    r'^\s*(?:[─—–\-]+\s*)?'
+    r'^\s*(?:[' + _TRACO + r']+\s*)?'
     r'(?:notas?|notes?|observa[çc][õo]es?|observations?|pontua[çc][ãa]o|tiebreak|'
     r'regras?|rules?|regulamento|crit[ée]rios?|criteria|score|scoring)'
-    r'\s*(?:[─—–\-]+\s*)?\s*:?\s*$',
+    r'\s*(?:[' + _TRACO + r']+\s*)?\s*:?\s*$',
     re.IGNORECASE,
 )
 
@@ -260,12 +264,62 @@ _FOR_LOAD_THEN_RE = re.compile(
 )
 
 
+# Rótulo de atleta após a janela de tempo: 'Athlete A', 'Atleta B', '(feminina)'.
+_JANELA_ATLETA_RE = re.compile(r'athlete|atleta', re.I)
+
+
+def _extrair_janelas_for_load(lines: list[str]) -> list[dict]:
+    """For Load com janelas de tempo por atleta/tentativa (Muscle Coffee do
+    Pwrd by Coffee): cada `(00:00 - 03:00) [Athlete A]` abre uma janela, e as
+    linhas seguintes são o complex daquela janela.
+
+    Retorna lista `[{'label','janela','atleta','complex'}]` (A/B/C…), ou `[]`
+    quando não há janelas — aí o caller usa o complex único de sempre.
+    """
+    lines = _truncar_descricao_em_notas(lines)
+    grupos: list[dict] = []
+    atual: Optional[dict] = None
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        mw = _TIME_WINDOW_RE.search(s)
+        if mw:
+            resto = s[mw.end():].strip(' -–—:·').strip()
+            atleta = resto if resto and _JANELA_ATLETA_RE.search(resto) else resto
+            atual = {'janela': mw.group(0).strip('() '), 'atleta': atleta, 'partes': []}
+            grupos.append(atual)
+            # complex pode vir grudado na mesma linha, após a janela/rótulo
+            continue
+        if atual is None:
+            continue
+        if s.startswith(('"', '“', '‘')):
+            continue
+        if _FOR_LOAD_IGNORE_RE.match(s):
+            continue
+        atual['partes'].append(s)
+    out: list[dict] = []
+    for i, g in enumerate(grupos):
+        complex_ = _normalizar_complex(' '.join(g['partes'])) if g['partes'] else None
+        if not complex_:
+            continue
+        out.append({
+            'label': chr(ord('A') + len(out)),   # A, B, C…
+            'janela': g['janela'],
+            'atleta': g['atleta'],
+            'complex': complex_,
+        })
+    # Só faz sentido como "blocos" quando há 2+ janelas distintas.
+    return out if len(out) >= 2 else []
+
+
 def _extrair_sequencia_for_load(lines: list[str], nome: str) -> dict:
     """Extrai sequência pro lembrete do árbitro em For Load.
 
-    Retorna `{'buy_in': str|None, 'complex': str|None}` — duas strings
-    enxutas. Só o que importa pro árbitro: o que aquece (buy-in) e o que
-    vale carga (complex).
+    Retorna `{'buy_in': str|None, 'complex': str|None, 'janelas': list}` —
+    strings enxutas + janelas A/B/C opcionais. Só o que importa pro árbitro:
+    o que aquece (buy-in), o que vale carga (complex) e, quando há janelas de
+    tempo por atleta, cada bloco separado.
 
     Estratégia (ordem):
       1. Trunca em NOTAS / OBSERVAÇÕES / ─── (regulamento fora do escopo).
@@ -278,6 +332,10 @@ def _extrair_sequencia_for_load(lines: list[str], nome: str) -> dict:
     """
     # 1) Trunca em NOTAS — regulamento fora do escopo da súmula impressa
     lines = _truncar_descricao_em_notas(lines)
+
+    # Janelas de tempo por atleta (A/B/C) — quando presentes, o render mostra
+    # cada bloco separado além do complex corrido.
+    janelas = _extrair_janelas_for_load(lines)
 
     # 2) Procura linha com 'COMPLEX:' (1-RM Complex, Squat Complex, etc)
     complex_re = re.compile(r'^(.*?)\b(?:1[-\s]?rep[-\s]?max\s+complex|complex)\s*:\s*(.+)$', re.I)
@@ -298,7 +356,7 @@ def _extrair_sequencia_for_load(lines: list[str], nome: str) -> dict:
         buy_in = _extrair_buyin_caloric(antes)
         # complex = parte após 'COMPLEX:' — normaliza separadores
         complex_ = _normalizar_complex(depois)
-        return {'buy_in': buy_in, 'complex': complex_}
+        return {'buy_in': buy_in, 'complex': complex_, 'janelas': janelas}
 
     # 3) Sem COMPLEX explícito: usa marcadores Buy-in / Then
     buy_in_parts: list[str] = []
@@ -329,7 +387,7 @@ def _extrair_sequencia_for_load(lines: list[str], nome: str) -> dict:
     if not complex_ and nome:
         complex_ = re.sub(r'^(?:max\s+|carga\s+m[áa]xima\s+(?:de\s+)?)',
                           '', nome, flags=re.I).strip().upper() or None
-    return {'buy_in': buy_in, 'complex': complex_}
+    return {'buy_in': buy_in, 'complex': complex_, 'janelas': janelas}
 
 
 def _extrair_buyin_caloric(texto: str) -> Optional[str]:
@@ -2305,6 +2363,41 @@ def _parse_equipamento(wb) -> Optional[dict[str, Any]]:
             continue
         if peso > 0:
             pesos.add(peso)
+    if not pesos:
+        # Fallback formato `Categoria | Equipamento | Qtd` (Pwrd by Coffee):
+        # o peso vem no NOME do equipamento ('Anilha Color 5 kg'). Varre todas
+        # as células e pega só linhas de ANILHA (barra/dumbbell/med ball ficam
+        # de fora da régua de anilhas).
+        anilha_re = re.compile(r'anilha[^\d]*(\d+(?:[.,]\d+)?)\s*(kg|lbs?)?', re.I)
+        anilha_tem_lb = anilha_tem_kg = False
+        for row in ws.iter_rows(values_only=True):
+            for c in row:
+                if not c:
+                    continue
+                s = str(c).strip()
+                if 'anilha' not in s.lower():
+                    continue
+                m = anilha_re.search(s)
+                if not m:
+                    continue
+                if m.group(2):
+                    if 'lb' in m.group(2).lower():
+                        anilha_tem_lb = True
+                    else:
+                        anilha_tem_kg = True
+                try:
+                    peso = float(m.group(1).replace(',', '.'))
+                except ValueError:
+                    continue
+                if peso > 0:
+                    pesos.add(peso)
+        # A unidade da régua vem DAS ANILHAS — não das med balls (que são lb por
+        # convenção mesmo em evento kg e contaminavam a coluna acima).
+        if pesos:
+            if anilha_tem_lb and not anilha_tem_kg:
+                unidade = 'lb'
+            elif anilha_tem_kg:
+                unidade = 'kg'
     if not pesos:
         return None
     # Heurística: se a unidade não veio explícita ('45', '35'), tenta inferir.
