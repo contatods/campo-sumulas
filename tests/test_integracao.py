@@ -449,6 +449,22 @@ def test_linter_dumbbell_fora_do_rol_e_nao_flagga_barra():
     assert not any("34" in a["msg"].split("disponíveis")[0] for a in db)
 
 
+def test_colapsar_avisos_agrupa_repetitivos_e_preserva_poucos():
+    """Auditoria 2.1: surfacing colapsa avisos repetitivos (ex: 394× competidor
+    em N lugares) num só, mas preserva grupos pequenos e avisos únicos."""
+    from ai_rounds import colapsar_avisos
+    avisos = [{"severidade": "aviso", "msg": f"Competidor #{i} aparece em 2 lugares",
+               "onde": "x"} for i in range(20)]
+    avisos.append({"severidade": "erro", "msg": "Dumbbell de 16kg não existe", "onde": "y"})
+    col = colapsar_avisos(avisos, limite=8)
+    colaps = [a for a in col if a.get("_colapsado")]
+    assert len(colaps) == 1 and colaps[0]["_colapsado"] == 20
+    assert any("Dumbbell" in a["msg"] for a in col)   # aviso único preservado
+    # Grupo pequeno (≤ limite) fica intacto
+    poucos = [{"severidade": "aviso", "msg": f"Y #{i}", "onde": ""} for i in range(3)]
+    assert colapsar_avisos(poucos, limite=8) == poucos
+
+
 def test_linter_movimento_typo_no_nome():
     """Fase 4: typo no NOME do movimento ('Thrustres') avisa; custom não."""
     cfg = {"dias": [{"label": "D", "categorias": [{"nome": "X", "baterias": [], "workouts": [

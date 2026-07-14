@@ -19,7 +19,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '2.1.0'
+VERSION = '2.1.1'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -204,7 +204,8 @@ from gerar_pdfs import (achar_chrome, horarios_do_config,
 from ai_rounds import (enriquecer_workouts, AI_ATIVO,
                        sugerir_time_cap, auto_descricao,
                        validar_evento, resumo_evento, chat_evento,
-                       explicar_avisos_import, revisar_programacao_ia)
+                       explicar_avisos_import, revisar_programacao_ia,
+                       colapsar_avisos)
 
 # ── Carregar fontes na inicialização ────────────────────────────────────────────
 _banner_inner = f"  Súmulas Digital Score  —  v{VERSION}"
@@ -940,7 +941,8 @@ class SumulaHandler(BaseHTTPRequestHandler):
             avisos_valid = validar_evento(result)
         except Exception:
             avisos_valid = []
-        result['avisos_import'] = avisos_parser + avisos_valid
+        # Colapsa repetitivos (ex: 394× 'competidor em 2 lugares') pro painel não afogar.
+        result['avisos_import'] = colapsar_avisos(avisos_parser + avisos_valid)
         self._send(200, 'application/json; charset=utf-8',
                    json.dumps(result, ensure_ascii=False).encode('utf-8'))
 
@@ -968,7 +970,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
         cfg = body.get('config')
         if not isinstance(cfg, dict):
             raise BadRequest("config (objeto) é obrigatório")
-        avisos = validar_evento(cfg)
+        avisos = colapsar_avisos(validar_evento(cfg))
         self._send(200, 'application/json; charset=utf-8',
                    json.dumps({'avisos': avisos}, ensure_ascii=False).encode('utf-8'))
 

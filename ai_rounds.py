@@ -298,6 +298,34 @@ def _typo_de_anotacao(nome: str) -> Optional[tuple[str, str]]:
     return None
 
 
+def colapsar_avisos(avisos: list[dict], limite: int = 8) -> list[dict]:
+    """Colapsa avisos repetitivos (mesmo padrão, ignorando números) num só quando
+    passam de `limite` — evita o painel afogar (ex: '394× competidor em 2
+    lugares' vira 1 linha). Preserva a ordem de 1ª aparição de cada grupo."""
+    grupos: dict = {}
+    ordem: list = []
+    for a in avisos:
+        chave = (a.get('severidade', 'aviso'), re.sub(r'\d+', '#', a.get('msg', '')))
+        if chave not in grupos:
+            grupos[chave] = []
+            ordem.append(chave)
+        grupos[chave].append(a)
+    out: list[dict] = []
+    for chave in ordem:
+        itens = grupos[chave]
+        if len(itens) <= limite:
+            out.extend(itens)
+        else:
+            sev, pat = chave
+            out.append({
+                'severidade': sev,
+                'msg': f'{len(itens)}× {pat.strip()}',
+                'onde': f'{len(itens)} ocorrências (ex: {itens[0].get("msg", "")[:60]})',
+                '_colapsado': len(itens),
+            })
+    return out
+
+
 def validar_evento(config: dict) -> list[dict]:
     """Detecta problemas pré-evento sem precisar de IA.
 
