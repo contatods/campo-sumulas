@@ -28,6 +28,20 @@ def test_extrair_carga_dupla_unidade_por_numero():
     assert carga == "50/35 LB" and nome == "Thrusters"
 
 
+def test_rounds_fixos_rft_e_linha_solta():
+    """rounds_fixos deve pegar 'N RFT' e 'N Rounds:' numa linha só (sem precisar
+    de 'for time' ao lado). Não pode disparar em for-time simples nem no buy-in
+    'then, N rounds of'."""
+    def rf(txt):
+        return parse_workout_text('"T"\n\n' + txt + '\nTime cap: 10 min', 1).get("rounds_fixos")
+    assert rf("5 RFT:\n500m Row\n20 Taps") == 5
+    assert rf("5 Rounds:\n500m Row\n20 Taps") == 5
+    assert rf("5 Rounds of:\n500m Row") == 5
+    assert rf("For time:\n500m Row\n20 Taps") is None            # sem round
+    w = parse_workout_text('"T"\nFor time:\n1000m Ski\nthen, 2 rounds of:\n30 HSPU\nTime cap: 5 min', 1)
+    assert w.get("rounds_fixos") is None                          # buy-in + bloco, não multiplica
+
+
 def test_assign_workout_numbers_global_continuo_entre_dias():
     """Numeração deve ser CONTÍNUA por categoria pelo total de workouts (não
     reinicia por dia). Composto/Express ocupam 2 slots."""

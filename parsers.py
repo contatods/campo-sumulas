@@ -520,6 +520,13 @@ def _detectar_directives(full: str, lines: list[str], wkt: Workout) -> None:
         or re.search(_NUM_TOKEN_RE + r'\s+rounds?\s+por\s+tempo', full, re.I)
         or re.search(r'for\s+time[:,\s]*' + _NUM_TOKEN_RE + r'\s+rounds?(?:\s+of\b)?', full, re.I)
         or re.search(r'por\s+tempo[:,\s]*' + _NUM_TOKEN_RE + r'\s+rounds?(?:\s+de\b)?', full, re.I)
+        # 'N RFT' (abreviação Rounds For Time)
+        or re.search(_NUM_TOKEN_RE + r'\s*rft\b', full, re.I)
+        # Linha SÓ com a declaração de rounds ('5 Rounds:', '5 Rounds of:') — sem
+        # precisar de 'for time' ao lado. Não pega 'then, N rounds of' (buy-in,
+        # começa com 'then') nem 'N rounds per athlete'.
+        or re.search(r'^\s*' + _NUM_TOKEN_RE + r'\s+rounds?(?:\s+(?:of|de))?\s*:?\s*$',
+                     full, re.I | re.M)
     )
     if m_rounds:
         n = _num_ext(m_rounds.group(1))
