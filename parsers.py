@@ -3028,6 +3028,20 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
                     'alocacoes': aloc,
                 })
 
+            # Mantém no dia SÓ os workouts que alguma bateria roda — senão a lista
+            # da categoria mostra workouts de outros dias (o _dia_label da grade é
+            # não-confiável: um mesmo workout roda em dias diferentes por categoria,
+            # e o cronograma é a fonte de verdade). Remapeia as posições. Se nenhum
+            # roda (dia de planejamento sem código casado), mantém a lista cheia.
+            posicoes = sorted({p for b in baterias_full
+                               for p in (b.get('workouts_que_rodam') or [])})
+            if posicoes and len(posicoes) < len(workouts_do_dia):
+                remap = {old: new for new, old in enumerate(posicoes, start=1)}
+                workouts_do_dia = [workouts_do_dia[p - 1] for p in posicoes]
+                for b in baterias_full:
+                    b['workouts_que_rodam'] = [remap[p] for p in b.get('workouts_que_rodam', [])
+                                               if p in remap]
+
             cats_resultado.append({
                 'nome':      cat_grade,
                 'workouts':  workouts_do_dia,

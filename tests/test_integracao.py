@@ -349,6 +349,32 @@ def _wb_para_bytes(wb):
     return buf.getvalue()
 
 
+def test_dia_mostra_so_workouts_que_rodam():
+    """Bug Pwrd: a grade com coluna de dia grudava a lista INTEIRA de workouts em
+    todo dia (Sexta do Elite mostrava 5 em vez de 2). O dia deve listar só os
+    workouts que alguma bateria roda, com posições remapeadas."""
+    wb = openpyxl.Workbook(); wb.remove(wb.active)
+    ws = wb.create_sheet("Workouts - Individuais")
+    ws.append([None, "Elite Masculino", "Elite Feminino"])   # grade exige >=2 categorias
+    ws.append(["Sexta", '"W1"\nFor time:\n5 Burpees\nTime cap: 3 min',
+                        '"W1"\nFor time:\n5 Burpees\nTime cap: 3 min'])
+    ws.append([None,    '"W2"\nFor time:\n5 Pull-Ups\nTime cap: 3 min',
+                        '"W2"\nFor time:\n5 Pull-Ups\nTime cap: 3 min'])   # sticky Sexta, não roda
+    ws.append([None,    '"W3"\nFor time:\n5 Air Squats\nTime cap: 3 min',
+                        '"W3"\nFor time:\n5 Air Squats\nTime cap: 3 min'])
+    ws = wb.create_sheet("Sexta")
+    ws.append(["Arena: Campo"])
+    ws.append(["Eventos", "Categoria", "Bateria", "Arbitragem", "Quantidade", "Aquecimento", "", "Fila"])
+    ws.append(['"W1"', "Elite Masculino (Heat 1)", 1, None, "5 (5)", "08:00", None, "08:20"])
+    result = parse_excel(_wb_para_bytes(wb))
+    sexta = next(d for d in result["dias"] if d["label"] == "Sexta")
+    em = next(c for c in sexta["categorias"] if c["nome"] == "Elite Masculino")
+    nomes = [w["nome"] for w in em["workouts"]]
+    assert nomes == ["W1"], f"esperava só W1 (o que roda), got {nomes}"
+    # posição da bateria remapeada e válida
+    assert em["baterias"][0]["workouts_que_rodam"] == [1]
+
+
 def test_linter_categoria_da_grade_sem_bateria_avisa():
     """Fase 2.0: categoria com workouts na grade mas que não casa com nenhuma
     bateria do cronograma → aviso de erro (não geraria súmula silenciosamente)."""
