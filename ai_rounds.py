@@ -501,7 +501,27 @@ def validar_evento(config: dict) -> list[dict]:
                                     'onde': f'{dlabel}/{cnome}/{wkt.get("nome","?")}',
                                 })
 
-    # 9) Cronograma: slot da bateria menor que a duração estimada do workout
+    # 9) Movimento com provável typo NO NOME (ex: 'Thrustres'). Vocab canônico
+    #    vendorizado; conservador — movimento custom (Hay Bale Burpee) NÃO é
+    #    flaggado, só quase-igual a um conhecido.
+    from movimentos import checar_movimento_typo
+    vistos_mov: set = set()
+    for di, dia in enumerate(dias):
+        dlabel = dia.get('label', f'Dia {di+1}')
+        for cat in dia.get('categorias', []) or []:
+            cnome = cat.get('nome', '')
+            for wkt in cat.get('workouts', []) or []:
+                for m in _movs_do_workout(wkt):
+                    t = checar_movimento_typo(m.get('nome') or '')
+                    if t and t[0] not in vistos_mov:
+                        vistos_mov.add(t[0])
+                        avisos.append({
+                            'severidade': 'aviso',
+                            'msg': f'Movimento "{t[0]}" — provável typo de "{t[1]}"?',
+                            'onde': f'{dlabel}/{cnome}/{wkt.get("nome","?")}',
+                        })
+
+    # 10) Cronograma: slot da bateria menor que a duração estimada do workout
     avisos.extend(_avisos_cronograma(dias))
     return avisos
 

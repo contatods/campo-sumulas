@@ -28,6 +28,23 @@ def test_extrair_carga_dupla_unidade_por_numero():
     assert carga == "50/35 LB" and nome == "Thrusters"
 
 
+def test_checar_movimento_typo_pega_typo_e_ignora_custom():
+    """Fase 4: reconhece movimento canônico (mesmo plural/hífen), flagga typo,
+    e NÃO acusa movimento custom legítimo (senão viraria ruído)."""
+    from movimentos import checar_movimento_typo
+    # typo de canônico → flagga com sugestão
+    assert checar_movimento_typo("THRUSTRES") == ("THRUSTRES", "Thruster")
+    assert checar_movimento_typo("OVERHAED SQUAT")[1] == "Overhead Squat"
+    # reconhecido (plural/hífen/modificador) → None
+    assert checar_movimento_typo("SYNC. WALL-BALL SHOTS (2 ATHLETES)") is None
+    assert checar_movimento_typo("HANG POWER SNATCHES") is None
+    assert checar_movimento_typo("SYNC. TOES RAISES (2 ATHLETES)") is None
+    # custom legítimo → None (não é typo)
+    assert checar_movimento_typo("HAY BALE BURPEES") is None
+    assert checar_movimento_typo("LINE-FACING BURPEES") is None
+    assert checar_movimento_typo("FAT BAR THRUSTER") is None
+
+
 def test_parse_findings_json_ia_tolerante():
     """O parser de findings da IA tolera cerca ```json, texto ao redor e lixo."""
     from ai_rounds import _parse_findings_json

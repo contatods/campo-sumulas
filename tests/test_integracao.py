@@ -449,6 +449,18 @@ def test_linter_dumbbell_fora_do_rol_e_nao_flagga_barra():
     assert not any("34" in a["msg"].split("disponíveis")[0] for a in db)
 
 
+def test_linter_movimento_typo_no_nome():
+    """Fase 4: typo no NOME do movimento ('Thrustres') avisa; custom não."""
+    cfg = {"dias": [{"label": "D", "categorias": [{"nome": "X", "baterias": [], "workouts": [
+        {"nome": "W", "tipo": "for_time", "time_cap": "5 min", "movimentos": [
+            {"nome": "THRUSTRES", "reps": 10},
+            {"nome": "HAY BALE BURPEES", "reps": 20},
+            {"chegada": True}]}]}]}]}
+    avisos = validar_evento(cfg)
+    typos = [a for a in avisos if "provável typo de" in a["msg"]]
+    assert len(typos) == 1 and "Thruster" in typos[0]["msg"]
+
+
 def test_validar_evento_sem_roster_nao_spamma_sem_alocacoes():
     """Fase 2.0: evento sem roster (fase de planejamento) não deve gerar um aviso
     'sem alocações' por bateria — seriam 100+. Só vale quando há roster parcial."""

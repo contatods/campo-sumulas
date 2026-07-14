@@ -36,17 +36,16 @@ Grid das súmulas renderizadas no app **antes** do ZIP (`render_grid` +
 programação". Pega escalonamento invertido / sanidade cross-divisão. Foi ela que
 surfou o bug de carga dupla (`70kg/50kg`), corrigido junto.
 
-## Fase 4 — Robustez / polish (contínua, opcional)
+## Fase 4 — Robustez / polish (contínua)
 
-Sem prazo — feita quando surgir necessidade. Notas de investigação:
-
-- **Unificar movimentos (43 → canônico 141)**: é decisão de ARQUITETURA. O
-  `canonical_v2` mora no produto Movimentos; o campo-sumulas roda no Render e
-  não lê aquele arquivo em runtime. Exigiria vendorizar (copiar os nomes) +
-  manter 2 cópias em sincronia. Adiado até valer o custo.
-- **Regra "movimento não reconhecido"**: baixo valor / alto risco de falso-
-  positivo — o evento é cheio de movimentos custom legítimos (Hay Bale Burpee
-  etc.). A review por IA (Fase 3) já cobre esse tipo de coisa melhor.
+- **Unificar movimentos (43 → canônico 141)** ✅ (v2.1): vendorizado em
+  `movimentos_canonicos.json` (cópia de `canonical_v2`, EN+PT). **Sync:** re-gerar
+  o JSON quando a base Movimentos mudar (é uma cópia). Usado só pra RECONHECER
+  movimento / achar typo — não muda a normalização de display.
+- **Regra "movimento não reconhecido"** ✅ (v2.1): typo NO NOME do movimento
+  (`Thrustres` → Thruster). Conservadora — normaliza plural/hífen/modificador e
+  só flagga quase-igual a um canônico; movimento custom (Hay Bale Burpee) NÃO é
+  acusado. 0 falso-positivo nos 85 movimentos do Pwrd.
 - Cobrir mais formatos/edge-cases de Excel conforme aparecerem; performance.
 
 ## Histórico que pavimentou o 2.0 (v1.54–v1.59, Pwrd by Coffee 2026)

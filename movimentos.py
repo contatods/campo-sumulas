@@ -12,8 +12,10 @@ percorrendo os movimentos de for_time/amrap/express.
 """
 from __future__ import annotations
 
+import json
+import os
 import re
-from typing import Iterable
+from typing import Iterable, Optional
 
 # Mapa canonical → lista de aliases (case-insensitive). Inclui PT-BR e EN.
 MOVIMENTOS_CANONICOS: dict[str, list[str]] = {
@@ -139,3 +141,90 @@ def padronizar_workouts(workouts: Iterable[dict]) -> None:
                 for m in (f.get('movimentos') or []):
                     if isinstance(m, dict) and m.get('nome'):
                         m['nome'] = padronizar_movimento(m['nome'])
+
+
+# ── Vocabulário canônico de movimentos (vendorizado da base Movimentos) ───────
+# `movimentos_canonicos.json` é uma CÓPIA dos nomes de canonical_v2.json (produto
+# Movimentos). Re-gerar quando aquela base mudar. Usado só pra RECONHECER
+# movimento / achar typo — NÃO muda a normalização de display (padronizar_movimento).
+def _carregar_vocab_canonico() -> dict[str, str]:
+    """norm_key → nome canônico (1º que produz aquela chave). {} se ausente."""
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           'movimentos_canonicos.json')
+    try:
+        with open(caminho, encoding='utf-8') as f:
+            nomes = json.load(f).get('nomes') or []
+    except (OSError, ValueError):
+        return {}
+    vocab: dict[str, str] = {}
+    for n in nomes:
+        k = _norm_mov(n)
+        if k and k not in vocab:
+            vocab[k] = n
+    # Inclui também os canônicos internos (uppercase-plural) pra cobrir o que a
+    # base externa não tem (Line-Facing Burpee não; mas PULL-UPS sim).
+    for canonical in MOVIMENTOS_CANONICOS:
+        k = _norm_mov(canonical)
+        if k:
+            vocab.setdefault(k, canonical.title())
+    return vocab
+
+
+def _norm_mov(nome: str) -> str:
+    """Chave de comparação: sem parênteses, sem prefixo Sync./Alt., minúsculo,
+    hífen/pontuação → espaço, cada palavra no singular. Simétrico pra vocab e
+    movimento — 'Wall-Ball Shots' e 'Wall Ball Shot' produzem a MESMA chave."""
+    if not nome:
+        return ""
+    s = re.sub(r'\s*\([^)]*\)', ' ', str(nome))            # remove (carga)/(2 athletes)
+    s = _PREFIX_SYNC.sub('', s)                            # remove 'Sync.'/'Alternating'
+    s = s.lower()
+    s = re.sub(r'[^a-z0-9à-ÿ]+', ' ', s)                   # hífen/pontuação → espaço (mantém acento)
+    palavras = []
+    for w in s.split():
+        if re.search(r'(ch|sh|x|z|ss)es$', w):            # snatches→snatch, boxes→box, presses→press
+            w = w[:-2]
+        elif w.endswith('s') and not w.endswith('ss'):    # shots→shot, burpees→burpee, raises→raise
+            w = w[:-1]
+        palavras.append(w)
+    return ' '.join(palavras).strip()
+
+
+def _levenshtein_mov(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+_VOCAB_MOV: dict[str, str] = _carregar_vocab_canonico()
+
+
+def checar_movimento_typo(nome: str) -> Optional[tuple[str, str]]:
+    """Se `nome` parece TYPO de um movimento conhecido, retorna (nome, sugestão).
+
+    Conservador de propósito: movimento custom legítimo (Hay Bale Burpee, Fat Bar
+    Thruster…) fica LONGE de qualquer canônico → não é flaggado. Só dispara em
+    quase-igual (distância 1-2, mesmos 3 primeiros caracteres, tamanho parecido).
+    Retorna None quando reconhecido OU quando é custom/desconhecido (não-typo).
+    """
+    core = _norm_mov(nome)
+    if not core or len(core) < 4 or not _VOCAB_MOV:
+        return None
+    if core in _VOCAB_MOV:
+        return None                                       # reconhecido
+    melhor, melhor_d = None, 99
+    for k in _VOCAB_MOV:
+        if abs(len(k) - len(core)) > 2 or k[:3] != core[:3]:
+            continue
+        d = _levenshtein_mov(core, k)
+        if d < melhor_d:
+            melhor_d, melhor = d, k
+    if melhor is not None and 1 <= melhor_d <= 2:
+        return (nome, _VOCAB_MOV[melhor])
+    return None
