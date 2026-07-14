@@ -156,9 +156,10 @@ def test_composto_dupla_titulo_com_sufixo_atleta():
     assert wkt["f2"]["nome"] == "2K"
 
 
-def test_for_load_multi_janela_soma_e_uma_linha_por_complex():
-    """Muscle Coffee individual: 2 janelas → 2 tentativas (1 por complex) e flag
-    de soma — não 'melhor de N' (auditoria: individual mostrava 1 linha + melhor)."""
+def test_for_load_multi_janela_3_tentativas_por_complex():
+    """Muscle Coffee individual: 2 complexes, cada um com 3 TENTATIVAS (não 1
+    linha por complex), somando os melhores. `tentativas` é attempts POR complex;
+    o nº de complexes vem de `janelas`."""
     texto = (
         '"Muscle Coffee"\n\nFor load:\n'
         '(00:00 - 03:00)\n1 Snatch + 3 Overhead Squat\n'
@@ -168,8 +169,9 @@ def test_for_load_multi_janela_soma_e_uma_linha_por_complex():
     )
     wkt = parse_workout_text(texto, 1)
     assert wkt["tipo"] == "for_load"
-    assert wkt["tentativas"] == 2          # 1 linha por complex, não '1 tentativa'
+    assert wkt["tentativas"] == 3          # 3 tentativas POR complex
     assert wkt["soma_complexes"] is True
+    assert len(wkt["sequencia_movimentos"]["janelas"]) == 2   # 2 complexes
 
 
 def test_for_time_buyin_distancia_1000m_e_bloco_rounds():

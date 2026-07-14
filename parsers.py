@@ -489,7 +489,10 @@ def _parse_for_load(lines: list[str], wkt: Workout, full: str) -> Workout:
     # 1 linha por janela e o total vira soma — não 'melhor de N tentativas'.
     janelas = seq.get("janelas") or []
     if len(janelas) >= 2:
-        wkt["tentativas"] = len(janelas)
+        # Cada complex é pontuado por SI (soma dos máximos). A régua dá 3
+        # tentativas POR complex (padrão) — não 1 linha por complex. O 'tentativas'
+        # aqui é attempts por complex; o nº de complexes vem de `janelas`.
+        wkt["tentativas"] = 3
         wkt["soma_complexes"] = True
         wkt["janela_labels"] = [j.get("atleta") or f"Complex {j['label']}" for j in janelas]
     return wkt

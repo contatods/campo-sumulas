@@ -1592,10 +1592,10 @@ FOR_LOAD_TABLE_MACRO = r"""
    Header em UMA linha: pos + gênero + nome + "Melhor Carga" inline.
    Economiza 1 row por atleta vs design anterior — garante 3 tentativas
    confortáveis em qualquer modalidade. #}
-{% macro for_load_atleta_bloco(pos, anilhas, barra, unidade, tentativas, genero='') %}
+{% macro for_load_atleta_bloco(pos, anilhas, barra, unidade, tentativas, genero='', rotulo='') %}
 <div class="fl-atleta-bloco">
   <div class="fl-atleta-hdr">
-    <span class="fl-atleta-pos">Atleta {{ pos }}{% if genero %} <span class="fl-atleta-genero">({{ 'F' if genero == 'F' else 'M' }})</span>{% endif %}</span>
+    <span class="fl-atleta-pos">{{ rotulo if rotulo else ('Atleta ' ~ pos) }}{% if genero %} <span class="fl-atleta-genero">({{ 'F' if genero == 'F' else 'M' }})</span>{% endif %}</span>
     <div class="fl-atleta-nome-line"></div>
     <div class="fl-atleta-melhor-inline">
       <span class="fl-atleta-melhor-lbl">Melhor Carga</span>
@@ -1628,15 +1628,19 @@ FOR_LOAD_TABLE_MACRO = r"""
 {% set is_team = n_atletas > 1 %}
 {% set genero_por_atleta = wkt._genero_por_atleta | default([]) %}
 {% set is_misto = genero_por_atleta | length > 0 %}
+{# Individual com múltiplos complexes (Muscle Coffee): cada complex vira um bloco
+   com N tentativas (como os blocos de atleta do time), somando os melhores. #}
+{% set janelas = (wkt.sequencia_movimentos | default({})).janelas | default([]) %}
+{% set is_blocos = (janelas | length >= 2) and not is_team %}
 {# Layout compacto:
      - individual (n=1): compacto quando tentativas >=5
      - team (n>=2): sempre super-compacto (4 atletas × 3 tents = 12 linhas,
        sem instrução nem Obs, caixinhas reduzidas).
    Muitas anilhas (libras): reduz caixinhas pra evitar overflow horizontal. #}
-{% set is_compact = is_team or tentativas >= 5 %}
+{% set is_compact = is_team or is_blocos or tentativas >= 5 %}
 {% set is_super_compact = n_atletas >= 4 %}
 {% set muitas_anilhas = anilhas|length > 7 %}
-<div class="fl-zone{% if is_compact %} fl-zone-compact{% endif %}{% if is_super_compact %} fl-zone-super-compact{% endif %}{% if muitas_anilhas %} fl-zone-muitas-anilhas{% endif %}{% if is_team %} fl-zone-team{% endif %}">
+<div class="fl-zone{% if is_compact %} fl-zone-compact{% endif %}{% if is_super_compact %} fl-zone-super-compact{% endif %}{% if muitas_anilhas %} fl-zone-muitas-anilhas{% endif %}{% if is_team or is_blocos %} fl-zone-team{% endif %}">
   <div class="fl-zone-hdr">
     <span class="fl-zone-t">For Load{% if is_team %} · {{ n_atletas }} Atletas{% endif %}</span>
     {% if is_misto %}
@@ -1691,6 +1695,17 @@ FOR_LOAD_TABLE_MACRO = r"""
     {% endfor %}
     <div class="fl-melhor fl-soma-time">
       <span class="fl-melhor-lbl">Soma do Time</span>
+      <div class="fl-melhor-line"></div>
+      <span class="fl-melhor-unidade">{{ unidade }}</span>
+    </div>
+  {% elif is_blocos %}
+    {# Individual com N complexes: 1 bloco por complex, cada um com N tentativas
+       + 'Melhor Carga' do complex; total = soma dos melhores. #}
+    {% for j in janelas %}
+      {{ for_load_atleta_bloco(loop.index, anilhas, barra, unidade, tentativas, '', j.atleta if j.atleta else ('Complex ' ~ j.label)) }}
+    {% endfor %}
+    <div class="fl-melhor fl-soma-time">
+      <span class="fl-melhor-lbl">Soma dos Complexes</span>
       <div class="fl-melhor-line"></div>
       <span class="fl-melhor-unidade">{{ unidade }}</span>
     </div>
