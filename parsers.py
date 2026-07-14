@@ -241,7 +241,8 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
       `20 Pull-Ups`            → reps=20, nome='PULL-UPS'
       `20-metres DB Lunges`    → reps=20, nome='20-METRES DB LUNGES'  (hífen)
       `900m Ski Erg`           → reps=900, nome='900M SKI ERG'        (unidade colada)
-      `5km Run`                → reps=5, nome='5KM RUN'
+      `3k Treadmill Run`       → reps=3000, nome='3000M TREADMILL RUN' (k → metros)
+      `5km Run`                → reps=5000, nome='5000M RUN'
 
     Rejeita linhas que parecem frase explicativa (`2 atletas nadarão...`)
     pra evitar que virem movimentos.
@@ -257,6 +258,11 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
         m = re.match(r'^(\d{1,4})([a-z]+)\s+(.+)$', s, re.I)    # 900m Ski Erg
         if m:
             num_s, unit, rest = m.group(1), m.group(2), m.group(3).strip()
+            # 'k'/'km' = quilômetros → converte pra metros (3k → 3000m) pra reps
+            # (acumulado) e display ficarem certos. 'kg'/outras unidades não mexem.
+            if unit.lower() in ('k', 'km'):
+                num_s = str(int(num_s) * 1000)
+                unit = 'm'
             nome = f"{num_s}{unit} {rest}".upper()
             tem_unidade = True
         else:

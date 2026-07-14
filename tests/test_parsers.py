@@ -28,6 +28,21 @@ def test_extrair_carga_dupla_unidade_por_numero():
     assert carga == "50/35 LB" and nome == "Thrusters"
 
 
+def test_distancia_k_km_vira_metros():
+    """'3k'/'2k'/'1k'/'3km' = quilômetros → metros (3k=3000m) pra reps/acumulado.
+    'Nm' e 'Nkg' não podem ser afetados."""
+    def mov(txt):
+        w = parse_workout_text('"T"\nFor time:\n' + txt + '\n10 Burpees\nTime cap: 5 min', 1)
+        m = w["movimentos"][0]
+        return m.get("nome"), m.get("reps"), m.get("carga")
+    assert mov("3k Treadmill Run") == ("3000M TREADMILL RUN", 3000, None)
+    assert mov("2k Row")[1] == 2000
+    assert mov("1k Ski Erg")[1] == 1000
+    assert mov("3km Run") == ("3000M RUN", 3000, None)
+    assert mov("500m Row") == ("500M ROW", 500, None)          # metros intactos
+    assert mov("84kg Deadlift")[2] == "84 KG"                  # kg continua carga
+
+
 def test_rounds_fixos_rft_e_linha_solta():
     """rounds_fixos deve pegar 'N RFT' e 'N Rounds:' numa linha só (sem precisar
     de 'for time' ao lado). Não pode disparar em for-time simples nem no buy-in
