@@ -1723,21 +1723,23 @@ def _detectar_blocos_cronograma(header_row: list[str]) -> list[dict[str, int | N
         # Limites do bloco: do próximo 'categoria' anterior (ou 0) até o próximo (ou fim)
         lo = cat_cols[k - 1] + 1 if k > 0 else 0
         hi = cat_cols[k + 1] if k + 1 < len(cat_cols) else len(header_row)
-        # Procura colunas auxiliares dentro do range [lo, hi)
-        sub = header_row[lo:hi]
 
-        def _find_in_sub(*names: str) -> int | None:
-            for off, h in enumerate(sub):
-                if h in names:
-                    return lo + off
+        def _find(names: tuple[str, ...], ini: int, fim: int) -> int | None:
+            for i in range(ini, fim):
+                if header_row[i] in names:
+                    return i
             return None
 
+        # Estrutura de cada bloco: Eventos | Categoria | Bateria | ... | Fila.
+        # 'Eventos' fica À ESQUERDA da categoria; 'Bateria'/'Aquecimento'/'Fila'
+        # à DIREITA. Buscar em toda a faixa pegava a Bateria do bloco ANTERIOR
+        # (multi-arena) — bug que perdia baterias (ex: Tap Control no 3º bloco).
         blocos.append({
-            'eventos':     _find_in_sub('eventos'),
+            'eventos':     _find(('eventos',), lo, col_cat),
             'categoria':   col_cat,
-            'bateria':     _find_in_sub('bateria'),
-            'aquecimento': _find_in_sub('aquecimento'),
-            'fila':        _find_in_sub('fila'),
+            'bateria':     _find(('bateria',), col_cat + 1, hi),
+            'aquecimento': _find(('aquecimento',), col_cat + 1, hi),
+            'fila':        _find(('fila',), col_cat + 1, hi),
             'lo':          lo,
             'hi':          hi,
         })

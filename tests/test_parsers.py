@@ -28,6 +28,21 @@ def test_extrair_carga_dupla_unidade_por_numero():
     assert carga == "50/35 LB" and nome == "Thrusters"
 
 
+def test_detectar_blocos_cronograma_multi_arena_bateria_correta():
+    """Bug Pwrd: em cronograma multi-arena, o detector pegava a coluna Bateria do
+    bloco ANTERIOR (perdia baterias do 2º/3º bloco, ex: Tap Control). Cada bloco
+    deve achar Eventos à esquerda e Bateria à direita da SUA categoria."""
+    from parsers import _detectar_blocos_cronograma
+    # 2 arenas com gap (col 5) entre elas:
+    hdr = ['eventos', 'categoria', 'bateria', 'aquecimento', 'fila', '',
+           'eventos', 'categoria', 'bateria', 'aquecimento', 'fila']
+    blocos = _detectar_blocos_cronograma(hdr)
+    assert len(blocos) == 2
+    assert blocos[0]['eventos'] == 0 and blocos[0]['categoria'] == 1 and blocos[0]['bateria'] == 2
+    # bloco 1: Bateria é a col 8 (a DELE), não a 2 (do bloco 0)
+    assert blocos[1]['eventos'] == 6 and blocos[1]['categoria'] == 7 and blocos[1]['bateria'] == 8
+
+
 def test_checar_movimento_typo_pega_typo_e_ignora_custom():
     """Fase 4: reconhece movimento canônico (mesmo plural/hífen), flagga typo,
     e NÃO acusa movimento custom legítimo (senão viraria ruído)."""
