@@ -28,6 +28,22 @@ def test_extrair_carga_dupla_unidade_por_numero():
     assert carga == "50/35 LB" and nome == "Thrusters"
 
 
+def test_assign_workout_numbers_global_continuo_entre_dias():
+    """Numeração deve ser CONTÍNUA por categoria pelo total de workouts (não
+    reinicia por dia). Composto/Express ocupam 2 slots."""
+    from parsers import assign_workout_numbers_global
+    dias = [
+        {"categorias": [{"nome": "A", "workouts": [{"tipo": "composto"}, {"tipo": "for_time"}]}]},
+        {"categorias": [{"nome": "A", "workouts": [{"tipo": "for_time"}, {"tipo": "for_time"}]}]},
+    ]
+    assign_workout_numbers_global(dias)
+    d0 = dias[0]["categorias"][0]["workouts"]
+    d1 = dias[1]["categorias"][0]["workouts"]
+    assert d0[0]["numero"] == 1 and d0[0]["numero_f2"] == 2   # composto ocupa 1-2
+    assert d0[1]["numero"] == 3
+    assert d1[0]["numero"] == 4 and d1[1]["numero"] == 5      # continua no dia seguinte
+
+
 def test_detectar_blocos_cronograma_multi_arena_bateria_correta():
     """Bug Pwrd: em cronograma multi-arena, o detector pegava a coluna Bateria do
     bloco ANTERIOR (perdia baterias do 2º/3º bloco, ex: Tap Control). Cada bloco

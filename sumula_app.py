@@ -19,7 +19,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '2.1.4'
+VERSION = '2.1.5'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -424,7 +424,9 @@ class SumulaHandler(BaseHTTPRequestHandler):
         _validate_workout_tipos(workouts)
 
         ev       = cfg.get('evento', {}) or {}
-        assign_workout_numbers(workouts)   # recalcula slots Express
+        # Numeração CONTÍNUA por categoria através dos dias (mesma do import/ZIP),
+        # não per-dia — senão a súmula mostra número diferente da sidebar.
+        assign_workout_numbers_global(dias)
         # Preview rápido: pré-popula n_rounds via algoritmo pra QUALQUER AMRAP
         # sem n_rounds já setado. Isso evita a chamada IA dentro de
         # enriquecer_workouts() (que tem timeout 15s e é o gargalo do preview).
@@ -481,6 +483,9 @@ class SumulaHandler(BaseHTTPRequestHandler):
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
         logo_evt = _resolve_logo(ev.get('logo_evento', ''))
         from ai_rounds import _estimar_rounds_algoritmico
+        # Numeração contínua por categoria sobre TODOS os dias (não per-dia, e não
+        # só o dia filtrado) — pra o preview bater com a sidebar/ZIP.
+        assign_workout_numbers_global(dias)
         itens: list[tuple[dict, dict]] = []
         for dia in dias_sel:
             for cat in dia.get('categorias', []) or []:
@@ -488,7 +493,6 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 if not workouts:
                     continue
                 _validate_workout_tipos(workouts)
-                assign_workout_numbers(workouts)
                 # Pré-popula n_rounds (algoritmo) pra enriquecer_workouts não bater na IA.
                 for w in workouts:
                     if w.get('tipo') == 'amrap' and 'n_rounds' not in w:
