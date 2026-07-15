@@ -28,6 +28,16 @@ def test_extrair_carga_dupla_unidade_por_numero():
     assert carga == "50/35 LB" and nome == "Thrusters"
 
 
+def test_chegada_dirigida_pelo_excel():
+    """A linha CHEGADA (rep final) segue o texto do Excel: se disser que a chegada
+    não conta como repetição, não aparece; senão (default), aparece."""
+    base = '"T"\nFor time:\n10 Pull-Ups\n20 Thrusters\nTime cap: 5 min\n――― NOTAS ―――\nPontuação\n'
+    w_sem = parse_workout_text(base + '- A chegada não conta como repetição.', 1)
+    assert not any(m.get("chegada") for m in w_sem["movimentos"])
+    w_com = parse_workout_text(base + '- Será o tempo de conclusão do workout.', 1)
+    assert any(m.get("chegada") for m in w_com["movimentos"])
+
+
 def test_distancia_k_km_vira_metros():
     """'3k'/'2k'/'1k'/'3km' = quilômetros → metros (3k=3000m) pra reps/acumulado.
     'Nm' e 'Nkg' não podem ser afetados."""

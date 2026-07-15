@@ -969,8 +969,10 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     movs, time_cap = _parse_movimentos(lines_movs, wkt)
     if time_cap: wkt["time_cap"] = time_cap
 
-    # 5) For Time / For Time Goal fecham com chegada; aplica progressão nos marcados
-    if wkt["tipo"] in ("for_time", "for_time_goal") and movs:
+    # 5) For Time / For Time Goal fecham com chegada — A MENOS que o Excel diga
+    #    que a chegada não conta como repetição (a especificidade vem do texto).
+    chegada_nao_conta = bool(re.search(r'chegada\s+n[ãa]o\s+cont', full, re.I))
+    if wkt["tipo"] in ("for_time", "for_time_goal") and movs and not chegada_nao_conta:
         movs.append({"chegada": True})
     wkt["movimentos"] = movs
     _aplicar_progressao_reps(wkt)
