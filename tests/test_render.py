@@ -1,6 +1,15 @@
 """Render de súmulas: HTML único e HTML combinado por workout."""
+import re
+
 from campo_generator import (render_workout, render_workout_combined,
                              render_for_load_team_summary, render_grid)
+
+
+def _page_div_class(html):
+    """Extrai as classes do primeiro <div class="page ...">. Evita falso
+    positivo com os nomes de classe que aparecem no bloco <style>."""
+    m = re.search(r'<div class="(page[^"]*)"', html)
+    return m.group(1) if m else ""
 
 
 def test_render_grid_um_doc_varias_paginas(evento_basico, workout_for_time, fonts_empty):
@@ -398,3 +407,39 @@ def test_render_escapa_html_de_input_do_usuario(fonts_empty):
     # Versão escapada SIM — template usa |upper no nome do evento
     assert "&lt;SCRIPT&gt;" in html
     assert "A &amp; B" in html
+
+
+def test_render_buyin_mais_rounds_bloco_stack_bad(evento_basico, fonts_empty):
+    """Stack Bad (Pwrd): buy-in '1000m Ski Erg' UMA vez + bloco 'then, 2 rounds
+    of' repetido 2×. Regressão: antes vinha só 1 round depois do Ski."""
+    from parsers import parse_workout_text
+    texto = ('"Stack Bad"\n\nFor time:\n1000m Ski Erg\nthen, 2 rounds of:\n'
+             '30 Handstand Push-Ups\n400m Run\n30 Line-Facing Burpees\n\n'
+             'Time cap: 16 minutes')
+    wkt = parse_workout_text(texto, "STACK BAD")
+    html = render_workout(evento_basico, wkt, fonts_empty, logo_src="", logo_evento="")
+    assert "Round 1" in html and "Round 2" in html and "Round 3" not in html
+    assert html.upper().count("SKI ERG") == 1, "buy-in não pode multiplicar"
+    assert html.upper().count("HANDSTAND PUSH-UP") == 2, "bloco deve rodar 2 rounds"
+    assert "Buy-in +" in html
+
+
+def test_render_muitos_rounds_ativa_compactacao_a4(evento_basico, fonts_empty):
+    """Dupla com 5 rounds (Rocket): 25 linhas efetivas → classe is-denso-x pra
+    caber no A4 sem cortar o 5º round. Regressão do overflow reportado."""
+    from parsers import parse_workout_text
+    texto = ('"Rocket"\n\n5 rounds for time of:\n12 Deadlifts\n9 Hang Power Cleans\n'
+             '6 Shoulder-to-Overhead\n3 Bar Muscle-Ups\n\nTime cap: 12 minutes')
+    wkt = parse_workout_text(texto, "ROCKET")
+    wkt["modalidade"] = "dupla"
+    html = render_workout(evento_basico, wkt, fonts_empty, logo_src="", logo_evento="")
+    assert wkt.get("rounds_fixos") == 5
+    assert "Round 5" in html, "todos os 5 rounds devem renderizar"
+    assert "is-denso-x" in _page_div_class(html), "compactação agressiva não ativou"
+
+
+def test_render_for_time_curto_nao_ativa_compactacao(evento_basico, workout_for_time, fonts_empty):
+    """For time pequeno NÃO deve ganhar a classe de compactação (mantém rows
+    generosas pra escrita)."""
+    html = render_workout(evento_basico, workout_for_time, fonts_empty, logo_src="", logo_evento="")
+    assert "is-denso" not in _page_div_class(html)

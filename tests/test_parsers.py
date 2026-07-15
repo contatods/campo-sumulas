@@ -245,6 +245,8 @@ def test_for_time_buyin_distancia_1000m_e_bloco_rounds():
     assert any("1000M SKI ERG" in n for n in nomes), "buy-in 1000m foi dropado"
     assert any("2 ROUNDS OF" in s for s in secoes), "faltou banner do bloco de rounds"
     assert not wkt.get("rounds_fixos"), "'then, N rounds of' não pode multiplicar tudo"
+    # rounds_bloco = N: o render usa isso pra rodar o buy-in 1x + bloco N rounds.
+    assert wkt.get("rounds_bloco") == 2
 
 
 def test_distancia_1000m_nao_confundida_com_ano():

@@ -683,8 +683,12 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
         s_clean = line.strip()
         # Bloco de rounds aninhado ('then, 2 rounds of:') — banner, preserva o
         # buy-in que veio antes (não vira {rounds_fixos} pra não multiplicar).
-        if _ROUNDS_BLOCK_RE.match(s_clean):
-            movs.append({"secao": s_clean.rstrip(':').upper()})
+        if (m_rb := _ROUNDS_BLOCK_RE.match(s_clean)):
+            # buy-in (o que veio antes) roda 1x; o bloco depois roda N rounds.
+            # Guardamos N no marcador de seção — o render divide buy-in × bloco.
+            n_rb = _num_ext(m_rb.group(1)) or 2
+            movs.append({"secao": s_clean.rstrip(':').upper(), "rounds_bloco": n_rb})
+            wkt["rounds_bloco"] = n_rb
             continue
         if (_SECTION_HEADER_RE.match(s_clean)
                 or (not re.match(r'^\d', s_clean) and _TIME_WINDOW_RE.search(s_clean))):

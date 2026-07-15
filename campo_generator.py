@@ -176,6 +176,33 @@ body{
 .is-composto-tight .pk-athlete-row{height:6.5mm}
 .is-composto-tight .pk-sub-row{height:6.5mm}
 .is-composto-tight .pk-ops-row{height:6.5mm}
+
+/* Denso: workouts for_time/amrap com MUITAS linhas (ex.: rounds_fixos=5 na
+   dupla Rocket, ou buy-in + N rounds). Comprime linhas, round-headers, score
+   box e assinaturas pra caber tudo dentro do A4 sem cortar o último round.
+   `.is-denso` >16 linhas efetivas · `.is-denso-x` >22 (compressão agressiva). */
+.is-denso .mov-row{min-height:5.5mm}
+.is-denso .mov-row-goal{min-height:7mm}
+.is-denso .atleta-sep-row{padding:0.8mm 3mm}
+.is-denso .atleta-sep-nome{min-height:3.5mm}
+.is-denso .secao-row{min-height:4mm}
+.is-denso .score-box{height:14mm}
+.is-denso .obs-box{min-height:14mm}
+.is-denso .sign-cell{height:8mm}
+.is-denso .goal-banner{padding:1mm 3mm}
+.is-denso .pk-athlete-row,.is-denso .pk-sub-row,.is-denso .pk-ops-row{height:6.5mm}
+
+.is-denso-x .mov-row{min-height:4.6mm}
+.is-denso-x .mov-row-goal{min-height:6mm}
+.is-denso-x .atleta-sep-row{padding:0.5mm 3mm;border-top-width:1px}
+.is-denso-x .atleta-sep-nome{min-height:3mm}
+.is-denso-x .secao-row{min-height:3.5mm}
+.is-denso-x .score-box{height:13mm}
+.is-denso-x .obs-box{min-height:11mm}
+.is-denso-x .obs-line{min-height:3mm}
+.is-denso-x .sign-cell{height:7mm}
+.is-denso-x .mr-name{font-size:7.5pt}
+.is-denso-x .pk-athlete-row,.is-denso-x .pk-sub-row,.is-denso-x .pk-ops-row{height:6mm}
 .ds-credit{
   text-align:center;font-size:5pt;color:#bbb;
   letter-spacing:.1em;margin-top:3mm;
@@ -1755,7 +1782,22 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
 {% set _f1_movs = (wkt.f1.movimentos | rejectattr('separador', 'defined') | list | length) if (wkt.tipo == 'composto' and wkt.f1 is defined) else 0 %}
 {% set _f2_movs = (wkt.f2.movimentos | rejectattr('separador', 'defined') | list | length) if (wkt.tipo == 'composto' and wkt.f2 is defined) else 0 %}
 {% set _composto_dense = (_f1_movs + _f2_movs) > 14 %}
-<div class="page{% if wkt.tipo == 'composto' %} is-composto{% if _composto_dense %} is-composto-tight{% endif %}{% endif %}">
+{# Densidade de workouts de tempo com rounds expandidos (rounds_fixos ou
+   buy-in + rounds_bloco): conta as linhas efetivas de movimento pra decidir
+   se precisa comprimir e caber no A4. Buy-in conta 1x; bloco × N. #}
+{% set _base_rows = (wkt.movimentos | selectattr('nome', 'defined') | list | length) if wkt.movimentos else 0 %}
+{% if wkt.rounds_fixos and wkt.rounds_fixos > 1 %}
+  {% set _tot_rows = _base_rows * wkt.rounds_fixos + wkt.rounds_fixos %}
+{% elif wkt.rounds_bloco and wkt.rounds_bloco > 1 %}
+  {% set _sp = namespace(buy=0, blk=0, found=false) %}
+  {% for m in wkt.movimentos %}{% if m.rounds_bloco is defined %}{% set _sp.found = true %}{% elif m.nome %}{% if _sp.found %}{% set _sp.blk = _sp.blk + 1 %}{% else %}{% set _sp.buy = _sp.buy + 1 %}{% endif %}{% endif %}{% endfor %}
+  {% set _tot_rows = _sp.buy + _sp.blk * wkt.rounds_bloco + wkt.rounds_bloco %}
+{% else %}
+  {% set _tot_rows = _base_rows %}
+{% endif %}
+{% set _denso = wkt.tipo != 'composto' and _tot_rows > 16 %}
+{% set _denso_x = wkt.tipo != 'composto' and _tot_rows > 22 %}
+<div class="page{% if wkt.tipo == 'composto' %} is-composto{% if _composto_dense %} is-composto-tight{% endif %}{% endif %}{% if _denso %} is-denso{% endif %}{% if _denso_x %} is-denso-x{% endif %}">
 
 <div class="a4-marker"></div>
 
@@ -1952,6 +1994,12 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
       {{ wkt.rounds_fixos }} Rounds For Time
       <span class="goal-banner-sub">{{ wkt.rounds_fixos }} repetições · score = tempo total</span>
     </div>
+  {% elif wkt.rounds_bloco and wkt.rounds_bloco > 1 %}
+    {# buy-in + N rounds: o buy-in (antes do 'then') roda 1x; o bloco N vezes. #}
+    <div class="goal-banner">
+      Buy-in + {{ wkt.rounds_bloco }} Rounds
+      <span class="goal-banner-sub">buy-in uma vez · depois {{ wkt.rounds_bloco }} rounds · score = tempo total</span>
+    </div>
   {% endif %}
   {# Relay (rounds_per_atleta): workout único de tempo contínuo. A info do
      formato relay vai como nota acima da tabela; reps + tempo total ficam
@@ -1979,6 +2027,29 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
     {% endfor %}
     {% set ns_rd.out = ns_rd.out + [{'chegada': true}] %}
     {{ mov_table(ns_rd.out, wkt.numero) }}
+  {% elif wkt.rounds_bloco and wkt.rounds_bloco > 1 %}
+    {# 'buy-in + N rounds of': divide no marcador de seção (rounds_bloco). O que
+       vem ANTES roda 1x (buy-in); o bloco DEPOIS roda N rounds com header
+       'Round N'. Cumulativo atravessa tudo. Score = tempo total. #}
+    {% set _all = wkt.movimentos | rejectattr('chegada','defined') | list %}
+    {% set _had_ch = (wkt.movimentos | selectattr('chegada','defined') | list) | length > 0 %}
+    {% set ns_sp = namespace(buyin=[], bloco=[], found=false) %}
+    {% for m in _all %}
+      {% if m.rounds_bloco is defined %}
+        {% set ns_sp.found = true %}
+      {% elif ns_sp.found %}
+        {% set ns_sp.bloco = ns_sp.bloco + [m] %}
+      {% else %}
+        {% set ns_sp.buyin = ns_sp.buyin + [m] %}
+      {% endif %}
+    {% endfor %}
+    {% if not ns_sp.found %}{% set ns_sp.bloco = _all %}{% set ns_sp.buyin = [] %}{% endif %}
+    {% set ns_rb = namespace(out=ns_sp.buyin) %}
+    {% for r in range(1, wkt.rounds_bloco + 1) %}
+      {% set ns_rb.out = ns_rb.out + [{'round_header': r}] + ns_sp.bloco %}
+    {% endfor %}
+    {% if _had_ch %}{% set ns_rb.out = ns_rb.out + [{'chegada': true}] %}{% endif %}
+    {{ mov_table(ns_rb.out, wkt.numero) }}
   {% else %}
     {{ mov_table(wkt.movimentos, wkt.numero, goal_reps=(wkt.goal_reps | default(0)), hide_cum=(tipo == 'for_time_goal'), tb_col=(tipo == 'for_time_goal' and wkt.tiebreak)) }}
   {% endif %}
