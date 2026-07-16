@@ -233,6 +233,23 @@ _ROUNDS_BLOCK_RE = re.compile(
 )
 
 
+# Excel diz que NÃO tem rep de chegada (ou que ela não conta/pontua). Quando
+# bate, o for_time NÃO ganha a linha de chegada. Cobre várias formas em PT/EN:
+#   'chegada não conta/vale/pontua/contabiliza', 'não conta a chegada',
+#   'sem chegada', 'não tem/há chegada', 'no finish rep', 'finish doesn't count'.
+_CHEGADA_NEGADA_RE = re.compile(
+    r'(?:'
+    r'chegada[^.\n]{0,40}?n[ãa]o[^.\n]{0,20}?(?:cont|val|pontu|contabiliz)'
+    r'|n[ãa]o[^.\n]{0,20}?(?:cont|contabiliz|pontu)[^.\n]{0,25}?chegada'
+    r'|(?:sem|n[ãa]o\s+tem|n[ãa]o\s+h[áa]|n[ãa]o\s+possui)\s+(?:a\s+|rep\w*\s+d[eo]\s+)?chegada'
+    r'|no\s+finish(?:\s+rep)?\b'
+    r'|finish[^.\n]{0,20}?(?:does\s*n.?t|doesn.?t|not)\s*count'
+    r'|without\s+(?:the\s+)?finish'
+    r')',
+    re.I,
+)
+
+
 # ── Texto livre de workout ──────────────────────────────────────────────────────
 def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     """Extrai (reps, nome_upper) de uma linha de movimento.
@@ -975,7 +992,7 @@ def parse_workout_text(text: str, numero: int) -> Workout:
 
     # 5) For Time / For Time Goal fecham com chegada — A MENOS que o Excel diga
     #    que a chegada não conta como repetição (a especificidade vem do texto).
-    chegada_nao_conta = bool(re.search(r'chegada\s+n[ãa]o\s+cont', full, re.I))
+    chegada_nao_conta = bool(_CHEGADA_NEGADA_RE.search(full))
     if wkt["tipo"] in ("for_time", "for_time_goal") and movs and not chegada_nao_conta:
         movs.append({"chegada": True})
     wkt["movimentos"] = movs

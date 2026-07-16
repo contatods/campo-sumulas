@@ -1355,3 +1355,21 @@ def test_parse_equipamento_heuristica_kg_quando_tem_25():
         ws.append(["X", p, q])
     r = _parse_equipamento(wb)
     assert r['unidade'] == 'kg'
+
+
+def test_chegada_negada_varias_formas_omite_rep():
+    """Excel dizendo que NÃO tem chegada (várias formas PT/EN) → for_time não
+    ganha a rep de chegada. Regressão: só pegávamos 'chegada não conta'."""
+    def tem_chegada(nota):
+        w = parse_workout_text('"T"\n\nFor time:\n21 Thrusters\n21 Pull-Ups\n\n'
+                               + nota + '\nTime cap: 8 min', 1)
+        return any(m.get("chegada") for m in w["movimentos"])
+    for nota in ("A chegada não conta como repetição", "Sem rep de chegada",
+                 "Não há chegada", "Não tem chegada", "A chegada não é contabilizada",
+                 "chegada não pontua", "Não conta a chegada final", "No finish rep",
+                 "The finish doesn't count"):
+        assert not tem_chegada(nota), f"deveria omitir chegada: {nota!r}"
+    # Sem menção → default mantém a chegada; menção positiva também.
+    assert tem_chegada("A chegada conta normalmente")
+    w = parse_workout_text('"T"\n\nFor time:\n21 Thrusters\n21 Pull-Ups\nTime cap: 8 min', 1)
+    assert any(m.get("chegada") for m in w["movimentos"])

@@ -443,3 +443,18 @@ def test_render_for_time_curto_nao_ativa_compactacao(evento_basico, workout_for_
     generosas pra escrita)."""
     html = render_workout(evento_basico, workout_for_time, fonts_empty, logo_src="", logo_evento="")
     assert "is-denso" not in _page_div_class(html)
+
+
+def test_render_rounds_sem_chegada_nao_adiciona_linha(evento_basico, fonts_empty):
+    """rounds_fixos NÃO deve forçar a linha de chegada quando o Excel diz que
+    não há chegada — o render seguia o parser errado e sempre anexava uma."""
+    from parsers import parse_workout_text
+    def n_chegada(nota_extra):
+        w = parse_workout_text('"Rocket"\n\n5 rounds for time of:\n12 Deadlifts\n'
+                               '9 Snatches\n' + nota_extra + '\nTime cap: 12 min', 1)
+        w["modalidade"] = "dupla"
+        html = render_workout(evento_basico, w, fonts_empty, logo_src="", logo_evento="")
+        # descontar as 6 regras CSS `.chegada-inline`; sobra = linhas reais.
+        return html.count("chegada-inline") - 6
+    assert n_chegada("\nA chegada não conta como repetição") == 0
+    assert n_chegada("") == 1   # default mantém 1 linha de chegada

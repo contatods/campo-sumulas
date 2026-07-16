@@ -2010,22 +2010,24 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
     {# Expande a lista: pra cada atleta, header + base_movs. Chegada só no fim.
        Cumulativo atravessa atletas — score é da equipe, não individual. #}
     {% set _base_movs = wkt.movimentos | rejectattr('chegada','defined') | list %}
+    {% set _had_ch = (wkt.movimentos | selectattr('chegada','defined') | list) | length > 0 %}
     {% set ns_relay = namespace(out=[]) %}
     {% for pos in range(1, _n_relay + 1) %}
       {% set ns_relay.out = ns_relay.out + [{'atleta_header': pos}] + _base_movs %}
     {% endfor %}
-    {% set ns_relay.out = ns_relay.out + [{'chegada': true}] %}
+    {% if _had_ch %}{% set ns_relay.out = ns_relay.out + [{'chegada': true}] %}{% endif %}
     {{ mov_table(ns_relay.out, wkt.numero) }}
   {% elif wkt.rounds_fixos and wkt.rounds_fixos > 1 %}
     {# 'N rounds for time' — expande mov_table N vezes com header 'Round N'
        antes de cada repetição. Cumulativo natural atravessa rounds.
        Visual = juiz marca cada round individualmente. Score = tempo total. #}
     {% set _base_movs = wkt.movimentos | rejectattr('chegada','defined') | list %}
+    {% set _had_ch = (wkt.movimentos | selectattr('chegada','defined') | list) | length > 0 %}
     {% set ns_rd = namespace(out=[]) %}
     {% for r in range(1, wkt.rounds_fixos + 1) %}
       {% set ns_rd.out = ns_rd.out + [{'round_header': r}] + _base_movs %}
     {% endfor %}
-    {% set ns_rd.out = ns_rd.out + [{'chegada': true}] %}
+    {% if _had_ch %}{% set ns_rd.out = ns_rd.out + [{'chegada': true}] %}{% endif %}
     {{ mov_table(ns_rd.out, wkt.numero) }}
   {% elif wkt.rounds_bloco and wkt.rounds_bloco > 1 %}
     {# 'buy-in + N rounds of': divide no marcador de seção (rounds_bloco). O que
