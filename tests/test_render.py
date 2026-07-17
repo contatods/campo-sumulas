@@ -458,3 +458,21 @@ def test_render_rounds_sem_chegada_nao_adiciona_linha(evento_basico, fonts_empty
         return html.count("chegada-inline") - 6
     assert n_chegada("\nA chegada não conta como repetição") == 0
     assert n_chegada("") == 1   # default mantém 1 linha de chegada
+
+
+def test_render_amrap_multijanela_pwrd_loop(evento_basico, fonts_empty):
+    """Render do PWRD Loop: 2 rounds, linhas MAX presentes (o que pontua),
+    prescritos marcados 'não pontua', rest entre janelas, score = soma; o score
+    box AMRAP padrão NÃO aparece (tem o de soma)."""
+    from parsers import parse_workout_text
+    from tests.test_parsers import PWRD_LOOP
+    w = parse_workout_text(PWRD_LOOP, 1)
+    w["modalidade"] = "trio"
+    html = render_workout(evento_basico, w, fonts_empty, logo_src="", logo_evento="")
+    assert "Round 1" in html and "Round 2" in html
+    assert html.upper().count("WALL-BALL SHOTS") >= 2, "linhas MAX (pontuáveis) sumiram"
+    assert html.count('jan-row jan-row-max') == 2
+    assert "não pontua" in html and "conta" in html
+    assert "RESET EQUIPMENT" in html.upper()          # rest-bar entre janelas
+    assert 'class="jan-scorebox"' in html             # score = soma das janelas
+    assert '<div class="score-box' not in html        # não duplica o score AMRAP

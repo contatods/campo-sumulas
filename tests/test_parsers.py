@@ -1373,3 +1373,53 @@ def test_chegada_negada_varias_formas_omite_rep():
     assert tem_chegada("A chegada conta normalmente")
     w = parse_workout_text('"T"\n\nFor time:\n21 Thrusters\n21 Pull-Ups\nTime cap: 8 min', 1)
     assert any(m.get("chegada") for m in w["movimentos"])
+
+
+PWRD_LOOP = (
+    '"PWRD Loop"\n\n'
+    'AMRAP 4 minutes:\n'
+    '30 Sync. Toes Raises (2 athletes)\n'
+    '30 Sync. Fat Bar Thruster (34kg) + Single-Arm Dumbbell Thruster (15kg) (2 athletes)\n'
+    'Max. Wall-Ball Shots (14lbs) + Dumbbell Front Squat (15kg) (2 athletes)\n\n'
+    'Rest 1 minute\n\n'
+    'AMRAP 4 minutes:\n'
+    '30 Sync. Toes Raises (2 athletes)\n'
+    '30 Sync. Fat Bar Thruster (34kg) + Single-Arm Dumbbell Thruster (22,5kg) (2 athletes)\n'
+    'Max. Wall-Ball Shots (14lbs) + Dumbbell Front Squat (22,5kg) (2 athletes)\n\n'
+    '――― NOTAS ―――\n'
+    'Pontuação\n'
+    '- Será o total de reps de Wall-Ball Shots + DB Front Squat somadas das 2 rounds.\n'
+    '- Toes Raises e Thrusters são reps prescritas e não contarão para a pontuação.'
+)
+
+
+def test_amrap_multijanela_pwrd_loop_estrutura():
+    """PWRD Loop (Pwrd): 2 janelas AMRAP com reps prescritas (não pontuam) +
+    linha MAX (pontua). Antes: virava 1 amrap achatado e as linhas MAX (o que
+    conta!) eram DROPADAS por não começarem com número."""
+    w = parse_workout_text(PWRD_LOOP, 1)
+    assert w["tipo"] == "amrap"
+    jans = w.get("janelas") or []
+    assert len(jans) == 2, "deveria separar as 2 janelas AMRAP"
+    for jan in jans:
+        nomes = [m["nome"] for m in jan["movimentos"]]
+        maxes = [m for m in jan["movimentos"] if m.get("max")]
+        prescr = [m for m in jan["movimentos"] if not m.get("max")]
+        assert len(maxes) == 1, "cada janela tem 1 linha MAX (a que pontua)"
+        assert "WALL-BALL SHOTS" in maxes[0]["nome"], "MAX = Wall-Ball + DB Front Squat"
+        assert maxes[0]["pontua"] is True
+        assert all(m["pontua"] is False for m in prescr), "prescritos não pontuam"
+        assert any("TOES RAISES" in n for n in nomes)
+    # progressão de carga entre janelas (15kg → 22,5kg)
+    assert "15KG" in jans[0]["movimentos"][2]["nome"]
+    assert "22,5KG" in jans[1]["movimentos"][2]["nome"]
+    assert w.get("rest_entre") and "1 minute" in w["rest_entre"].lower()
+    assert "wall-ball" in (w.get("score_regra") or "").lower()
+
+
+def test_amrap_uma_janela_nao_vira_multijanela():
+    """AMRAP simples (1 bloco) NÃO deve ativar o path multi-janela."""
+    w = parse_workout_text('"X"\n\nAMRAP 12 minutes:\n10 Pull-Ups\n20 Push-Ups\n30 Squats', 1)
+    assert w["tipo"] == "amrap"
+    assert not w.get("janelas"), "1 janela não é multi-janela"
+    assert any("PULL-UPS" in (m.get("nome") or "") for m in w["movimentos"])

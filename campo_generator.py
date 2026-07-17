@@ -928,6 +928,84 @@ body{
 }
 
 /* ══════════════════════════════════════════════════════
+   AMRAP MULTI-JANELA (PWRD Loop) — reps prescritas (não pontuam) + linha MAX
+   (conta). Score box soma as MAX das janelas.
+   ══════════════════════════════════════════════════════ */
+.jan-rule{
+  border-left:2px solid var(--ink);background:var(--field);
+  padding:1.5mm 3mm;margin-bottom:1.5mm;
+  font-size:7pt;font-weight:700;color:var(--ink);line-height:1.3;
+}
+.jan-rule-tag{
+  display:inline-block;font-size:4.5pt;font-weight:900;color:var(--w);
+  background:var(--panel);padding:0.4mm 2mm;border-radius:2px;
+  letter-spacing:.16em;text-transform:uppercase;margin-right:2mm;vertical-align:middle;
+}
+.jan-tbl{border:1px solid var(--rule);border-top:0}
+.jan-row{
+  display:flex;align-items:center;min-height:7mm;
+  border-top:1px solid var(--rule);background:var(--w);
+}
+.jan-row-presc{background:var(--field)}
+.jan-check{
+  width:6mm;height:6mm;flex-shrink:0;margin:0 2.5mm;
+  border:1.5px solid var(--mid);background:var(--w);border-radius:1px;
+}
+.jan-name{
+  flex:1;padding:1mm 2mm;font-size:8pt;font-weight:700;color:var(--ink);
+  line-height:1.2;text-transform:uppercase;
+}
+.jan-presc-tag{
+  flex-shrink:0;font-size:4.5pt;font-weight:700;color:var(--ghost);
+  letter-spacing:.1em;text-transform:uppercase;padding:0 3mm;text-align:right;
+}
+.jan-row-max{background:var(--w);min-height:11mm;border-top:2px solid var(--ink)}
+.jan-max-tag{
+  flex-shrink:0;align-self:stretch;display:flex;align-items:center;
+  background:var(--panel);color:var(--w);padding:0 3mm;
+  font-size:6.5pt;font-weight:900;letter-spacing:.14em;
+}
+.jan-count{
+  flex-shrink:0;width:34mm;align-self:stretch;
+  display:flex;flex-direction:column;justify-content:flex-end;
+  padding:1.5mm 3mm;border-left:1px solid var(--rule);
+}
+.jan-count-lbl{
+  font-size:4.5pt;font-weight:700;color:var(--ghost);
+  letter-spacing:.12em;text-transform:uppercase;margin-bottom:0.5mm;
+}
+.jan-count::after{content:"";border-bottom:2px solid var(--ink);width:100%}
+.jan-scorebox{
+  display:flex;align-items:stretch;border:2px solid var(--panel);
+  overflow:hidden;margin-top:1.5mm;margin-bottom:1.5mm;height:18mm;
+}
+.jan-sb-lbl{
+  width:28mm;flex-shrink:0;background:var(--panel);
+  display:flex;flex-direction:column;justify-content:center;padding:0 3mm;
+}
+.jan-sb-lbl-tag{
+  font-size:4.5pt;font-weight:700;color:rgba(255,255,255,.65);
+  letter-spacing:.28em;text-transform:uppercase;
+}
+.jan-sb-lbl-name{
+  font-size:8.5pt;font-weight:900;color:rgba(255,255,255,.85);
+  text-transform:uppercase;margin-top:1mm;
+}
+.jan-sb-calc{
+  flex:1;display:flex;align-items:center;gap:2mm;
+  background:var(--w);padding:2mm 3mm;
+}
+.jan-sb-op{font-size:11pt;font-weight:900;color:var(--mid);flex-shrink:0}
+.jan-sb-cell{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;padding-bottom:1mm}
+.jan-sb-cell-lbl{
+  font-size:4.5pt;font-weight:700;color:var(--ghost);
+  letter-spacing:.12em;text-transform:uppercase;margin-bottom:1mm;
+}
+.jan-sb-field{border-bottom:2px solid var(--ink);width:100%;flex:1}
+.jan-sb-total .jan-sb-cell-lbl{color:var(--ink);font-weight:900}
+.jan-sb-total .jan-sb-field{border-bottom-width:3px}
+
+/* ══════════════════════════════════════════════════════
    SIGNATURES
    ══════════════════════════════════════════════════════ */
 .sign-zone{display:flex;gap:2mm;margin-top:3mm;margin-bottom:1mm}
@@ -1920,6 +1998,51 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
   {% if f2.descricao %}<div class="desc">{% for l in f2.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
   {{ mov_table(f2.movimentos, wkt.numero) }}
 
+{% elif tipo == 'amrap' and wkt.janelas %}
+  {# AMRAP multi-janela (PWRD Loop): cada janela tem reps PRESCRITAS (não
+     pontuam) + uma linha MAX (o que conta). Descanso entre janelas.
+     Pontuação = soma das reps MAX das janelas. #}
+  {% if wkt.score_regra %}<div class="jan-rule"><span class="jan-rule-tag">Pontuação</span>{{ wkt.score_regra }}</div>{% endif %}
+  {% for jan in wkt.janelas %}
+    <div class="section-banner">
+      <div style="display:flex;align-items:center">
+        <div class="sbn-badge">{{ loop.index }}</div>
+        <span class="sbn-t">Round {{ loop.index }}</span>
+      </div>
+      <span class="sbn-s">{{ jan.titulo|upper }}</span>
+    </div>
+    <div class="jan-tbl">
+      {% for m in jan.movimentos %}
+        {% if m.max %}
+          <div class="jan-row jan-row-max">
+            <div class="jan-max-tag">MAX</div>
+            <div class="jan-name">{{ m.nome }}</div>
+            <div class="jan-count"><span class="jan-count-lbl">reps · conta</span></div>
+          </div>
+        {% else %}
+          <div class="jan-row jan-row-presc">
+            <div class="jan-check"></div>
+            <div class="jan-name">{% if m.reps %}<b>{{ m.reps }}</b> {% endif %}{{ m.nome }}</div>
+            <div class="jan-presc-tag">prescrito · não pontua</div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% if not loop.last %}<div class="rest-bar">{{ (jan.rest_depois or wkt.rest_entre or 'Descanso')|upper }} &nbsp;·&nbsp; Reset Equipment</div>{% endif %}
+  {% endfor %}
+  {# Score box: soma das MAX de cada janela #}
+  <div class="jan-scorebox">
+    <div class="jan-sb-lbl"><span class="jan-sb-lbl-tag">For Reps</span><span class="jan-sb-lbl-name">Pontuação</span></div>
+    <div class="jan-sb-calc">
+      {% for jan in wkt.janelas %}
+        {% if not loop.first %}<div class="jan-sb-op">+</div>{% endif %}
+        <div class="jan-sb-cell"><span class="jan-sb-cell-lbl">Round {{ loop.index }}</span><div class="jan-sb-field"></div></div>
+      {% endfor %}
+      <div class="jan-sb-op">=</div>
+      <div class="jan-sb-cell jan-sb-total"><span class="jan-sb-cell-lbl">Total</span><div class="jan-sb-field"></div></div>
+    </div>
+  </div>
+
 {% elif tipo == 'amrap' %}
   {# Em EMOM, descrição é redundante (rítmo, movs, progressão e tiebreak já
      vão na tabela). Em AMRAP simples, descrição ajuda o juiz. #}
@@ -2057,8 +2180,8 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
   {% endif %}
 {% endif %}
 
-{# ── SCORE BOX ── (composto já tem score box por fórmula) #}
-{% if tipo != 'composto' %}{{ score_box(tipo, wkt) }}{% endif %}
+{# ── SCORE BOX ── (composto tem score por fórmula; multi-janela tem o seu) #}
+{% if tipo != 'composto' and not wkt.janelas %}{{ score_box(tipo, wkt) }}{% endif %}
 
 {# ── ASSINATURAS — coladas logo abaixo do score box ── #}
 <div class="sign-zone">

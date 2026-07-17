@@ -250,6 +250,15 @@ _CHEGADA_NEGADA_RE = re.compile(
 )
 
 
+# AMRAP multi-janela (PWRD Loop): 2+ blocos 'AMRAP N min' separados por 'Rest'.
+# Cada janela tem reps prescritas + uma linha 'Max ...' (o que pontua).
+_AMRAP_JANELA_RE = re.compile(r'^\s*amrap\s+(\d+)\s*(?:min|minutes?|minutos?)\b', re.I)
+_REST_JANELA_RE  = re.compile(r'^\s*(?:rest|descanso|descanse)\b', re.I)
+# Linha 'Max. Wall-Ball ...' / 'Max reps of ...' — movimento SEM reps fixas, é
+# o que acumula pontuação. Sem número na frente (por isso escapa do _parse_mov_line).
+_MAX_MOV_RE = re.compile(r'^\s*max[.:\s]+(?:reps?\s+(?:of|de)\s+)?(.+)$', re.I)
+
+
 # ── Texto livre de workout ──────────────────────────────────────────────────────
 def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     """Extrai (reps, nome_upper) de uma linha de movimento.
@@ -970,9 +979,12 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     nome = _extrair_nome_workout(lines)
     if nome: wkt["nome"] = nome
 
-    # 2) Tipo — Express e For Load retornam imediatamente (paths dedicados)
+    # 2) Tipo — Express, AMRAP multi-janela e For Load têm paths dedicados
     if any(re.search(r'express formula', l, re.I) for l in lines):
         return _parse_express(lines, wkt)
+    # AMRAP de 2+ janelas ('AMRAP N min' repetido), ex.: PWRD Loop
+    if sum(1 for l in lines if _AMRAP_JANELA_RE.match(l)) >= 2:
+        return _parse_amrap_multijanela(lines, wkt, '\n'.join(lines))
     full = '\n'.join(lines).lower()
     if ('for load' in full or 'max lift' in full or 'max load' in full
         or re.search(r'\bcarga m[áa]xima\b', full)):
@@ -1095,6 +1107,72 @@ def _parse_express(lines: list[str], wkt: Workout) -> Workout:
                        "descricao": [], "movimentos": f1_movs}
     wkt["formula2"] = {"janela": f2_janela or "06:00 → 12:00  ·  FOR TIME",
                        "descricao": [], "movimentos": f2_movs}
+    return wkt
+
+
+def _extrair_regra_pontuacao(full: str) -> str:
+    """Pega a regra de pontuação das NOTAS ('Pontuação\\n- Será o total de ...').
+    Retorna a frase principal (o que soma / o que conta), ou ''."""
+    m = re.search(r'pontua[çc][ãa]o\s*[:\n]+(.+?)(?:\n\s*\n|\Z)', full, re.I | re.S)
+    if not m:
+        return ''
+    linhas = [re.sub(r'^[\-–—•*\s]+', '', l).strip()
+              for l in m.group(1).split('\n') if l.strip()]
+    # 1ª linha costuma ser a regra do que soma; ignora a de "não conta".
+    for l in linhas:
+        if not re.search(r'n[ãa]o\s+cont', l, re.I):
+            return l
+    return linhas[0] if linhas else ''
+
+
+def _parse_amrap_multijanela(lines: list[str], wkt: Workout, full: str) -> Workout:
+    """AMRAP de múltiplas janelas (PWRD Loop do Pwrd by Coffee): cada bloco
+    'AMRAP N min' é uma janela com reps prescritas + (opcional) uma linha 'Max'
+    que é o que pontua. Descanso entre janelas. Score = soma das reps 'Max'.
+
+    Estrutura: wkt['janelas'] = [{'titulo','movimentos':[{nome,reps,pontua} |
+    {nome,max:True,pontua:True}], 'rest_depois'?}]. Movimento prescrito (reps
+    fixas) NÃO pontua quando existe linha Max; sem Max, é AMRAP normal (tudo conta).
+    """
+    wkt["tipo"] = "amrap"
+    lines_movs = _truncar_descricao_em_notas(lines)
+    janelas: list[dict] = []
+    atual: Optional[dict] = None
+    rest_txt = ""
+    for line in lines_movs:
+        if _AMRAP_JANELA_RE.match(line):
+            atual = {"titulo": line.strip().rstrip(':'), "movimentos": []}
+            janelas.append(atual)
+            continue
+        if _REST_JANELA_RE.match(line):
+            rest_txt = line.strip()
+            if atual is not None:
+                atual["rest_depois"] = line.strip()
+            continue
+        if atual is None:
+            continue
+        mm = _MAX_MOV_RE.match(line)
+        if mm:
+            nome = mm.group(1).strip().rstrip('.').upper()
+            atual["movimentos"].append({"nome": nome, "max": True, "pontua": True})
+            continue
+        p = _parse_mov_line(line)
+        if p:
+            reps, nome = p
+            mov: Movimento = {"nome": nome, "pontua": False}
+            if reps is not None:
+                mov["reps"] = reps
+            atual["movimentos"].append(mov)
+    # Sem linha Max em nenhuma janela → AMRAP normal: tudo conta pontuação.
+    tem_max = any(m.get("max") for j in janelas for m in j["movimentos"])
+    if not tem_max:
+        for j in janelas:
+            for m in j["movimentos"]:
+                m["pontua"] = True
+    wkt["janelas"] = janelas
+    wkt["rest_entre"] = rest_txt
+    wkt["score_regra"] = _extrair_regra_pontuacao(full)
+    wkt["movimentos"] = []
     return wkt
 
 
