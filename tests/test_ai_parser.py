@@ -77,7 +77,9 @@ def test_robusto_sem_reparador_e_igual_a_regex():
     registrar_reparador(None)
     from parsers import parse_workout_text
     txt = '"T"\n\nFor time:\n21 Thrusters\n21 Pull-Ups\nTime cap: 8 min'
-    assert parse_workout_text_robusto(txt, 1) == parse_workout_text(txt, 1)
+    w = parse_workout_text_robusto(txt, 1)
+    assert w.pop("_raw") == txt          # robusto anexa o texto cru (Fase 3)
+    assert w == parse_workout_text(txt, 1)
 
 
 def test_robusto_usa_reparo_quando_regex_falha_no_schema(monkeypatch):
@@ -171,3 +173,61 @@ def test_integracao_reparador_real_com_api_mockada(monkeypatch):
     finally:
         registrar_reparador(None)
         ai_parser.limpar_cache()
+
+
+# ── Fase 3: revisão de fidelidade (parse vs Excel) ───────────────────────────
+class _FakeResp:
+    def __init__(self, txt):
+        self.content = [type("C", (), {"text": txt})()]
+
+
+class _FakeMessages:
+    def __init__(self, txt, capture):
+        self._txt, self._cap = txt, capture
+
+    def create(self, **kw):
+        self._cap.update(kw)
+        return _FakeResp(self._txt)
+
+
+class _FakeClient:
+    def __init__(self, txt, capture):
+        self.messages = _FakeMessages(txt, capture)
+
+
+def test_resumo_fidelidade_multijanela():
+    w = {"tipo": "amrap", "time_cap": "8 min", "score_regra": "soma das Max",
+         "janelas": [{"titulo": "AMRAP 4 minutes", "movimentos": [
+             {"nome": "TOES RAISES", "reps": 30, "pontua": False},
+             {"nome": "WALL-BALL", "max": True, "pontua": True}]}]}
+    r = ai_parser._resumo_parse_fidelidade(w)
+    assert r["tipo"] == "amrap" and r["time_cap"] == "8 min"
+    movs = r["janelas"][0]["movs"]
+    assert any("MAX" in m for m in movs)
+    assert any("não pontua" in m for m in movs)
+
+
+def test_revisar_leitura_dedupe_e_findings():
+    raw = '"W"\n\nFor time:\n21 Pull-Ups\nMax Snatches'
+    base = {"nome": "W", "tipo": "for_time",
+            "movimentos": [{"nome": "PULL-UPS", "reps": 21}], "_raw": raw}
+    # mesmo workout repetido em 2 categorias → deve ir 1x pra IA (dedupe por _raw)
+    config = {"dias": [{"categorias": [
+        {"nome": "RX", "workouts": [dict(base)]},
+        {"nome": "Scaled", "workouts": [dict(base)]},
+    ]}]}
+    cap = {}
+    fake = _FakeClient('[{"severidade":"erro","msg":"perdeu a linha Max","onde":"W"}]', cap)
+    out = ai_parser.revisar_leitura_ia(config, client=fake)
+    assert len(out) == 1 and out[0]["severidade"] == "erro"
+    assert cap["system"].count('"texto_excel"') == 1, "não deduplicou por _raw"
+
+
+def test_revisar_leitura_sem_raw_nao_chama_ia():
+    config = {"dias": [{"categorias": [
+        {"nome": "RX", "workouts": [{"nome": "X", "tipo": "for_time", "movimentos": []}]},
+    ]}]}
+    cap = {}
+    fake = _FakeClient("[]", cap)
+    out = ai_parser.revisar_leitura_ia(config, client=fake)
+    assert out == [] and cap == {}, "sem _raw não deve nem montar a chamada"

@@ -1239,18 +1239,21 @@ def parse_workout_text_robusto(text: str, numero: int) -> Workout:
     o resultado reparado se ele passar no schema — senão devolve o da regex.
     NUNCA fica pior que a regex sozinha."""
     wkt = parse_workout_text(text, numero)
-    if _REPARADOR_WORKOUT is None:
-        return wkt
-    problemas = validar_workout_schema(wkt, text)
-    if not problemas:
-        return wkt
-    try:
-        reparado = _REPARADOR_WORKOUT(text, numero, wkt, problemas)
-    except Exception:
-        return wkt
-    if reparado and not validar_workout_schema(reparado, text):
-        return reparado
-    return wkt
+    resultado = wkt
+    if _REPARADOR_WORKOUT is not None:
+        problemas = validar_workout_schema(wkt, text)
+        if problemas:
+            try:
+                reparado = _REPARADOR_WORKOUT(text, numero, wkt, problemas)
+            except Exception:
+                reparado = None
+            if reparado and not validar_workout_schema(reparado, text):
+                resultado = reparado
+    # Guarda o texto cru pra revisão de fidelidade por IA (Fase 3). Chave
+    # privada '_raw' — o render ignora.
+    if isinstance(resultado, dict):
+        resultado['_raw'] = text
+    return resultado
 
 
 # ── Schema canônico + validação ─────────────────────────────────────────────

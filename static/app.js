@@ -319,6 +319,8 @@ function dispensarBanner() {
   document.getElementById('pibAIBtn').style.display = 'none';
   const rev = document.getElementById('pibRevBtn');
   if (rev) rev.style.display = 'none';
+  const leit = document.getElementById('pibLeituraBtn');
+  if (leit) leit.style.display = 'none';
 }
 function mostrarBannerPosImport(msg) {
   const banner = document.getElementById('postImportBanner');
@@ -601,6 +603,30 @@ function revisarProgramacaoIA() {
       document.getElementById('validacaoStatus').innerHTML +=
         ' <span style="color:var(--muted)">(IA não achou nada novo na programação)</span>';
     }
+  }).catch(e => {
+    document.getElementById('validacaoStatus').textContent = 'Erro na IA: ' + e.message;
+  });
+}
+
+// Fase 3: IA confere a fidelidade da leitura (parse vs texto do Excel).
+function revisarLeituraIA() {
+  if (!temDados()) { toast('Importe ou monte um evento primeiro', 'warn'); return; }
+  setDialogOpen('validModal', true);
+  document.getElementById('validacaoStatus').textContent = 'Conferindo a leitura com IA…';
+  document.getElementById('validacaoLista').innerHTML = '';
+  apiFetch('/api/ai/revisar-leitura', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ config }),
+  }).then(r => r.json()).then(res => {
+    if (res.error) throw new Error(res.error);
+    const ia = (res.avisos || []).map(a => ({...a, msg: '🔍 ' + a.msg}));
+    if (!ia.length) {
+      document.getElementById('validacaoStatus').innerHTML =
+        '<strong style="color:var(--green)">✓ A leitura bate com o Excel — nenhuma divergência encontrada.</strong>';
+      return;
+    }
+    _renderValidacao(ia);
   }).catch(e => {
     document.getElementById('validacaoStatus').textContent = 'Erro na IA: ' + e.message;
   });
@@ -2241,6 +2267,10 @@ function aplicarImport(result) {
   // acha problemas mesmo sem aviso determinístico (escalonamento, sanidade).
   const revBtn = document.getElementById('pibRevBtn');
   if (revBtn) revBtn.style.display = chatAIAtiva ? '' : 'none';
+  // Conferir leitura (fidelidade parse vs Excel) — disponível sempre que a IA
+  // está ativa; pega leitura errada que passa no schema (tipo/rounds/pontuação).
+  const leituraBtn = document.getElementById('pibLeituraBtn');
+  if (leituraBtn) leituraBtn.style.display = chatAIAtiva ? '' : 'none';
   // Reflete a contagem no ícone + rótulo do botão Validar (não depende do
   // resumo assíncrono que sobrescreve o pibMsg). Erros mudam o ícone pra ✗.
   const nErros = avisos.filter(a => a.severidade === 'erro').length;

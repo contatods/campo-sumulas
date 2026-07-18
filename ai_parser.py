@@ -208,3 +208,114 @@ def reparar_workout_ia(raw: str, numero: int, wkt_regex=None, problemas=None):
         if js is not None:            # cacheia só sucesso (falha pode ser transitória)
             _CACHE_REPARO[key] = js
     return _ia_json_para_workout(js, numero) if js else None
+
+
+# ── Fase 3: revisão de FIDELIDADE (parse vs texto do Excel) ──────────────────
+def _mov_resumo(m: dict) -> str:
+    """Uma linha compacta de movimento pro resumo do parse (o que a IA compara)."""
+    if m.get("chegada"):
+        return "chegada (+1 rep)"
+    if m.get("secao"):
+        return f"[seção: {m['secao']}]"
+    if m.get("separador"):
+        return "[then…]"
+    s = m.get("nome") or "?"
+    if m.get("reps") is not None:
+        s = f"{m['reps']} {s}"
+    if m.get("max"):
+        s = f"MAX {s}"
+    if m.get("goal"):
+        s = f"GOAL {s}"
+    if m.get("pontua") is False:
+        s += " (não pontua)"
+    return s
+
+
+def _resumo_parse_fidelidade(wkt: dict) -> dict:
+    """Resumo estrutural de COMO o sistema leu o workout — pra IA comparar com o
+    texto cru. Cobre os campos onde a leitura costuma errar."""
+    tipo = wkt.get("tipo")
+    d: dict = {"tipo": tipo, "time_cap": wkt.get("time_cap") or None}
+    if wkt.get("janelas"):
+        d["janelas"] = [{"titulo": j.get("titulo"),
+                         "movs": [_mov_resumo(m) for m in j.get("movimentos", [])]}
+                        for j in wkt["janelas"]]
+        if wkt.get("score_regra"):
+            d["pontuacao"] = wkt["score_regra"]
+    elif tipo == "composto":
+        d["f1"] = [_mov_resumo(m) for m in (wkt.get("f1") or {}).get("movimentos", [])]
+        d["f2"] = [_mov_resumo(m) for m in (wkt.get("f2") or {}).get("movimentos", [])]
+    elif tipo == "express":
+        d["formula1"] = [_mov_resumo(m) for m in (wkt.get("formula1") or {}).get("movimentos", [])]
+        d["formula2"] = [_mov_resumo(m) for m in (wkt.get("formula2") or {}).get("movimentos", [])]
+    elif tipo == "for_load":
+        seq = wkt.get("sequencia_movimentos") or {}
+        d["for_load"] = [j.get("complex") for j in (seq.get("janelas") or [])] or [seq.get("complex")]
+        d["tentativas"] = wkt.get("tentativas")
+    else:
+        d["movs"] = [_mov_resumo(m) for m in wkt.get("movimentos", [])]
+    for k in ("rounds_fixos", "rounds_bloco", "goal_reps", "goal_movimento"):
+        if wkt.get(k):
+            d[k] = wkt[k]
+    return d
+
+
+_SYSTEM_FIDELIDADE = (
+    "Você confere a LEITURA AUTOMÁTICA de workouts de CrossFit antes de imprimir "
+    "as súmulas. Para cada workout recebe:\n"
+    "- 'texto_excel': o texto ORIGINAL da planilha (fonte da verdade)\n"
+    "- 'parse': como o sistema LEU (tipo, movimentos, reps, rounds, pontuação, "
+    "time cap)\n\n"
+    "Aponte APENAS divergências REAIS entre o parse e o texto original:\n"
+    "- movimento faltando ou sobrando; reps/carga erradas;\n"
+    "- tipo errado (ex: era AMRAP de 2 janelas e leu como for time simples);\n"
+    "- rounds não detectados; pontuação/score lido errado (ex: perdeu a linha "
+    "  'Max' que conta pontos, ou contou reps que não pontuam);\n"
+    "- time cap errado; chegada indevida ou faltando.\n\n"
+    "IGNORE: diferenças de maiúsculas/formatação, ordem de metadados, notas de "
+    "regulamento. Seja conservador — se está fiel, não reporte. Melhor 2 achados "
+    "certos que 10 duvidosos.\n\n"
+    "Responda SOMENTE com um array JSON (nada fora dele). Cada item:\n"
+    '{"severidade":"erro"|"aviso","msg":"<o que divergiu + como deveria ser, 1 frase>",'
+    '"onde":"<nome do workout>"}\n'
+    "Array vazio [] se tudo fiel."
+)
+
+
+def revisar_leitura_ia(config: dict, client=None) -> list[dict]:
+    """Revisão de FIDELIDADE (Fase 3): compara o parse de cada workout com o
+    texto cru do Excel (`_raw`) e devolve divergências. Dedupe por hash do texto
+    (o mesmo workout repete entre categorias/dias). RuntimeError se IA inativa.
+    """
+    if not ai_rounds.AI_ATIVO and client is None:
+        raise RuntimeError('IA inativa — defina ANTHROPIC_API_KEY pra revisar a leitura.')
+    itens = []
+    vistos = set()
+    for dia in config.get('dias', []) or []:
+        for cat in dia.get('categorias', []) or []:
+            for wkt in cat.get('workouts', []) or []:
+                raw = wkt.get('_raw')
+                if not raw:
+                    continue
+                h = _hash(raw)
+                if h in vistos:
+                    continue
+                vistos.add(h)
+                itens.append({
+                    'nome': wkt.get('nome') or '?',
+                    'texto_excel': str(raw)[:1500],
+                    'parse': _resumo_parse_fidelidade(wkt),
+                })
+    if not itens:
+        return []
+    contexto = json.dumps(itens, ensure_ascii=False)[:ai_rounds.AI_CONTEXT_MAX_CHARS]
+    system = _SYSTEM_FIDELIDADE + "\n\nWorkouts:\n" + contexto
+    client = client or anthropic.Anthropic(api_key=ai_rounds.AI_KEY,
+                                            timeout=ai_rounds.AI_TIMEOUT_CHAT_S)
+    resp = client.messages.create(
+        model=_MODEL, max_tokens=1800, system=system,
+        messages=[{"role": "user",
+                   "content": "Confira a leitura e liste só as divergências reais em JSON."}],
+    )
+    txt = (resp.content[0].text if resp.content else "") or ""
+    return ai_rounds._parse_findings_json(txt)

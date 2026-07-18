@@ -47,7 +47,22 @@ O conversor cobre for_time / for_time_goal / amrap e **AMRAP multi-janela**
 (reaproveita o render do PWRD Loop). Formato novo desconhecido → a IA estrutura,
 o schema valida, sem código novo.
 
-## Fase 3 — IA valida sempre + preview
+## Fase 3 — IA confere a fidelidade da leitura ✅
 
-A revisão por IA compara "o que parseei" vs "o texto cru" e sinaliza divergências
-no preview, pra pegar leitura errada ANTES de gerar 300 súmulas.
+Pega o que a Fase 2 não pega: workout que passa no schema mas foi lido ERRADO
+(tipo/rounds/pontuação plausíveis mas incorretos — ex: "Workouts 05 & 06").
+
+- Cada workout carrega o texto cru do Excel em `_raw` (anexado no import por
+  `parse_workout_text_robusto`).
+- `ai_parser.revisar_leitura_ia(config)`: dedupe por hash do `_raw` (o mesmo
+  workout repete entre categorias), monta {texto_excel, parse (resumo
+  estrutural)} e pede pra IA listar SÓ divergências reais (movimento
+  faltando/sobrando, reps/carga, tipo, rounds, pontuação, time cap, chegada).
+  1 chamada pro evento todo.
+- Endpoint `/api/ai/revisar-leitura` + botão "🔍 Conferir leitura" no banner
+  pós-import → mostra as divergências no mesmo modal de validação, ANTES de
+  gerar as súmulas.
+
+Fluxo completo de robustez: regex (grátis) → schema (pega falha estrutural) →
+IA repara o que falhou (Fase 2) → IA confere fidelidade do resto no preview
+(Fase 3). O corpus (Fase 1) trava regressão em cima de tudo.

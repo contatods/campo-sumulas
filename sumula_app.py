@@ -19,7 +19,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '2.4.0'
+VERSION = '2.5.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -206,6 +206,7 @@ from ai_rounds import (enriquecer_workouts, AI_ATIVO,
                        validar_evento, resumo_evento, chat_evento,
                        explicar_avisos_import, revisar_programacao_ia,
                        colapsar_avisos)
+from ai_parser import revisar_leitura_ia
 
 # ── Carregar fontes na inicialização ────────────────────────────────────────────
 _banner_inner = f"  Súmulas Digital Score  —  v{VERSION}"
@@ -365,6 +366,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 '/api/ai/resumo-evento':   self._handle_resumo_evento,
                 '/api/ai/explicar-avisos': self._handle_explicar_avisos,
                 '/api/ai/revisar-programacao': self._handle_revisar_programacao,
+                '/api/ai/revisar-leitura': self._handle_revisar_leitura,
                 '/api/ai/chat':            self._handle_chat,
             }
             handler = routes.get(self.path)
@@ -1033,6 +1035,30 @@ class SumulaHandler(BaseHTTPRequestHandler):
             raise BadRequest("config (objeto) é obrigatório")
         try:
             avisos = revisar_programacao_ia(cfg)
+        except Exception as e:
+            traceback.print_exc()
+            self._send(200, 'application/json; charset=utf-8',
+                       json.dumps({'error': _mensagem_erro_ia(e), 'ai_ativo': True},
+                                  ensure_ascii=False).encode('utf-8'))
+            return
+        self._send(200, 'application/json; charset=utf-8',
+                   json.dumps({'avisos': avisos}, ensure_ascii=False).encode('utf-8'))
+
+    def _handle_revisar_leitura(self, body):
+        """Fase 3: IA confere a FIDELIDADE da leitura (parse vs texto do Excel) e
+        aponta divergências antes da impressão. Body: {config}. Requer que os
+        workouts carreguem '_raw' (anexado na importação).
+        """
+        if not AI_ATIVO:
+            self._send(200, 'application/json; charset=utf-8',
+                       json.dumps({'error': 'IA inativa', 'ai_ativo': False},
+                                  ensure_ascii=False).encode('utf-8'))
+            return
+        cfg = body.get('config')
+        if not isinstance(cfg, dict):
+            raise BadRequest("config (objeto) é obrigatório")
+        try:
+            avisos = revisar_leitura_ia(cfg)
         except Exception as e:
             traceback.print_exc()
             self._send(200, 'application/json; charset=utf-8',
