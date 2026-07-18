@@ -1423,3 +1423,31 @@ def test_amrap_uma_janela_nao_vira_multijanela():
     assert w["tipo"] == "amrap"
     assert not w.get("janelas"), "1 janela não é multi-janela"
     assert any("PULL-UPS" in (m.get("nome") or "") for m in w["movimentos"])
+
+
+def test_time_cap_mmss_e_posicao_no_fim():
+    """Corpus achou 2 formatos de time cap que sumiam: mm:ss ('12:30 minutes')
+    e time cap no FIM, depois de Note/Score (fora da região de movimentos)."""
+    w1 = parse_workout_text('"T"\n\nEvery 2:30, for 5 rounds:\n50m Swim\n10 Burpees\n\nTime cap: 12:30 minutes', 1)
+    assert w1.get("time_cap") == "12:30 min"
+    # time cap no fim, depois de Note/Score
+    w2 = parse_workout_text(
+        '"T"\n\nFor time:\n25m Shuttle Run\n40 Wall Ball Shots\n\n'
+        'Note\nrestarts each part\n\nScore\nTotal reps\n\nTime cap: 14 minutes', 1)
+    assert w2.get("time_cap") == "14 min", "time cap depois de Note/Score foi perdido"
+    # negação continua sem cap
+    w3 = parse_workout_text('"T"\n\nFor time:\n30 Pull-Ups\n\n- O workout não terá time cap.', 1)
+    assert not w3.get("time_cap")
+
+
+def test_validar_workout_schema_pega_falhas_estruturais():
+    """O validador do schema canônico detecta: pontuação Max/Goal dropada e
+    time cap perdido (as classes de bug que mordem em produção)."""
+    from parsers import validar_workout_schema
+    # workout ok não gera problema
+    ok = parse_workout_text('"T"\n\nFor time:\n21 Thrusters\n21 Pull-Ups\nTime cap: 8 min', 1)
+    assert validar_workout_schema(ok, "For time: 21 Thrusters. Time cap: 8 min") == []
+    # simula parse que perdeu o time cap presente no texto
+    ruim = {"tipo": "for_time", "nome": "X", "movimentos": [{"nome": "PULL-UPS", "reps": 10}]}
+    codigos = [c for c, _ in validar_workout_schema(ruim, "For time:\n10 Pull-Ups\nTime cap: 10 minutes")]
+    assert "timecap_perdido" in codigos

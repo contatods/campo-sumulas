@@ -679,7 +679,9 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
 
     for line in lines:
         ll = line.lower()
-        tc = re.search(r'time\s*cap[:\s]+(\d+)\s*min', line, re.I)
+        # Aceita 'Time cap: 16 min', '16 minutes', '12:30 minutes' (mm:ss) e
+        # 'Time cap: 16' (sem unidade). mm:ss preserva o formato (12:30 min).
+        tc = re.search(r'time\s*cap[:\s]+(\d+(?::\d+)?)\s*(?:min\w*|minutos?)?', line, re.I)
         if tc:
             time_cap = f"{tc.group(1)} min"
             continue
@@ -1000,7 +1002,16 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     # 4) Movimentos — trunca antes em NOTAS pra não pegar regulamento
     lines_movs = _truncar_descricao_em_notas(lines)
     movs, time_cap = _parse_movimentos(lines_movs, wkt)
-    if time_cap: wkt["time_cap"] = time_cap
+    if time_cap:
+        wkt["time_cap"] = time_cap
+    elif not wkt.get("time_cap"):
+        # Fallback: o 'Time cap' pode aparecer no FIM, depois de Note/Score
+        # (fora da região de movimentos truncada). É metadata — lê de qualquer
+        # posição do texto completo. Negação ('não terá time cap') não casa (sem dígito).
+        m_tc = re.search(r'time\s*cap[:\s]+(\d+(?::\d+)?)\s*(?:min\w*|minutos?)?',
+                         '\n'.join(lines), re.I)
+        if m_tc:
+            wkt["time_cap"] = f"{m_tc.group(1)} min"
 
     # 5) For Time / For Time Goal fecham com chegada — A MENOS que o Excel diga
     #    que a chegada não conta como repetição (a especificidade vem do texto).
@@ -1205,6 +1216,56 @@ def _is_categoria_grid(ws) -> bool:
     return (len(r1) >= 2
             and all(isinstance(v, str) for v in r1[:4])
             and any(isinstance(v, str) and '\n' in v for v in r2))
+
+
+# ── Schema canônico + validação ─────────────────────────────────────────────
+# Tipos canônicos de workout — todo parse deve cair num destes.
+TIPOS_WORKOUT = ('for_time', 'for_time_goal', 'amrap', 'express', 'for_load', 'composto')
+
+_TC_NEGADO_RE = re.compile(
+    r'n[ãa]o\s+(?:ter[áa]|tem|h[áa])\s+time\s*cap|sem\s+time\s*cap|no\s+time\s*cap', re.I)
+
+
+def validar_workout_schema(wkt: Workout, raw: str = '') -> list[tuple[str, str]]:
+    """Valida invariantes estruturais de um workout parseado (schema canônico).
+
+    Contrato de um workout parseado:
+      - `tipo` ∈ TIPOS_WORKOUT
+      - tem conteúdo: movimentos | janelas | fórmula (express/composto) | for_load
+      - `nome` não é a linha 'Arena:' nem o placeholder 'WKT N'
+      - se o texto cru tem linha 'Max'/'Goal', o parse representa a pontuação
+        (goal_reps, janela.max ou movimento.goal) — não pode DROPAR o que pontua
+      - se o texto tem 'Time cap: N' (não negado), `time_cap` é capturado
+
+    Retorna lista de (codigo, detalhe); vazia = ok. Base do corpus de regressão
+    e reutilizável pelo linter de import. NÃO garante correção semântica total
+    (formatos exóticos podem passar aqui e ainda precisar de revisão) — cobre as
+    falhas estruturais que já mordem em produção.
+    """
+    probs: list[tuple[str, str]] = []
+    tipo = wkt.get('tipo')
+    if tipo not in TIPOS_WORKOUT:
+        probs.append(('tipo_desconhecido', repr(tipo)))
+    tem_conteudo = bool(wkt.get('movimentos') or wkt.get('janelas')
+                        or wkt.get('formula1') or wkt.get('f1') or tipo == 'for_load')
+    if not tem_conteudo:
+        probs.append(('sem_conteudo', 'nenhum movimento/janela/fórmula'))
+    nome = wkt.get('nome') or ''
+    if nome.lower().startswith('arena') or nome.startswith('WKT '):
+        probs.append(('nome_invalido', nome[:40]))
+    if raw:
+        rl = raw.lower()
+        tem_score_raw = bool(re.search(r'(?m)^\s*max\.?\s', rl)) or 'goal:' in rl
+        tem_score_par = (bool(wkt.get('goal_reps'))
+                         or any(m.get('max') for j in (wkt.get('janelas') or [])
+                                for m in j.get('movimentos', []))
+                         or any(m.get('goal') for m in (wkt.get('movimentos') or [])))
+        if tem_score_raw and not tem_score_par:
+            probs.append(('pontuacao_perdida', 'texto tem Max/Goal e o parse não capturou'))
+        if ('time cap' in rl and not _TC_NEGADO_RE.search(raw)
+                and not wkt.get('time_cap') and tipo not in ('for_load', 'composto')):
+            probs.append(('timecap_perdido', 'texto tem Time cap e não foi capturado'))
+    return probs
 
 
 def parse_excel(data: bytes) -> dict[str, Any]:
