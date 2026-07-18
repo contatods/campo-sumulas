@@ -437,6 +437,15 @@ def validar_evento(config: dict) -> list[dict]:
                             'msg': f'For Load "{wkt.get("nome", "?")}" sem nº de tentativas (usará 3)',
                             'onde': f'{dlabel}/{cnome}',
                         })
+                elif wkt.get('janelas'):
+                    # AMRAP multi-janela (PWRD Loop) guarda movimentos DENTRO das
+                    # janelas, não no topo — só avisa se todas vierem vazias.
+                    if not any((j.get('movimentos') or []) for j in wkt.get('janelas') or []):
+                        avisos.append({
+                            'severidade': 'aviso',
+                            'msg': f'Workout "{wkt.get("nome", "?")}" sem movimentos nas janelas',
+                            'onde': f'{dlabel}/{cnome}',
+                        })
                 elif not (wkt.get('movimentos') or []):
                     avisos.append({
                         'severidade': 'aviso',
@@ -462,6 +471,8 @@ def validar_evento(config: dict) -> list[dict]:
         if wkt.get('tipo') == 'composto':
             return ((wkt.get('f1', {}) or {}).get('movimentos') or []) \
                  + ((wkt.get('f2', {}) or {}).get('movimentos') or [])
+        if wkt.get('janelas'):
+            return [m for j in wkt['janelas'] for m in (j.get('movimentos') or [])]
         return wkt.get('movimentos') or []
 
     # 6) Carga faltando: levantamento de barra sem carga onde OUTRO levantamento

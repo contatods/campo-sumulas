@@ -545,3 +545,24 @@ def test_validar_evento_detecta_for_time_sem_time_cap():
     avisos = validar_evento(config)
     assert any("SEM TC" in a["msg"] and "time cap" in a["msg"].lower()
                for a in avisos)
+
+
+def test_validar_evento_multijanela_nao_falso_positivo_sem_movimentos():
+    """PWRD Loop (AMRAP multi-janela) guarda movimentos nas janelas, não no topo.
+    O linter não pode acusar 'sem movimentos' (falso-positivo que apareceu em prod)."""
+    from parsers import parse_workout_text
+    texto = ('"PWRD Loop"\n\nAMRAP 4 minutes:\n30 Sync. Toes Raises (2 athletes)\n'
+             'Max. Wall-Ball Shots (14lbs) + Dumbbell Front Squat (15kg) (2 athletes)\n\n'
+             'Rest 1 minute\n\nAMRAP 4 minutes:\n30 Sync. Toes Raises (2 athletes)\n'
+             'Max. Wall-Ball Shots (14lbs) + Dumbbell Front Squat (22,5kg) (2 athletes)')
+    w = parse_workout_text(texto, 1)
+    assert w.get("janelas") and not w.get("movimentos"), "pré-condição: multi-janela"
+    cfg = {"dias": [{"label": "Domingo", "categorias": [
+        {"nome": "Trio Scaled", "workouts": [w]}]}]}
+    sem_mov = [a for a in validar_evento(cfg) if "sem movimento" in a["msg"].lower()]
+    assert not sem_mov, f"falso-positivo: {sem_mov}"
+    # mas janelas REALMENTE vazias ainda avisam
+    w_vazio = dict(w, janelas=[{"titulo": "AMRAP", "movimentos": []},
+                               {"titulo": "AMRAP", "movimentos": []}])
+    cfg2 = {"dias": [{"label": "D", "categorias": [{"nome": "C", "workouts": [w_vazio]}]}]}
+    assert [a for a in validar_evento(cfg2) if "sem movimento" in a["msg"].lower()]
