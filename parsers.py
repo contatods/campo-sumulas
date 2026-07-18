@@ -1218,6 +1218,41 @@ def _is_categoria_grid(ws) -> bool:
             and any(isinstance(v, str) and '\n' in v for v in r2))
 
 
+# ── Fallback de parsing (Fase 2: IA como reparador) ─────────────────────────
+# Hook opcional injetado pelo app. Assinatura:
+#   reparador(raw_text, numero, wkt_regex, problemas) -> Workout | None
+# Mantém parsers.py livre de dependência de IA/anthropic — o core segue
+# testável sozinho. O app registra o reparador no startup.
+_REPARADOR_WORKOUT = None
+
+
+def registrar_reparador(fn) -> None:
+    """Registra o callback de reparo (ex.: ai_parser.reparar_workout_ia).
+    Passar None desliga o fallback."""
+    global _REPARADOR_WORKOUT
+    _REPARADOR_WORKOUT = fn
+
+
+def parse_workout_text_robusto(text: str, numero: int) -> Workout:
+    """parse_workout_text + fallback: se a regex produz um parse que FALHA no
+    schema canônico e há um reparador registrado, tenta reparar (IA). Só aceita
+    o resultado reparado se ele passar no schema — senão devolve o da regex.
+    NUNCA fica pior que a regex sozinha."""
+    wkt = parse_workout_text(text, numero)
+    if _REPARADOR_WORKOUT is None:
+        return wkt
+    problemas = validar_workout_schema(wkt, text)
+    if not problemas:
+        return wkt
+    try:
+        reparado = _REPARADOR_WORKOUT(text, numero, wkt, problemas)
+    except Exception:
+        return wkt
+    if reparado and not validar_workout_schema(reparado, text):
+        return reparado
+    return wkt
+
+
 # ── Schema canônico + validação ─────────────────────────────────────────────
 # Tipos canônicos de workout — todo parse deve cair num destes.
 TIPOS_WORKOUT = ('for_time', 'for_time_goal', 'amrap', 'express', 'for_load', 'composto')
@@ -1594,7 +1629,7 @@ def _parse_excel_grade(wb, sname: str) -> dict[str, Any]:
             # se a 1ª linha for 'Arena: HeleFitness', sem essa extração o nome
             # vira 'ARENA: HELEFITNESS' em vez do nome real (próxima linha).
             arena, texto_limpo = _extrair_arena(cell_text)
-            wkt = parse_workout_text(texto_limpo, row_num)
+            wkt = parse_workout_text_robusto(texto_limpo, row_num)
             if arena:
                 wkt['arena'] = arena
             wkt['modalidade'] = modalidade   # inferido do nome da categoria
@@ -1687,7 +1722,7 @@ def parse_pdf(data: bytes) -> dict[str, Any]:
         has_movs    = re.search(r'^\d{1,3}\s+\w', sec, re.M)
         if not (has_wkt_hdr or (has_quoted and has_movs)): continue
         wkt_num += 1
-        wkt = parse_workout_text(sec, wkt_num)
+        wkt = parse_workout_text_robusto(sec, wkt_num)
         config["workouts"].append(wkt)
 
     if not config["workouts"]:
@@ -1876,7 +1911,7 @@ def _parse_workouts_grade_multidia(ws) -> dict[str, dict[str, dict[str, Any]]]:
             if cell is None or not str(cell).strip():
                 continue
             arena, texto_limpo = _extrair_arena(str(cell))
-            wkt = parse_workout_text(texto_limpo, contador_workout)
+            wkt = parse_workout_text_robusto(texto_limpo, contador_workout)
             if arena:
                 wkt['arena'] = arena
             if cat not in resultado[dia_atual]:

@@ -27,13 +27,25 @@ Gaps conhecidos (formatos complexos ainda não modelados por completo, passam no
 schema básico mas merecem revisão): "Workouts 05 & 06" (3 partes A/B/C com
 AMRAP+For-time e pontuação dupla).
 
-## Fase 2 — IA como fallback/reparador (próxima)
+## Fase 2 — IA como fallback/reparador ✅
 
-Regex faz a 1ª passada (rápida, grátis). O que falhar no `validar_workout_schema`
-ou tiver baixa confiança vai pra IA (haiku/sonnet), que devolve o schema
-canônico. **Cache por hash do texto** → re-importar é grátis e determinístico.
-Formato novo não precisa de código novo: a IA lê, o linter valida, o preview
-mostra antes de imprimir as súmulas.
+Regex faz a 1ª passada (rápida, grátis). Quando o parse FALHA no
+`validar_workout_schema`, o app chama o reparador de IA.
+
+- `parsers.parse_workout_text_robusto`: regex → valida → (se falhar) reparador →
+  **só adota o reparo se ele passar no schema** (nunca pior que a regex). O
+  parser expõe `registrar_reparador(fn)` (injeção de dependência — `parsers.py`
+  não importa IA/anthropic; segue testável sozinho).
+- `ai_parser.reparar_workout_ia`: a IA devolve um JSON limpo (contrato estável),
+  e `_ia_json_para_workout` (puro/testável) converte pro dict interno. **Cache
+  por hash do texto** → re-importar é grátis e determinístico. A chamada da API
+  fica isolada em `_chamar_reparo_ia` (fácil de mockar).
+- `sumula_app`: registra o reparador no startup só quando `AI_ATIVO`.
+
+Só workouts que a regex não deu conta chamam a IA (85%+ nunca tocam a API).
+O conversor cobre for_time / for_time_goal / amrap e **AMRAP multi-janela**
+(reaproveita o render do PWRD Loop). Formato novo desconhecido → a IA estrutura,
+o schema valida, sem código novo.
 
 ## Fase 3 — IA valida sempre + preview
 

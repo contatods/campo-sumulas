@@ -19,7 +19,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '2.3.0'
+VERSION = '2.4.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -236,6 +236,11 @@ else:
     print("  ⚠  ds_logo.png não encontrada — header sem logo padrão")
 if AI_ATIVO:
     print("  ✓ IA ativa (Anthropic Claude Haiku) — cálculo inteligente de rounds")
+    # Fase 2 robustez: IA repara workouts que a regex lê errado (falham no schema).
+    import parsers as _parsers
+    import ai_parser as _ai_parser
+    _parsers.registrar_reparador(_ai_parser.reparar_workout_ia)
+    print("  ✓ IA como fallback de parsing (repara workouts fora do schema)")
 else:
     print("  ○  IA inativa (defina ANTHROPIC_API_KEY para ativar)")
 # PDFs por bateria: usa o Chrome headless da máquina (fidelidade do Ctrl+P).
