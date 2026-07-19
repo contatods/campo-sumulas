@@ -1451,3 +1451,17 @@ def test_validar_workout_schema_pega_falhas_estruturais():
     ruim = {"tipo": "for_time", "nome": "X", "movimentos": [{"nome": "PULL-UPS", "reps": 10}]}
     codigos = [c for c, _ in validar_workout_schema(ruim, "For time:\n10 Pull-Ups\nTime cap: 10 minutes")]
     assert "timecap_perdido" in codigos
+
+
+def test_rounds_of_no_cabecalho_nao_vira_secao_repetida():
+    """'Four rounds of:' como PRIMEIRA linha é o round count (rounds_fixos), não
+    um bloco aninhado — não pode virar {secao} (senão o render repete 'FOUR
+    ROUNDS OF' em cada round). Regressão do Rocket Master."""
+    w = parse_workout_text('"Rocket"\n\nFour rounds of:\n12 Deadlifts\n9 Snatches\nTime cap: 12 min', 1)
+    assert w.get("rounds_fixos") == 4
+    assert not w.get("rounds_bloco")
+    assert not [m for m in w["movimentos"] if m.get("secao")], "não pode criar seção do cabeçalho"
+    # Mas 'then, N rounds of' DEPOIS de um buy-in continua sendo bloco aninhado
+    sb = parse_workout_text('"SB"\n\nFor time:\n1000m Ski Erg\nthen, 2 rounds of:\n30 HSPU\nTime cap: 16 min', 1)
+    assert sb.get("rounds_bloco") == 2 and not sb.get("rounds_fixos")
+    assert any("2 ROUNDS OF" in m.get("secao", "") for m in sb["movimentos"])
