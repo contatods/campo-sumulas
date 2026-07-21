@@ -183,6 +183,116 @@ def carregar_horarios(json_path):
     return horarios_do_config(snap.get("config", snap))
 
 
+def finais_do_excel(xlsx_path):
+    """Lê o Excel de programação e identifica as baterias de FINAL.
+
+    O parser do app remove o marcador "(Final Heat)" dos nomes de categoria,
+    mas ele está presente nas abas de cronograma (Sábado/Domingo, coluna
+    Categoria). Aqui leio essas abas direto e devolvo, por dia:
+
+        {dia_pasta: {'bats': {'23','24',...},          # nºs das baterias-final
+                     'cat_bat': {cat_pasta: (hora, bat)}}}  # final de cada cat
+
+    Uma bateria-final costuma ser compartilhada por 2+ categorias
+    ("Scaled Fem (Final Heat) & Intermediario Fem (Final Heat)") — por isso
+    o split em '&' e ','. Usado pra (a) detectar páginas-final e (b) ordenar
+    o 00_FINAIS.pdf por horário mesmo quando a súmula ainda está em branco
+    (aguardando balizamento — sem nº de bateria na página).
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+    pular = ('montagem', 'workout', 'equipamento', 'inscrito', 'atleta')
+
+    # PASSO 1 — números das baterias-final, do Excel cru (coluna Categoria
+    # contém "(Final Heat)"). Confiável porque o nº de bateria não é abreviado.
+    # MULTI-ARENA (Pwrd By Coffee): a aba tem BLOCOS lado a lado ("Arena: X"
+    # na linha 1, cada bloco com suas colunas Categoria/Bateria) — varre TODOS
+    # os pares categoria+bateria da linha de cabeçalho, não só o primeiro.
+    fin_bats = {}                       # dia_pasta -> {'23','24',...}
+    for nome in wb.sheetnames:
+        if any(p in nome.lower() for p in pular):
+            continue
+        ws = wb[nome]
+        blocos, hdr = [], None          # blocos = [(ci_cat, ci_bat), ...]
+        for r in ws.iter_rows(min_row=1, max_row=8):
+            cats = [c.column - 1 for c in r
+                    if c.value and str(c.value).strip().lower() == 'categoria']
+            bats = [c.column - 1 for c in r
+                    if c.value and str(c.value).strip().lower() == 'bateria']
+            if cats and bats:
+                hdr = r[0].row
+                # Pareia cada 'Categoria' com a 'Bateria' seguinte mais próxima
+                for ci in cats:
+                    cand = [bi for bi in bats if bi > ci]
+                    if cand:
+                        blocos.append((ci, min(cand)))
+                break
+        if hdr is None:
+            continue
+        dia_pasta = sanitize(nome)
+        for r in ws.iter_rows(min_row=hdr + 1):
+            for ci_cat, ci_bat in blocos:
+                cat = r[ci_cat].value if ci_cat < len(r) else None
+                if not cat or 'final heat' not in str(cat).lower():
+                    continue
+                if ci_bat < len(r) and r[ci_bat].value is not None:
+                    bat = str(r[ci_bat].value).strip()
+                    if bat.endswith('.0'):
+                        bat = bat[:-2]
+                    if bat:
+                        fin_bats.setdefault(dia_pasta, set()).add(bat)
+    if not fin_bats:
+        return {}
+
+    # PASSO 2 — mapeia cada bateria-final pra sua categoria USANDO A CONFIG
+    # parseada (nomes idênticos às pastas do ZIP — ex.: 'Teen_Scaled_14-15_
+    # Feminino', não a abreviação '14-15 Feminino' do cronograma). Assim a
+    # detecção de finais em branco funciona mesmo com nomes abreviados.
+    try:
+        from parsers import parse_excel
+        cfg = parse_excel(Path(xlsx_path).read_bytes())
+    except Exception:
+        cfg = {'dias': []}
+    finais = {}
+    for dia in cfg.get('dias', []) or []:
+        dia_pasta = sanitize(dia.get('label', 'Dia'))
+        fb = fin_bats.get(dia_pasta, set())
+        if not fb:
+            continue
+        ent = finais.setdefault(dia_pasta, {'bats': set(fb), 'cat_bat': {},
+                                            'cat_wkts': {}})
+        for cat in dia.get('categorias', []) or []:
+            cat_pasta = sanitize(cat.get('nome', 'Categoria'))
+            workouts = cat.get('workouts', []) or []
+            for b in cat.get('baterias', []) or []:
+                num = str(b.get('numero', '')).strip()
+                if num in fb:
+                    hor = (b.get('horario_aquecimento')
+                           or b.get('horario_fila') or '')
+                    hor = str(hor).strip()
+                    if hor and len(hor) == 4:
+                        hor = '0' + hor
+                    ent['cat_bat'][cat_pasta] = (hor, num)
+                    # Nomes (sanitizados, como no filename do ZIP) dos
+                    # workouts que a bateria-final roda. Usado pra NÃO
+                    # arrastar pro 00_FINAIS páginas em branco de workouts
+                    # comuns quando o dia inteiro aguarda balizamento.
+                    nomes = set()
+                    for p in b.get('workouts_que_rodam') or []:
+                        if isinstance(p, int) and 1 <= p <= len(workouts):
+                            n = sanitize(workouts[p - 1].get('nome', ''))
+                            if n:
+                                nomes.add(n.upper())   # filename sai maiúsculo
+                    ent['cat_wkts'][cat_pasta] = nomes
+    # Dias com bateria-final achada no PASSO 1 mas sem mapa por categoria
+    # (parse_excel falhou / formato inesperado): mantém os números — o
+    # converter cai no fallback por nº de bateria em vez de perder as finais.
+    for dia_pasta, fb in fin_bats.items():
+        finais.setdefault(dia_pasta, {'bats': set(fb), 'cat_bat': {},
+                                      'cat_wkts': {}})
+    return finais
+
+
 def imprimir_pdf(chrome, html_path, pdf_path):
     """Imprime 1 HTML em PDF via Chrome headless.
 
@@ -206,15 +316,20 @@ def imprimir_pdf(chrome, html_path, pdf_path):
     raise RuntimeError(f"Chrome falhou em {pdf_path.name}: {erro}")
 
 
-def converter(raiz, saida, horarios=None, chrome=None, log=print):
+def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None):
     """Converte a árvore de HTMLs de `raiz` em PDFs organizados em `saida`.
 
     raiz: pasta com <Dia>/<Categoria>/NN_workout.html (shape do ZIP do app).
     horarios: mapa de horarios_do_config() — ordena o 00_DIA_COMPLETO.pdf.
+    finais: mapa de finais_do_excel() — se houver, gera também um
+            <Dia>/00_FINAIS.pdf só com as súmulas das baterias-final (elas
+            CONTINUAM no 00_DIA_COMPLETO.pdf também — saída adicional, não
+            exclusiva). Funciona com finais preenchidas ou ainda em branco.
     Retorna (n_pdfs_ok, lista_de_erros). Levanta RuntimeError sem Chrome.
     """
     raiz, saida = Path(raiz), Path(saida)
     horarios = horarios or {}
+    finais = finais or {}
     chrome = chrome or achar_chrome()
     if not chrome:
         raise RuntimeError("Google Chrome não encontrado nesta máquina")
@@ -228,6 +343,7 @@ def converter(raiz, saida, horarios=None, chrome=None, log=print):
         # ── Monta os trabalhos de impressão ───────────────────────────────
         trabalhos = []          # (html_temporário, pdf_destino)
         dias = {}               # dia → páginas do mestre: (sort_key, cabeca, pg)
+        finais_dias = {}        # dia → páginas-final: (sort_key, cabeca, pg)
         html_dir = tmp / "html"
         html_dir.mkdir()
         n_tmp = 0
@@ -283,6 +399,12 @@ def converter(raiz, saida, horarios=None, chrome=None, log=print):
             # mesma bateria) as raias saem intercaladas como no piso, não
             # em blocos por categoria. Sem horário, agrupa por categoria
             # pra não embaralhar baterias homônimas de arenas diferentes.
+            fin = finais.get(dia_pasta, {})
+            fin_bats = fin.get('bats', set())
+            fin_catbat = fin.get('cat_bat', {})
+            # Nome do workout como aparece no filename ('03_SETE_MINUTOS' →
+            # 'SETE_MINUTOS') pra casar com cat_wkts na regra das finais.
+            stem_wkt = stem.split('_', 1)[1] if re.match(r'\d+_', stem) else stem
             for b in ordem:
                 hor = horarios.get((dia_pasta, cat_pasta, b), "")
                 for pg in grupos[b]:
@@ -296,12 +418,54 @@ def converter(raiz, saida, horarios=None, chrome=None, log=print):
                     dias.setdefault(dia_pasta, []).append(
                         (sort_key, cabeca, pg))
 
+                    # Detecta página-final: bateria marcada (Final Heat) no
+                    # cronograma, OU página em branco (aguardando balizamento)
+                    # de categoria com final E do workout que a final roda —
+                    # sem a checagem de workout, um dia inteiro pré-balizamento
+                    # (todas as páginas sem bateria) despejaria os workouts
+                    # comuns dentro do 00_FINAIS. Ordena pelo horário do
+                    # heat-final da categoria — assim o 00_FINAIS.pdf sai em
+                    # ordem mesmo com as súmulas ainda em branco.
+                    if b:
+                        # Preenchida: casa pela bateria-final DA CATEGORIA.
+                        # Imune a nº de bateria repetido entre arenas
+                        # (multi-arena); `b in fin_bats` fica de fallback
+                        # pra quando o mapa por categoria não existir
+                        # (parse do Excel falhou → só PASSO 1 disponível).
+                        if cat_pasta in fin_catbat:
+                            eh_final = fin_catbat[cat_pasta][1] == b
+                        else:
+                            eh_final = not fin_catbat and b in fin_bats
+                    elif cat_pasta in fin_catbat:
+                        nomes_final = fin.get('cat_wkts', {}).get(cat_pasta)
+                        # Sem info de workout (bateria roda tudo / config
+                        # antiga): mantém comportamento permissivo.
+                        eh_final = (not nomes_final) or \
+                                   (stem_wkt.upper() in nomes_final)
+                    else:
+                        eh_final = False
+                    if eh_final:
+                        fhor, fbat = fin_catbat.get(cat_pasta, (hor, b))
+                        fkey = ((0, fhor) if fhor else (1, ""),
+                                chave_num(fbat or b), raia, cat_pasta)
+                        finais_dias.setdefault(dia_pasta, []).append(
+                            (fkey, cabeca, pg))
+
         for dia_pasta, chunks in dias.items():
             chunks.sort(key=lambda c: c[0])
             cabeca = chunks[0][1]
             todas = [pg for _, _, pg in chunks]
             agendar(cabeca, todas, "</body></html>",
                     saida / dia_pasta / "00_DIA_COMPLETO.pdf")
+
+        # PDF separado só das finais (além de seguirem no dia-completo)
+        for dia_pasta, chunks in finais_dias.items():
+            chunks.sort(key=lambda c: c[0])
+            cabeca = chunks[0][1]
+            todas = [pg for _, _, pg in chunks]
+            log(f"  ★ {len(todas)} súmula(s) de final em {dia_pasta}/00_FINAIS.pdf")
+            agendar(cabeca, todas, "</body></html>",
+                    saida / dia_pasta / "00_FINAIS.pdf")
 
         # ── Imprime tudo (3 Chromes em paralelo) ──────────────────────────
         total = len(trabalhos)
@@ -345,12 +509,13 @@ def main():
         sys.exit("✗ Google Chrome não encontrado. Instale o Chrome ou defina "
                  "a variável de ambiente CHROME com o caminho do executável.")
 
-    horarios = {}
+    horarios, finais = {}, {}
     try:
         if args.json:
             horarios = carregar_horarios(args.json)
         elif args.excel:
             horarios = carregar_horarios_excel(args.excel)
+            finais = finais_do_excel(args.excel)
     except RuntimeError as e:
         sys.exit(f"✗ {e}")
     if (args.json or args.excel) and not horarios:
@@ -371,7 +536,7 @@ def main():
         def log_flush(msg):
             print(msg, flush=True)
 
-        feitos, erros = converter(raiz, saida, horarios, chrome, log_flush)
+        feitos, erros = converter(raiz, saida, horarios, chrome, log_flush, finais)
         if erros:
             sys.exit(f"\n✗ {len(erros)} PDF(s) falharam de {feitos + len(erros)}.")
         print(f"\n✓ Pronto: {feitos} PDF(s) em {saida}", flush=True)

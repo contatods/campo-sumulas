@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gerar_pdfs import (achar_chrome, converter, carregar_horarios,
-                        carregar_horarios_excel)
+                        carregar_horarios_excel, finais_do_excel)
 
 PORTAS = range(8777, 8798)
 MAX_BODY = 600 * 1024 * 1024          # ZIP de evento grande em base64
@@ -83,74 +83,125 @@ PAGINA = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PDFs por Bateria — Digital Score</title>
 <style>
-:root{--lar:#F95F02;--bg:#101114;--card:#1a1c21;--bord:#2a2d34;--tx:#e8e8e8;--mut:#9a9da6}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--tx);font:15px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif;
-     min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:32px 16px}
-header{display:flex;align-items:center;gap:14px;margin-bottom:26px}
-header img{height:44px;border-radius:8px}
-header h1{font-size:19px;font-weight:800;letter-spacing:.02em}
-header small{display:block;color:var(--mut);font-weight:400;font-size:12px}
-main{width:100%;max-width:680px;display:flex;flex-direction:column;gap:14px}
-.card{background:var(--card);border:1px solid var(--bord);border-radius:14px;padding:18px 20px}
-.card h2{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
-         color:var(--mut);margin-bottom:10px}
-.card h2 .opt{color:#5c5f68;font-weight:400;letter-spacing:.04em;text-transform:none}
-select{width:100%;background:#101114;color:var(--tx);border:1px solid var(--bord);
-       border-radius:9px;padding:10px 12px;font-size:14px;appearance:auto}
-.drop{margin-top:8px;border:1px dashed var(--bord);border-radius:9px;padding:8px 12px;
-      color:var(--mut);font-size:12.5px;text-align:center;cursor:pointer;transition:.15s}
-.drop.over{border-color:var(--lar);color:var(--lar)}
+:root{
+  --bg:#0F0F11;--card:#19191C;--bord:#2A2A30;--bord2:#3a3a42;
+  --lar:#F2691C;--lar-soft:rgba(242,105,28,.13);
+  --cream:#ECE6DB;--tx:#D5D6DA;--mut:#8A8D94;--dim:#5B5E67;
+  --ok:#5ECB71;--okbg:#10271A;--okbd:#1F5733;
+}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;text-transform:uppercase;letter-spacing:.16em}
+.disp{font-family:'Impact','Haettenschweiler','Arial Narrow',sans-serif;text-transform:uppercase;font-weight:400}
+body{
+  background:repeating-linear-gradient(135deg,transparent 0 24px,rgba(242,105,28,.02) 24px 25px),var(--bg);
+  color:var(--tx);font:15px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif;
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;
+}
+/* top status strip */
+.strip{width:100%;border-bottom:1px solid var(--bord);background:rgba(0,0,0,.25)}
+.strip-in{max-width:680px;margin:0 auto;padding:11px 20px;display:flex;justify-content:space-between;
+  align-items:center;font-size:10px}
+.strip-in .l{color:var(--mut)}
+.strip-in .r{color:var(--lar);display:flex;align-items:center;gap:8px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--lar);box-shadow:0 0 8px var(--lar);animation:pulse 2.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+main{width:100%;max-width:680px;padding:30px 20px 36px;display:flex;flex-direction:column;gap:16px}
+/* header */
+header{display:flex;align-items:center;gap:18px;margin-bottom:8px}
+header img{height:50px;border-radius:7px;flex-shrink:0}
+.kick{font-size:10px;color:var(--lar);display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.kick::before{content:"";width:22px;height:2px;background:var(--lar)}
+header h1{font-size:40px;line-height:.9;color:var(--cream);letter-spacing:.015em}
+header h1 b{color:var(--lar);font-weight:400}
+.sub{color:var(--mut);font-size:12.5px;margin-top:9px;max-width:46ch}
+/* cards */
+.card{background:var(--card);border:1px solid var(--bord);border-radius:8px;padding:18px 20px;position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(135deg,transparent 0 15px,rgba(255,255,255,.011) 15px 16px)}
+.card>*{position:relative}
+.lbl{font-size:10.5px;color:var(--lar);margin-bottom:13px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.lbl .n{color:var(--cream);font-size:12px}
+.lbl .opt{color:var(--dim);letter-spacing:.02em;text-transform:none;
+  font-family:-apple-system,'Segoe UI',sans-serif;font-size:11px}
+.recarregar{margin-left:auto;color:var(--mut);font-size:9.5px;text-decoration:none;letter-spacing:.12em;
+  font-family:ui-monospace,Menlo,monospace}
+.recarregar:hover{color:var(--lar)}
+select{width:100%;background:#0F0F11;color:var(--tx);border:1px solid var(--bord2);border-radius:6px;
+  padding:11px 13px;font-size:13.5px;font-family:ui-monospace,Menlo,Consolas,monospace;appearance:auto;cursor:pointer}
+select:focus{outline:none;border-color:var(--lar)}
+.drop{margin-top:9px;border:1px dashed var(--bord2);border-radius:6px;padding:9px 12px;color:var(--mut);
+  font-size:11.5px;text-align:center;cursor:pointer;transition:.15s;letter-spacing:.02em}
+.drop:hover,.drop.over{border-color:var(--lar);color:var(--lar);background:var(--lar-soft)}
 .drop input{display:none}
-.escolhido{margin-top:8px;font-size:12.5px;color:var(--lar);word-break:break-all}
-#btnGerar{background:var(--lar);color:#fff;border:0;border-radius:12px;padding:15px;
-          font-size:16px;font-weight:800;cursor:pointer;letter-spacing:.02em;transition:.15s}
-#btnGerar:hover{filter:brightness(1.08)}
-#btnGerar:disabled{background:#3a3d44;color:#777;cursor:default}
-#aviso{background:#3b1f12;border:1px solid #7a3a10;color:#ffb486;border-radius:10px;
-       padding:12px 14px;font-size:13.5px;display:none}
-#prog{display:none}
-.barra{height:10px;background:#101114;border-radius:99px;overflow:hidden;margin:10px 0 6px}
-.barra i{display:block;height:100%;width:0;background:var(--lar);border-radius:99px;transition:width .2s}
-#progTxt{font-size:13px;color:var(--mut)}
-#log{background:#0b0c0e;border:1px solid var(--bord);border-radius:9px;margin-top:10px;
-     padding:10px 12px;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#b8bbc4;
-     max-height:180px;overflow-y:auto;white-space:pre-wrap;display:none}
-#fim{display:none;text-align:center}
-#fim .ok{font-size:17px;font-weight:800;color:#5ecb71;margin-bottom:4px}
-#fim .pasta{font-size:12.5px;color:var(--mut);word-break:break-all;margin-bottom:14px}
-#btnAbrir{background:transparent;color:var(--lar);border:2px solid var(--lar);border-radius:12px;
-          padding:12px 26px;font-size:15px;font-weight:800;cursor:pointer}
-#btnAbrir:hover{background:var(--lar);color:#fff}
-footer{margin-top:auto;padding-top:28px;color:#5c5f68;font-size:11px}
-a.recarregar{color:var(--mut);font-size:12px;text-decoration:none;float:right}
-a.recarregar:hover{color:var(--lar)}
-.selo{margin-top:9px;font-size:12.5px;display:none;padding:7px 11px;border-radius:8px;line-height:1.35}
-.selo.ok{display:block;color:#7ee29a;background:#11271a;border:1px solid #1f5733}
+.escolhido{margin-top:9px;font-size:11.5px;color:var(--lar);word-break:break-all;font-family:ui-monospace,Menlo,monospace}
+/* selo */
+.selo{margin-top:10px;font-size:11.5px;display:none;padding:9px 12px;border-radius:6px;line-height:1.45;
+  font-family:ui-monospace,Menlo,Consolas,monospace}
+.selo.ok{display:block;color:#8fe6a6;background:var(--okbg);border:1px solid var(--okbd)}
 .selo.warn{display:block;color:#ffb486;background:#2c1a10;border:1px solid #6e3812}
-.selo.chk{display:block;color:var(--mut);background:#16181d;border:1px solid var(--bord)}
+.selo.chk{display:block;color:var(--mut);background:#141416;border:1px solid var(--bord)}
+/* generate */
+#btnGerar{background:var(--lar);color:#1a0f06;border:0;border-radius:8px;padding:16px;cursor:pointer;
+  font-family:'Impact','Haettenschweiler','Arial Narrow',sans-serif;text-transform:uppercase;
+  font-size:25px;letter-spacing:.04em;transition:.15s;margin-top:2px}
+#btnGerar:hover{filter:brightness(1.09)}
+#btnGerar:disabled{background:#2c2c31;color:#6b6e76;cursor:default}
+#aviso{background:#2c1a10;border:1px solid #7a3a10;color:#ffb486;border-radius:8px;padding:12px 14px;
+  font-size:13px;display:none}
+/* progress */
+#prog{display:none}
+.barra{height:9px;background:#0F0F11;border:1px solid var(--bord);border-radius:3px;overflow:hidden;margin:13px 0 9px}
+.barra i{display:block;height:100%;width:0;background:var(--lar);transition:width .25s;box-shadow:0 0 10px var(--lar)}
+#progTxt{font-size:12px;color:var(--mut);font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.05em}
+#log{background:#0A0A0C;border:1px solid var(--bord);border-radius:6px;margin-top:12px;padding:11px 13px;
+  font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#9da0a8;max-height:170px;
+  overflow-y:auto;white-space:pre-wrap;display:none}
+/* done */
+#fim{display:none;text-align:center}
+#fim .big{font-family:'Impact','Haettenschweiler','Arial Narrow',sans-serif;text-transform:uppercase;
+  font-size:32px;color:var(--cream);letter-spacing:.025em;line-height:1}
+#fim .big span{color:var(--ok)}
+#fim .pasta{font-size:11px;color:var(--mut);word-break:break-all;margin:10px 0 17px;
+  font-family:ui-monospace,Menlo,Consolas,monospace}
+#btnAbrir{background:transparent;color:var(--lar);border:1.5px solid var(--lar);border-radius:7px;padding:12px 30px;
+  font-family:'Impact','Haettenschweiler','Arial Narrow',sans-serif;text-transform:uppercase;
+  font-size:18px;letter-spacing:.05em;cursor:pointer}
+#btnAbrir:hover{background:var(--lar);color:#1a0f06}
+footer{width:100%;max-width:680px;padding:20px 20px 30px;color:var(--dim);font-size:9.5px;
+  border-top:1px solid var(--bord);margin-top:6px;display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
 </style>
 </head>
 <body>
-<header>
-  <img src="/logo.png" alt="" onerror="this.style.display='none'">
-  <h1>PDFs por Bateria<small>Súmulas Digital Score</small></h1>
-</header>
+<div class="strip"><div class="strip-in mono">
+  <span class="l">Súmulas · Digital Score</span>
+  <span class="r"><i class="dot"></i>Conversão Local</span>
+</div></div>
 <main>
+  <header>
+    <img src="/logo.png" alt="" onerror="this.style.display='none'">
+    <div>
+      <div class="kick mono">Área de Impressão</div>
+      <h1 class="disp">PDFs por <b>Bateria</b></h1>
+      <div class="sub">Converte as súmulas em PDF — um por bateria + o dia inteiro em ordem cronológica.</div>
+    </div>
+  </header>
+
   <div id="aviso"></div>
 
   <div class="card">
-    <h2>1 · ZIP de súmulas <a class="recarregar" href="#" onclick="carregar();return false">↻ atualizar listas</a></h2>
+    <div class="lbl mono"><span class="n">01</span> · ZIP de Súmulas
+      <a class="recarregar" href="#" onclick="carregar();return false">↻ Atualizar</a></div>
     <select id="selZip"></select>
-    <label class="drop" id="dropZip">…ou clique/arraste o arquivo .zip aqui
+    <label class="drop" id="dropZip">…ou clique / arraste o arquivo .zip aqui
       <input type="file" accept=".zip" onchange="upload(this,'zip')"></label>
     <div class="escolhido" id="escZip"></div>
   </div>
 
   <div class="card">
-    <h2>2 · Cronograma das baterias <span class="opt">— Excel de programação ou backup JSON (opcional, ordena o dia completo por horário)</span></h2>
+    <div class="lbl mono"><span class="n">02</span> · Cronograma
+      <span class="opt">— Excel de programação ou backup JSON (opcional, ordena o dia completo por horário)</span></div>
     <select id="selCron" onchange="checarCron()"></select>
-    <label class="drop" id="dropCron">…ou clique/arraste o .xlsx / .json aqui
+    <label class="drop" id="dropCron">…ou clique / arraste o .xlsx / .json aqui
       <input type="file" accept=".xlsx,.xlsm,.json" onchange="upload(this,'cron')"></label>
     <div class="escolhido" id="escCron"></div>
     <div class="selo" id="seloCron"></div>
@@ -159,19 +210,22 @@ a.recarregar:hover{color:var(--lar)}
   <button id="btnGerar" onclick="gerar()">Gerar PDFs</button>
 
   <div class="card" id="prog">
-    <h2>Convertendo…</h2>
+    <div class="lbl mono"><span class="n">▶</span> Convertendo</div>
     <div class="barra"><i id="barra"></i></div>
     <div id="progTxt">preparando…</div>
     <div id="log"></div>
   </div>
 
   <div class="card" id="fim">
-    <div class="ok">✓ PDFs prontos!</div>
+    <div class="big disp">PDFs <span>Prontos</span></div>
     <div class="pasta" id="fimPasta"></div>
     <button id="btnAbrir" onclick="abrirPasta()">Abrir pasta</button>
   </div>
 </main>
-<footer>Conversão local com o Chrome/Edge desta máquina — saída idêntica ao Ctrl+P · v{{VERSAO}}</footer>
+<footer>
+  <span class="mono">Digital Score · Súmulas</span>
+  <span class="mono">Chrome/Edge local · idêntico ao Ctrl+P · v{{VERSAO}}</span>
+</footer>
 <script>
 let upZip = null, upCron = null, pastaFinal = '';
 
@@ -225,7 +279,8 @@ async function checarCron(){
   }catch(e){ d = {total:0, erro:'falha ao ler'}; }
   if(d.total>0){
     selo.className='selo ok';
-    selo.textContent=`✓ ${d.total} horários de bateria carregados`+(d.exemplo?` (ex: ${d.exemplo})`:'');
+    selo.textContent=`✓ ${d.total} horários de bateria carregados`+(d.exemplo?` (ex: ${d.exemplo})`:'')
+      +(d.finais?` · ${d.finais} baterias-final → 00_FINAIS.pdf`:'');
   } else {
     selo.className='selo warn';
     selo.textContent='⚠ nenhum horário reconhecido neste arquivo'
@@ -401,9 +456,18 @@ class GuiHandler(BaseHTTPRequestHandler):
             if comhora:
                 v, num = min(comhora)
                 exemplo = f"bat {num} = {v}"
+            # Finais detectadas (só de Excel) — vira selo "+ N baterias-final"
+            n_finais = 0
+            if not caminho.lower().endswith('.json'):
+                try:
+                    fin = finais_do_excel(caminho)
+                    n_finais = sum(len(d.get('bats', set())) for d in fin.values())
+                except Exception:
+                    n_finais = 0
             self._send(200, 'application/json',
                        json.dumps({"total": len(horarios),
-                                   "exemplo": exemplo}).encode())
+                                   "exemplo": exemplo,
+                                   "finais": n_finais}).encode())
         except Exception as e:
             self._send(200, 'application/json',
                        json.dumps({"total": 0, "erro": str(e)}).encode())
@@ -446,7 +510,7 @@ class GuiHandler(BaseHTTPRequestHandler):
                 shutil.rmtree(saida, ignore_errors=True)   # limpa geração velha
 
             # ── Cronograma (opcional): caminho ou upload ──────────────────
-            horarios = {}
+            horarios, finais = {}, {}
             cron_path = None
             if body.get('cron_caminho'):
                 cron_path = body['cron_caminho']
@@ -458,6 +522,12 @@ class GuiHandler(BaseHTTPRequestHandler):
                 if not horarios:
                     self._chunk("⚠  cronograma sem horários de bateria — ordem "
                                 "do dia completo cai pra Categoria → Workout → Bateria")
+                # Finais só saem de Excel (o '(Final Heat)' não sobrevive no JSON)
+                if not cron_path.lower().endswith('.json'):
+                    try:
+                        finais = finais_do_excel(cron_path)
+                    except Exception:
+                        finais = {}
 
             self._chunk("⏳ descompactando ZIP…")
             raiz = tmp / 'html'
@@ -465,7 +535,7 @@ class GuiHandler(BaseHTTPRequestHandler):
                 zf.extractall(raiz)
 
             feitos, erros = converter(raiz, saida, horarios, CHROME,
-                                      log=self._chunk)
+                                      log=self._chunk, finais=finais)
             if erros:
                 raise RuntimeError(f"{len(erros)} PDF(s) falharam — veja o log")
             self._chunk(f"FIM_OK\t{saida}")
