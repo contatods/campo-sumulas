@@ -10,6 +10,11 @@ on:
   push:
     tags: ["app-v*"]
 
+env:
+  # Console do runner Windows é cp1252 — os prints com '→ ✓ ✗' do
+  # build_app.py estouram charmap_encode sem isto.
+  PYTHONUTF8: "1"
+
 jobs:
   build:
     strategy:
