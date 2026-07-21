@@ -62,6 +62,8 @@ Esta pasta (ou pelo menos estes arquivos, juntos na mesma pasta):
   Gerar PDFs.command         ← atalho do Mac
   Gerar PDFs.bat             ← atalho do Windows
   ds_logo.png                ← logo (opcional, só estética)
+  fonts/ (pasta)             ← fontes oficiais da interface (opcional;
+                               sem elas o visual usa fontes do sistema)
   LEIA-ME — PDFs por bateria.txt
 
 Observação: a opção de cronograma em EXCEL só funciona se a pasta tiver
