@@ -21,3 +21,9 @@ exemplo/
 # Arquivos de exemplo de eventos reais (não comitar)
 exemplo-*.xlsx
 tmp_monstar.xlsx
+
+# Build do app de desktop (gerados por build_app.py)
+build/
+dist/
+VERSION.txt
+*.spec

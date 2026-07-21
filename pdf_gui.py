@@ -76,11 +76,19 @@ def _carregar_cronograma(caminho):
     return carregar_horarios_excel(caminho)
 
 
+def _base_dir():
+    """Pasta dos recursos (fontes, logo). Rodando normal = pasta deste
+    arquivo; congelado num app (PyInstaller) = pasta de dados do bundle."""
+    if getattr(sys, 'frozen', False):
+        return Path(getattr(sys, '_MEIPASS', Path(sys.executable).parent))
+    return Path(__file__).resolve().parent
+
+
 def _font_data_uri(nome):
     """woff2 de fonts/ como data: URI — as MESMAS fontes self-hosted do site
     de eventos (Barlow Condensed 900 / IBM Plex Mono 600). Ausente → string
     vazia e o CSS cai no fallback de sistema."""
-    f = Path(__file__).parent / "fonts" / nome
+    f = _base_dir() / "fonts" / nome
     if f.exists():
         return "data:font/woff2;base64," + base64.b64encode(f.read_bytes()).decode()
     return ""
@@ -426,7 +434,7 @@ class GuiHandler(BaseHTTPRequestHandler):
                           .replace('{{VERSAO}}', VERSAO))
             self._send(200, 'text/html; charset=utf-8', html.encode())
         elif path == '/logo.png':
-            logo = Path(__file__).parent / 'ds_logo.png'
+            logo = _base_dir() / 'ds_logo.png'
             if logo.exists():
                 self._send(200, 'image/png', logo.read_bytes())
             else:
@@ -579,12 +587,17 @@ class GuiHandler(BaseHTTPRequestHandler):
 
 
 def _ler_versao():
-    """Versão do app (sumula_app.py define VERSION) sem importar o app inteiro."""
+    """Versão do app: sumula_app.py (repo) ou VERSION.txt (bundle do app)."""
     try:
         import re as _re
-        src = (Path(__file__).parent / 'sumula_app.py').read_text(encoding='utf-8')
+        src = (_base_dir() / 'sumula_app.py').read_text(encoding='utf-8')
         m = _re.search(r"VERSION\s*=\s*['\"]([^'\"]+)['\"]", src)
-        return m.group(1) if m else "dev"
+        if m:
+            return m.group(1)
+    except OSError:
+        pass
+    try:
+        return (_base_dir() / 'VERSION.txt').read_text(encoding='utf-8').strip()
     except OSError:
         return "dev"
 
@@ -592,17 +605,23 @@ def _ler_versao():
 VERSAO = _ler_versao()
 
 
-def main():
-    server = None
+def criar_server():
+    """Sobe o servidor local numa porta livre (ou None se todas ocupadas).
+    Usado pelo main() (modo navegador) e pelo pdf_app.py (janela nativa)."""
     for porta in PORTAS:
         try:
             server = ThreadingHTTPServer(('127.0.0.1', porta), GuiHandler)
-            break
+            server.daemon_threads = True
+            return server
         except OSError:
             continue
+    return None
+
+
+def main():
+    server = criar_server()
     if not server:
         sys.exit("✗ nenhuma porta livre entre 8777 e 8797")
-    server.daemon_threads = True
     url = f"http://localhost:{server.server_address[1]}"
     print("╔══════════════════════════════════════════════╗")
     print("║   PDFs por Bateria — Súmulas Digital Score   ║")

@@ -1,0 +1,89 @@
+# Constrói o app de desktop "Digital Score PDFs" (Mac + Windows).
+#
+# Dispara: manualmente (aba Actions → Run workflow) ou ao empurrar uma tag
+# começando com "app-v" (ex: app-v2.7.0). Com tag, publica os dois
+# instaladores numa Release do GitHub — é de lá que a equipe baixa.
+name: Build apps
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["app-v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependências de build
+        run: pip install pyinstaller pywebview openpyxl jinja2 pillow
+
+      - name: Empacotar
+        run: python build_app.py
+
+      - name: Smoke test (servidor do bundle, sem janela)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            BIN="dist/Digital Score PDFs.app/Contents/MacOS/Digital Score PDFs"
+          else
+            BIN="dist/Digital Score PDFs.exe"
+          fi
+          PDF_APP_NOGUI=1 "$BIN" &
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8777/api/arquivos && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8777/ | grep -q "PDFs por" && echo "smoke ok"
+
+      - name: Compactar .app (mac)
+        if: runner.os == 'macOS'
+        run: cd dist && ditto -c -k --keepParent "Digital Score PDFs.app" "DigitalScorePDFs-Mac.zip"
+
+      - name: Renomear .exe (windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: mv "dist/Digital Score PDFs.exe" "dist/DigitalScorePDFs-Windows.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ runner.os }}
+          path: |
+            dist/DigitalScorePDFs-Mac.zip
+            dist/DigitalScorePDFs-Windows.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/app-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/DigitalScorePDFs-Mac.zip
+            dist/DigitalScorePDFs-Windows.exe
+          body: |
+            **Digital Score PDFs** — app de desktop do conversor de súmulas.
+
+            - **Mac**: baixe o `DigitalScorePDFs-Mac.zip`, descompacte e arraste
+              o app para Aplicativos. Primeira abertura: botão direito → Abrir.
+            - **Windows**: baixe o `DigitalScorePDFs-Windows.exe`. Se o
+              SmartScreen avisar: Mais informações → Executar assim mesmo.
+
+            Requisito: Google Chrome (Mac) ou Chrome/Edge (Windows).
