@@ -27,3 +27,6 @@ build/
 dist/
 VERSION.txt
 *.spec
+
+# Arquivos Icon do Finder/Creative Cloud (quebram checkout no Windows)
+Icon
