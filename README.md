@@ -68,6 +68,9 @@ Saída (pasta `<zip>_PDFs` ao lado do ZIP):
 
 - `<Dia>/<Categoria>/<NN_Workout>/Bateria_03.pdf` — só as páginas daquela bateria
 - `<Dia>/00_DIA_COMPLETO.pdf` — dia inteiro em ordem cronológica de bateria
+- `<Dia>/00_FINAIS.pdf` — só as baterias "(Final Heat)" do cronograma (Excel
+  obrigatório pra esse; multi-arena suportado; finais em branco saem com o
+  banner de aguardando balizamento)
 
 Os horários das baterias (pra ordenação cronológica do dia completo) vêm de
 `--excel` (o mesmo Excel de programação que o app importa) ou `--json` (o

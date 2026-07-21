@@ -9,6 +9,12 @@ PDFs prontos pra impressão, organizados assim:
   Dia/Categoria/Workout/Bateria_03.pdf   → um PDF por bateria
   Dia/00_DIA_COMPLETO.pdf                → o dia inteiro em ordem cronológica
                                            (horário → bateria → raia)
+  Dia/00_FINAIS.pdf                      → só as súmulas das baterias de
+                                           FINAL (as marcadas "(Final Heat)"
+                                           no cronograma; requer o Excel no
+                                           passo 2 — sai também se as finais
+                                           ainda estiverem aguardando
+                                           balizamento)
 
 A conversão usa o navegador do seu computador (Chrome ou Edge) — o PDF sai
 idêntico ao que você vê no Ctrl+P, sem deformar logo nem fontes.
