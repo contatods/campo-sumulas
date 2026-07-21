@@ -316,7 +316,11 @@ def imprimir_pdf(chrome, html_path, pdf_path):
     raise RuntimeError(f"Chrome falhou em {pdf_path.name}: {erro}")
 
 
-def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None):
+SAIDAS_TODAS = frozenset({'baterias', 'dia', 'finais'})
+
+
+def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None,
+              saidas=None):
     """Converte a árvore de HTMLs de `raiz` em PDFs organizados em `saida`.
 
     raiz: pasta com <Dia>/<Categoria>/NN_workout.html (shape do ZIP do app).
@@ -325,11 +329,15 @@ def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None):
             <Dia>/00_FINAIS.pdf só com as súmulas das baterias-final (elas
             CONTINUAM no 00_DIA_COMPLETO.pdf também — saída adicional, não
             exclusiva). Funciona com finais preenchidas ou ainda em branco.
+    saidas: subconjunto de {'baterias','dia','finais'} — QUAIS produtos
+            gerar. None/vazio = todos (compat). Ex.: {'finais'} regenera só
+            o 00_FINAIS.pdf em segundos, sem refazer o dia inteiro.
     Retorna (n_pdfs_ok, lista_de_erros). Levanta RuntimeError sem Chrome.
     """
     raiz, saida = Path(raiz), Path(saida)
     horarios = horarios or {}
     finais = finais or {}
+    saidas = (set(saidas or ()) & SAIDAS_TODAS) or set(SAIDAS_TODAS)
     chrome = chrome or achar_chrome()
     if not chrome:
         raise RuntimeError("Google Chrome não encontrado nesta máquina")
@@ -385,14 +393,15 @@ def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None):
 
             pasta_pdf = saida / dia_pasta / cat_pasta
             so_sem_bateria = ordem == [""]
-            if so_sem_bateria:
-                # Súmula em branco ou "aguardando balizamento": sem bateria
-                # pra fatiar — vira um PDF único do workout.
-                agendar(cabeca, paginas, cauda, pasta_pdf / f"{stem}.pdf")
-            else:
-                for b in sorted(ordem, key=chave_num):
-                    agendar(cabeca, grupos[b], cauda,
-                            pasta_pdf / stem / f"{rotulo_bateria(b)}.pdf")
+            if 'baterias' in saidas:
+                if so_sem_bateria:
+                    # Súmula em branco ou "aguardando balizamento": sem bateria
+                    # pra fatiar — vira um PDF único do workout.
+                    agendar(cabeca, paginas, cauda, pasta_pdf / f"{stem}.pdf")
+                else:
+                    for b in sorted(ordem, key=chave_num):
+                        agendar(cabeca, grupos[b], cauda,
+                                pasta_pdf / stem / f"{rotulo_bateria(b)}.pdf")
 
             # Páginas pro PDF mestre do dia, ordenadas página a página:
             # horário → bateria → raia. Em bateria mista (2 categorias na
@@ -451,21 +460,23 @@ def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None):
                         finais_dias.setdefault(dia_pasta, []).append(
                             (fkey, cabeca, pg))
 
-        for dia_pasta, chunks in dias.items():
-            chunks.sort(key=lambda c: c[0])
-            cabeca = chunks[0][1]
-            todas = [pg for _, _, pg in chunks]
-            agendar(cabeca, todas, "</body></html>",
-                    saida / dia_pasta / "00_DIA_COMPLETO.pdf")
+        if 'dia' in saidas:
+            for dia_pasta, chunks in dias.items():
+                chunks.sort(key=lambda c: c[0])
+                cabeca = chunks[0][1]
+                todas = [pg for _, _, pg in chunks]
+                agendar(cabeca, todas, "</body></html>",
+                        saida / dia_pasta / "00_DIA_COMPLETO.pdf")
 
         # PDF separado só das finais (além de seguirem no dia-completo)
-        for dia_pasta, chunks in finais_dias.items():
-            chunks.sort(key=lambda c: c[0])
-            cabeca = chunks[0][1]
-            todas = [pg for _, _, pg in chunks]
-            log(f"  ★ {len(todas)} súmula(s) de final em {dia_pasta}/00_FINAIS.pdf")
-            agendar(cabeca, todas, "</body></html>",
-                    saida / dia_pasta / "00_FINAIS.pdf")
+        if 'finais' in saidas:
+            for dia_pasta, chunks in finais_dias.items():
+                chunks.sort(key=lambda c: c[0])
+                cabeca = chunks[0][1]
+                todas = [pg for _, _, pg in chunks]
+                log(f"  ★ {len(todas)} súmula(s) de final em {dia_pasta}/00_FINAIS.pdf")
+                agendar(cabeca, todas, "</body></html>",
+                        saida / dia_pasta / "00_FINAIS.pdf")
 
         # ── Imprime tudo (3 Chromes em paralelo) ──────────────────────────
         total = len(trabalhos)
@@ -498,7 +509,18 @@ def main():
     ap.add_argument("--json", help="backup JSON do app (horários das baterias)")
     ap.add_argument("--excel", help="Excel de programação (mesmos formatos do app)")
     ap.add_argument("--saida", help="pasta de destino dos PDFs")
+    ap.add_argument("--apenas", help="quais produtos gerar, separados por "
+                    "vírgula: baterias,dia,finais (default: todos). "
+                    "Ex.: --apenas finais")
     args = ap.parse_args()
+
+    saidas = None
+    if args.apenas:
+        saidas = {s.strip() for s in args.apenas.split(",") if s.strip()}
+        invalidas = saidas - SAIDAS_TODAS
+        if invalidas:
+            sys.exit(f"✗ --apenas inválido: {sorted(invalidas)} "
+                     f"(use: {sorted(SAIDAS_TODAS)})")
 
     entrada = Path(args.entrada).expanduser()
     if not entrada.exists():
@@ -536,7 +558,11 @@ def main():
         def log_flush(msg):
             print(msg, flush=True)
 
-        feitos, erros = converter(raiz, saida, horarios, chrome, log_flush, finais)
+        feitos, erros = converter(raiz, saida, horarios, chrome, log_flush,
+                                  finais, saidas)
+        if feitos == 0 and not erros:
+            print("⚠  nada a gerar com essa combinação (ex.: --apenas finais "
+                  "sem cronograma com '(Final Heat)').", flush=True)
         if erros:
             sys.exit(f"\n✗ {len(erros)} PDF(s) falharam de {feitos + len(erros)}.")
         print(f"\n✓ Pronto: {feitos} PDF(s) em {saida}", flush=True)

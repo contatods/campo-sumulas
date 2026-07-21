@@ -167,6 +167,21 @@ select:focus{outline:none;border-color:var(--lar-bord)}
 .drop input{display:none}
 .escolhido{margin-top:9px;font-size:11.5px;color:var(--lar);word-break:break-all;
   font-family:'IBM Plex Mono',ui-monospace,monospace}
+/* o que gerar (checkboxes no estilo do site) */
+.saidas{display:flex;gap:10px;flex-wrap:wrap}
+.saida{flex:1;min-width:180px;display:flex;align-items:flex-start;gap:10px;padding:11px 13px;
+  background:rgba(0,0,0,.35);border:1px solid var(--bord);border-radius:4px;cursor:pointer;
+  transition:.15s;user-select:none}
+.saida:hover{border-color:var(--lar-bord)}
+.saida input{appearance:none;width:15px;height:15px;margin-top:2px;flex-shrink:0;cursor:pointer;
+  border:1.5px solid var(--bord2);border-radius:3px;background:transparent;position:relative;transition:.15s}
+.saida input:checked{background:var(--lar);border-color:var(--lar)}
+.saida input:checked::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;
+  border:solid #0a0a0a;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.saida.off{opacity:.45}
+.saida b{display:block;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--cream);font-weight:600}
+.saida small{display:block;color:var(--mut);font-size:10.5px;line-height:1.4;margin-top:3px}
 /* selo */
 .selo{margin-top:10px;font-size:11.5px;display:none;padding:9px 12px;border-radius:4px;line-height:1.5;
   font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace}
@@ -237,6 +252,18 @@ footer{width:100%;max-width:880px;padding:20px 24px 30px;color:var(--dim);font-s
       <input type="file" accept=".xlsx,.xlsm,.json" onchange="upload(this,'cron')"></label>
     <div class="escolhido" id="escCron"></div>
     <div class="selo" id="seloCron"></div>
+  </div>
+
+  <div class="card">
+    <div class="lbl mono"><span class="n">03</span> · O que gerar</div>
+    <div class="saidas">
+      <label class="saida"><input type="checkbox" id="sBaterias" checked onchange="this.closest('.saida').classList.toggle('off',!this.checked)">
+        <span><b>PDFs por bateria</b><small>um PDF por bateria, em pastas por categoria — o maço de cada head judge</small></span></label>
+      <label class="saida"><input type="checkbox" id="sDia" checked onchange="this.closest('.saida').classList.toggle('off',!this.checked)">
+        <span><b>Dia completo</b><small>tudo num PDF só, em ordem horário → bateria → raia (impressão em lote)</small></span></label>
+      <label class="saida"><input type="checkbox" id="sFinais" checked onchange="this.closest('.saida').classList.toggle('off',!this.checked)">
+        <span><b>Finais</b><small>00_FINAIS.pdf com as baterias "(Final Heat)" — precisa do Excel no passo 2</small></span></label>
+    </div>
   </div>
 
   <button id="btnGerar" onclick="gerar()">Gerar PDFs</button>
@@ -337,6 +364,16 @@ async function gerar(){
   const zipSel = document.getElementById('selZip').value;
   if(!zipSel && !upZip){ alert('Escolha o ZIP de súmulas primeiro.'); return; }
 
+  const saidas = [];
+  if(document.getElementById('sBaterias').checked) saidas.push('baterias');
+  if(document.getElementById('sDia').checked) saidas.push('dia');
+  if(document.getElementById('sFinais').checked) saidas.push('finais');
+  if(!saidas.length){ alert('Marque pelo menos uma opção em "O que gerar".'); return; }
+  if(saidas.includes('finais') && saidas.length===1){
+    const temCron = document.getElementById('selCron').value || upCron;
+    if(!temCron){ alert('Gerar só as Finais exige o cronograma (Excel) no passo 2 — é ele que marca as baterias "(Final Heat)".'); return; }
+  }
+
   // Rede de segurança: revalida o cronograma na hora de gerar. Sem horários
   // (campo vazio OU arquivo sem cronograma), o dia completo sai em ordem
   // alfabética — confirma antes pra ninguém gerar fora de ordem sem querer.
@@ -348,7 +385,7 @@ async function gerar(){
     if(!confirm(msg)) return;
   }
 
-  const body = {};
+  const body = {saidas};
   if(upZip){ body.zip_nome=upZip.nome; body.zip_b64=upZip.b64; } else body.zip_caminho=zipSel;
   const cronSel = document.getElementById('selCron').value;
   if(upCron){ body.cron_nome=upCron.nome; body.cron_b64=upCron.b64; } else if(cronSel) body.cron_caminho=cronSel;
@@ -541,13 +578,21 @@ class GuiHandler(BaseHTTPRequestHandler):
             else:
                 raise RuntimeError("nenhum ZIP informado")
 
+            # Quais produtos gerar (checkboxes do passo 03)
+            from gerar_pdfs import SAIDAS_TODAS
+            saidas = set(body.get('saidas') or []) & SAIDAS_TODAS or set(SAIDAS_TODAS)
+
             # Saída: ao lado do ZIP escolhido; uploads caem em ~/Downloads
             if body.get('zip_caminho'):
                 saida = zip_path.parent / f"{zip_path.stem}_PDFs"
             else:
                 saida = Path.home() / 'Downloads' / f"{zip_path.stem}_PDFs"
-            if saida.is_dir() and saida.name.endswith('_PDFs'):
-                shutil.rmtree(saida, ignore_errors=True)   # limpa geração velha
+            # Limpa a geração velha SÓ quando gera tudo — regeração parcial
+            # (ex.: só as finais pós-balizamento) preserva os PDFs anteriores
+            # e apenas sobrescreve os arquivos que produzir.
+            if (saidas == set(SAIDAS_TODAS) and saida.is_dir()
+                    and saida.name.endswith('_PDFs')):
+                shutil.rmtree(saida, ignore_errors=True)
 
             # ── Cronograma (opcional): caminho ou upload ──────────────────
             horarios, finais = {}, {}
@@ -575,9 +620,14 @@ class GuiHandler(BaseHTTPRequestHandler):
                 zf.extractall(raiz)
 
             feitos, erros = converter(raiz, saida, horarios, CHROME,
-                                      log=self._chunk, finais=finais)
+                                      log=self._chunk, finais=finais,
+                                      saidas=saidas)
             if erros:
                 raise RuntimeError(f"{len(erros)} PDF(s) falharam — veja o log")
+            if feitos == 0:
+                raise RuntimeError(
+                    "nada foi gerado — 'Finais' sozinho exige um cronograma "
+                    "com baterias '(Final Heat)' marcadas")
             self._chunk(f"FIM_OK\t{saida}")
         except Exception as e:
             self._chunk(f"FIM_ERRO\t{e}")

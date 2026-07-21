@@ -50,7 +50,8 @@ def captura(monkeypatch):
     return out
 
 
-def _converter(tmp_path, arquivos, horarios=None, finais=None, captura=None):
+def _converter(tmp_path, arquivos, horarios=None, finais=None, captura=None,
+               saidas=None):
     """arquivos: {'Dia/Cat/01_WOD.html': [(bat, raia), ...]}"""
     raiz = tmp_path / "raiz"
     for rel, pgs in arquivos.items():
@@ -58,7 +59,7 @@ def _converter(tmp_path, arquivos, horarios=None, finais=None, captura=None):
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(_html_paginas(pgs), encoding="utf-8")
     G.converter(raiz, tmp_path / "out", horarios or {}, chrome="/fake",
-                log=lambda m: None, finais=finais or {})
+                log=lambda m: None, finais=finais or {}, saidas=saidas)
     return captura
 
 
@@ -192,6 +193,30 @@ def test_mestre_ordena_horario_bateria_raia(tmp_path, captura):
     }, horarios=horarios, captura=captura)
     mestre = cap["out/Sab/00_DIA_COMPLETO.pdf"]
     assert mestre == [("1", "1"), ("2", "1"), ("2", "2"), ("2", "3")]
+
+
+def test_saidas_so_finais_gera_apenas_finais(tmp_path, captura):
+    """Seleção de produtos: {'finais'} não gera baterias nem dia completo —
+    é o caminho rápido de regerar finais pós-balizamento."""
+    cap = _converter(tmp_path, {
+        "Domingo/Rx_Masculino/03_FINAL_WOD.html": [("11", "1"), ("27", "1")],
+    }, finais=FINAIS_RX, captura=captura, saidas={"finais"})
+    assert list(cap.keys()) == ["out/Domingo/00_FINAIS.pdf"]
+
+
+def test_saidas_sem_dia_completo(tmp_path, captura):
+    cap = _converter(tmp_path, {
+        "Sab/Alfa/01_W.html": [("1", "1")],
+    }, captura=captura, saidas={"baterias"})
+    assert "out/Sab/00_DIA_COMPLETO.pdf" not in cap
+    assert "Alfa/01_W/Bateria_01.pdf" in "".join(cap.keys())
+
+
+def test_saidas_invalidas_caem_no_padrao_tudo(tmp_path, captura):
+    cap = _converter(tmp_path, {
+        "Sab/Alfa/01_W.html": [("1", "1")],
+    }, captura=captura, saidas={"banana"})
+    assert "out/Sab/00_DIA_COMPLETO.pdf" in cap          # gerou tudo
 
 
 def test_sem_horario_agrupa_por_categoria(tmp_path, captura):
