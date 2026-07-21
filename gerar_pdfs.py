@@ -183,6 +183,79 @@ def carregar_horarios(json_path):
     return horarios_do_config(snap.get("config", snap))
 
 
+def _blocos_cronograma(ws):
+    """Blocos de um cronograma multi-arena: [(ci_cat, ci_bat, arena)].
+
+    Cada bloco fica lado a lado na aba, com 'Arena: X' na linha 1 (na
+    coluna inicial do bloco) e cabeçalho Categoria/Bateria logo abaixo.
+    Aba de arena única (Storm) não tem marcador → arena = ''.
+    Retorna também a linha do cabeçalho (hdr) ou (None, []) sem cabeçalho.
+    """
+    blocos, hdr = [], None
+    for r in ws.iter_rows(min_row=1, max_row=8):
+        cats = [c.column - 1 for c in r
+                if c.value and str(c.value).strip().lower() == 'categoria']
+        bats = [c.column - 1 for c in r
+                if c.value and str(c.value).strip().lower() == 'bateria']
+        if cats and bats:
+            hdr = r[0].row
+            for ci in cats:
+                cand = [bi for bi in bats if bi > ci]
+                if cand:
+                    blocos.append([ci, min(cand), ""])
+            break
+    if hdr is None:
+        return None, []
+    # Marcadores 'Arena: X' acima do cabeçalho → atribui ao bloco cujo
+    # início (coluna Categoria) está mais próximo à direita do marcador.
+    marcadores = []
+    for r in ws.iter_rows(min_row=1, max_row=hdr - 1):
+        for c in r:
+            if c.value and 'arena' in str(c.value).lower():
+                nome = re.sub(r'(?i)^\s*arena\s*:?\s*', '',
+                              str(c.value).splitlines()[0]).strip()
+                if nome:
+                    marcadores.append((c.column - 1, nome))
+    for col_m, nome in marcadores:
+        cand = [b for b in blocos if b[0] >= col_m - 1]
+        if cand:
+            min(cand, key=lambda b: b[0] - col_m)[2] = nome
+    return hdr, [(ci, bi, ar) for ci, bi, ar in blocos]
+
+
+def arenas_do_excel(xlsx_path):
+    """Excel de programação → {dia_pasta: {bateria_str: nome_da_arena}}.
+
+    Multi-arena (Pwrd By Coffee): cada bloco da aba declara 'Arena: X' e
+    lista suas baterias — o mapa diz de que arena é cada bateria do dia.
+    Evento de arena única (sem marcadores) → {} (divisão não se aplica).
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+    pular = ('montagem', 'workout', 'equipamento', 'inscrito', 'atleta',
+             'análise', 'analise')
+    arenas = {}
+    for nome in wb.sheetnames:
+        if any(p in nome.lower() for p in pular):
+            continue
+        hdr, blocos = _blocos_cronograma(wb[nome])
+        if hdr is None or not any(ar for _, _, ar in blocos):
+            continue                      # sem marcador de arena → pula
+        dia_pasta = sanitize(nome)
+        ws = wb[nome]
+        for r in ws.iter_rows(min_row=hdr + 1):
+            for ci_cat, ci_bat, arena in blocos:
+                if not arena:
+                    continue
+                if ci_bat < len(r) and r[ci_bat].value is not None:
+                    bat = str(r[ci_bat].value).strip()
+                    if bat.endswith('.0'):
+                        bat = bat[:-2]
+                    if bat:
+                        arenas.setdefault(dia_pasta, {})[bat] = arena
+    return arenas
+
+
 def finais_do_excel(xlsx_path):
     """Lê o Excel de programação e identifica as baterias de FINAL.
 
@@ -316,11 +389,15 @@ def imprimir_pdf(chrome, html_path, pdf_path):
     raise RuntimeError(f"Chrome falhou em {pdf_path.name}: {erro}")
 
 
-SAIDAS_TODAS = frozenset({'baterias', 'dia', 'finais'})
+# 'arenas' é válida mas NÃO entra no padrão: só faz sentido em evento
+# multi-arena e é opt-in (checkbox desmarcado / --apenas arenas).
+SAIDAS_VALIDAS = frozenset({'baterias', 'dia', 'finais', 'arenas'})
+SAIDAS_PADRAO = frozenset({'baterias', 'dia', 'finais'})
+SAIDAS_TODAS = SAIDAS_VALIDAS          # compat com importadores antigos
 
 
 def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None,
-              saidas=None):
+              saidas=None, arenas=None):
     """Converte a árvore de HTMLs de `raiz` em PDFs organizados em `saida`.
 
     raiz: pasta com <Dia>/<Categoria>/NN_workout.html (shape do ZIP do app).
@@ -329,15 +406,20 @@ def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None,
             <Dia>/00_FINAIS.pdf só com as súmulas das baterias-final (elas
             CONTINUAM no 00_DIA_COMPLETO.pdf também — saída adicional, não
             exclusiva). Funciona com finais preenchidas ou ainda em branco.
-    saidas: subconjunto de {'baterias','dia','finais'} — QUAIS produtos
-            gerar. None/vazio = todos (compat). Ex.: {'finais'} regenera só
-            o 00_FINAIS.pdf em segundos, sem refazer o dia inteiro.
+    saidas: subconjunto de SAIDAS_VALIDAS — QUAIS produtos gerar.
+            None/vazio = SAIDAS_PADRAO (baterias+dia+finais). Ex.:
+            {'finais'} regenera só o 00_FINAIS.pdf em segundos.
+    arenas: mapa de arenas_do_excel() — com a saída 'arenas' marcada, gera
+            <Dia>/00_ARENA_<Nome>.pdf por arena (pilha cronológica própria;
+            arenas rodam em paralelo, então o dia-completo único não serve
+            pra impressão em evento multi-arena).
     Retorna (n_pdfs_ok, lista_de_erros). Levanta RuntimeError sem Chrome.
     """
     raiz, saida = Path(raiz), Path(saida)
     horarios = horarios or {}
     finais = finais or {}
-    saidas = (set(saidas or ()) & SAIDAS_TODAS) or set(SAIDAS_TODAS)
+    arenas = arenas or {}
+    saidas = (set(saidas or ()) & SAIDAS_VALIDAS) or set(SAIDAS_PADRAO)
     chrome = chrome or achar_chrome()
     if not chrome:
         raise RuntimeError("Google Chrome não encontrado nesta máquina")
@@ -352,6 +434,8 @@ def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None,
         trabalhos = []          # (html_temporário, pdf_destino)
         dias = {}               # dia → páginas do mestre: (sort_key, cabeca, pg)
         finais_dias = {}        # dia → páginas-final: (sort_key, cabeca, pg)
+        arena_dias = {}         # (dia, arena) → páginas: (sort_key, cabeca, pg)
+        arena_sem_mapa = {}     # dia → nº de páginas sem arena identificável
         html_dir = tmp / "html"
         html_dir.mkdir()
         n_tmp = 0
@@ -427,6 +511,17 @@ def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None,
                     dias.setdefault(dia_pasta, []).append(
                         (sort_key, cabeca, pg))
 
+                    # Pilha por arena (multi-arena): cada arena roda em
+                    # paralelo e imprime a própria sequência cronológica.
+                    if 'arenas' in saidas:
+                        ar = arenas.get(dia_pasta, {}).get(b) if b else None
+                        if ar:
+                            arena_dias.setdefault((dia_pasta, ar), []).append(
+                                (sort_key, cabeca, pg))
+                        else:
+                            arena_sem_mapa[dia_pasta] = \
+                                arena_sem_mapa.get(dia_pasta, 0) + 1
+
                     # Detecta página-final: bateria marcada (Final Heat) no
                     # cronograma, OU página em branco (aguardando balizamento)
                     # de categoria com final E do workout que a final roda —
@@ -467,6 +562,24 @@ def converter(raiz, saida, horarios=None, chrome=None, log=print, finais=None,
                 todas = [pg for _, _, pg in chunks]
                 agendar(cabeca, todas, "</body></html>",
                         saida / dia_pasta / "00_DIA_COMPLETO.pdf")
+
+        # Pilhas por arena (multi-arena — cada uma em ordem cronológica)
+        if 'arenas' in saidas:
+            if not arenas:
+                log("⚠  divisão por arena pedida, mas o cronograma não tem "
+                    "blocos 'Arena:' — nada a dividir (evento de arena única?)")
+            for (dia_pasta, ar), chunks in sorted(arena_dias.items()):
+                chunks.sort(key=lambda c: c[0])
+                cabeca = chunks[0][1]
+                todas = [pg for _, _, pg in chunks]
+                log(f"  ▣ {len(todas)} súmula(s) na arena {ar} "
+                    f"({dia_pasta}/00_ARENA_{sanitize(ar)}.pdf)")
+                agendar(cabeca, todas, "</body></html>",
+                        saida / dia_pasta / f"00_ARENA_{sanitize(ar)}.pdf")
+            for dia_pasta, n in arena_sem_mapa.items():
+                log(f"  ⚠ {dia_pasta}: {n} página(s) sem arena identificável "
+                    "(bateria em branco ou fora do cronograma) — ficaram "
+                    "fora das pilhas por arena")
 
         # PDF separado só das finais (além de seguirem no dia-completo)
         if 'finais' in saidas:
@@ -531,13 +644,14 @@ def main():
         sys.exit("✗ Google Chrome não encontrado. Instale o Chrome ou defina "
                  "a variável de ambiente CHROME com o caminho do executável.")
 
-    horarios, finais = {}, {}
+    horarios, finais, arenas = {}, {}, {}
     try:
         if args.json:
             horarios = carregar_horarios(args.json)
         elif args.excel:
             horarios = carregar_horarios_excel(args.excel)
             finais = finais_do_excel(args.excel)
+            arenas = arenas_do_excel(args.excel)
     except RuntimeError as e:
         sys.exit(f"✗ {e}")
     if (args.json or args.excel) and not horarios:
@@ -559,7 +673,7 @@ def main():
             print(msg, flush=True)
 
         feitos, erros = converter(raiz, saida, horarios, chrome, log_flush,
-                                  finais, saidas)
+                                  finais, saidas, arenas)
         if feitos == 0 and not erros:
             print("⚠  nada a gerar com essa combinação (ex.: --apenas finais "
                   "sem cronograma com '(Final Heat)').", flush=True)

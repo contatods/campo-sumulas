@@ -25,7 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gerar_pdfs import (achar_chrome, converter, carregar_horarios,
-                        carregar_horarios_excel, finais_do_excel)
+                        carregar_horarios_excel, finais_do_excel,
+                        arenas_do_excel)
 
 PORTAS = range(8777, 8798)
 MAX_BODY = 600 * 1024 * 1024          # ZIP de evento grande em base64
@@ -263,6 +264,8 @@ footer{width:100%;max-width:880px;padding:20px 24px 30px;color:var(--dim);font-s
         <span><b>Dia completo</b><small>tudo num PDF só, em ordem horário → bateria → raia (impressão em lote)</small></span></label>
       <label class="saida"><input type="checkbox" id="sFinais" checked onchange="this.closest('.saida').classList.toggle('off',!this.checked)">
         <span><b>Finais</b><small>00_FINAIS.pdf com as baterias "(Final Heat)" — precisa do Excel no passo 2</small></span></label>
+      <label class="saida off"><input type="checkbox" id="sArenas" onchange="this.closest('.saida').classList.toggle('off',!this.checked)">
+        <span><b>Por arena</b><small>evento multi-arena: uma pilha cronológica por arena (00_ARENA_*.pdf) — precisa do Excel no passo 2</small></span></label>
     </div>
   </div>
 
@@ -368,10 +371,12 @@ async function gerar(){
   if(document.getElementById('sBaterias').checked) saidas.push('baterias');
   if(document.getElementById('sDia').checked) saidas.push('dia');
   if(document.getElementById('sFinais').checked) saidas.push('finais');
+  if(document.getElementById('sArenas').checked) saidas.push('arenas');
   if(!saidas.length){ alert('Marque pelo menos uma opção em "O que gerar".'); return; }
-  if(saidas.includes('finais') && saidas.length===1){
+  const soExigeExcel = saidas.every(s => s==='finais' || s==='arenas');
+  if(soExigeExcel){
     const temCron = document.getElementById('selCron').value || upCron;
-    if(!temCron){ alert('Gerar só as Finais exige o cronograma (Excel) no passo 2 — é ele que marca as baterias "(Final Heat)".'); return; }
+    if(!temCron){ alert('Gerar só Finais/Por arena exige o cronograma (Excel) no passo 2 — é ele que marca as finais e as arenas.'); return; }
   }
 
   // Rede de segurança: revalida o cronograma na hora de gerar. Sem horários
@@ -579,23 +584,25 @@ class GuiHandler(BaseHTTPRequestHandler):
                 raise RuntimeError("nenhum ZIP informado")
 
             # Quais produtos gerar (checkboxes do passo 03)
-            from gerar_pdfs import SAIDAS_TODAS
-            saidas = set(body.get('saidas') or []) & SAIDAS_TODAS or set(SAIDAS_TODAS)
+            from gerar_pdfs import SAIDAS_VALIDAS, SAIDAS_PADRAO
+            saidas = (set(body.get('saidas') or []) & SAIDAS_VALIDAS
+                      or set(SAIDAS_PADRAO))
 
             # Saída: ao lado do ZIP escolhido; uploads caem em ~/Downloads
             if body.get('zip_caminho'):
                 saida = zip_path.parent / f"{zip_path.stem}_PDFs"
             else:
                 saida = Path.home() / 'Downloads' / f"{zip_path.stem}_PDFs"
-            # Limpa a geração velha SÓ quando gera tudo — regeração parcial
-            # (ex.: só as finais pós-balizamento) preserva os PDFs anteriores
-            # e apenas sobrescreve os arquivos que produzir.
-            if (saidas == set(SAIDAS_TODAS) and saida.is_dir()
+            # Limpa a geração velha SÓ quando gera o conjunto padrão inteiro
+            # — regeração parcial (ex.: só as finais pós-balizamento, ou só
+            # as pilhas por arena) preserva os PDFs anteriores e apenas
+            # sobrescreve os arquivos que produzir.
+            if (SAIDAS_PADRAO <= saidas and saida.is_dir()
                     and saida.name.endswith('_PDFs')):
                 shutil.rmtree(saida, ignore_errors=True)
 
             # ── Cronograma (opcional): caminho ou upload ──────────────────
-            horarios, finais = {}, {}
+            horarios, finais, arenas = {}, {}, {}
             cron_path = None
             if body.get('cron_caminho'):
                 cron_path = body['cron_caminho']
@@ -607,12 +614,18 @@ class GuiHandler(BaseHTTPRequestHandler):
                 if not horarios:
                     self._chunk("⚠  cronograma sem horários de bateria — ordem "
                                 "do dia completo cai pra Categoria → Workout → Bateria")
-                # Finais só saem de Excel (o '(Final Heat)' não sobrevive no JSON)
+                # Finais e arenas só saem de Excel (JSON não preserva
+                # o '(Final Heat)' nem os blocos 'Arena:')
                 if not cron_path.lower().endswith('.json'):
                     try:
                         finais = finais_do_excel(cron_path)
                     except Exception:
                         finais = {}
+                    if 'arenas' in saidas:
+                        try:
+                            arenas = arenas_do_excel(cron_path)
+                        except Exception:
+                            arenas = {}
 
             self._chunk("⏳ descompactando ZIP…")
             raiz = tmp / 'html'
@@ -621,13 +634,15 @@ class GuiHandler(BaseHTTPRequestHandler):
 
             feitos, erros = converter(raiz, saida, horarios, CHROME,
                                       log=self._chunk, finais=finais,
-                                      saidas=saidas)
+                                      saidas=saidas, arenas=arenas)
             if erros:
                 raise RuntimeError(f"{len(erros)} PDF(s) falharam — veja o log")
             if feitos == 0:
                 raise RuntimeError(
-                    "nada foi gerado — 'Finais' sozinho exige um cronograma "
-                    "com baterias '(Final Heat)' marcadas")
+                    "nada foi gerado com essa seleção — 'Finais' exige "
+                    "cronograma com '(Final Heat)'; 'Por arena' exige blocos "
+                    "'Arena:' no Excel E súmulas com bateria preenchida "
+                    "(balizadas)")
             self._chunk(f"FIM_OK\t{saida}")
         except Exception as e:
             self._chunk(f"FIM_ERRO\t{e}")

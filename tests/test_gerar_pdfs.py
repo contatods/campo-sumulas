@@ -51,7 +51,7 @@ def captura(monkeypatch):
 
 
 def _converter(tmp_path, arquivos, horarios=None, finais=None, captura=None,
-               saidas=None):
+               saidas=None, arenas=None):
     """arquivos: {'Dia/Cat/01_WOD.html': [(bat, raia), ...]}"""
     raiz = tmp_path / "raiz"
     for rel, pgs in arquivos.items():
@@ -59,7 +59,8 @@ def _converter(tmp_path, arquivos, horarios=None, finais=None, captura=None,
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(_html_paginas(pgs), encoding="utf-8")
     G.converter(raiz, tmp_path / "out", horarios or {}, chrome="/fake",
-                log=lambda m: None, finais=finais or {}, saidas=saidas)
+                log=lambda m: None, finais=finais or {}, saidas=saidas,
+                arenas=arenas)
     return captura
 
 
@@ -217,6 +218,38 @@ def test_saidas_invalidas_caem_no_padrao_tudo(tmp_path, captura):
         "Sab/Alfa/01_W.html": [("1", "1")],
     }, captura=captura, saidas={"banana"})
     assert "out/Sab/00_DIA_COMPLETO.pdf" in cap          # gerou tudo
+
+
+def test_saidas_arenas_gera_pilha_por_arena(tmp_path, captura):
+    """Multi-arena: cada arena vira um 00_ARENA_*.pdf com a própria pilha
+    cronológica; páginas sem arena mapeável (bateria em branco) ficam fora."""
+    arenas = {"Sab": {"1": "Campo", "2": "Quadra"}}
+    horarios = {("Sab", "Alfa", "1"): "08:00", ("Sab", "Beta", "2"): "08:00"}
+    cap = _converter(tmp_path, {
+        "Sab/Alfa/01_W.html": [("1", "2"), ("1", "1"), ("", "")],
+        "Sab/Beta/01_W.html": [("2", "1")],
+    }, horarios=horarios, captura=captura, saidas={"arenas"}, arenas=arenas)
+    assert cap["out/Sab/00_ARENA_Campo.pdf"] == [("1", "1"), ("1", "2")]
+    assert cap["out/Sab/00_ARENA_Quadra.pdf"] == [("2", "1")]
+    assert "out/Sab/00_DIA_COMPLETO.pdf" not in cap
+
+
+def test_arenas_do_excel_mapeia_blocos(tmp_path):
+    """Blocos 'Arena: X' lado a lado → bateria→arena por dia."""
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sábado"
+    ws.append(["Arena: Campo", "", "", "", "Arena: Quadra", "", ""])
+    ws.append(["Eventos", "Categoria", "Bateria", "",
+               "Eventos", "Categoria", "Bateria"])
+    ws.append(["W1", "Alfa", 1, "", "W9", "Gama", 53])
+    ws.append(["", "Alfa", 2, "", "", "Gama", 54])
+    xlsx = tmp_path / "prog.xlsx"
+    wb.save(xlsx)
+    m = G.arenas_do_excel(str(xlsx))
+    assert m["Sábado"] == {"1": "Campo", "2": "Campo",
+                           "53": "Quadra", "54": "Quadra"}
 
 
 def test_sem_horario_agrupa_por_categoria(tmp_path, captura):

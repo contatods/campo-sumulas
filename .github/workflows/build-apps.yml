@@ -45,10 +45,13 @@ jobs:
           fi
           PDF_APP_NOGUI=1 "$BIN" &
           for i in $(seq 1 20); do
-            curl -sf http://127.0.0.1:8777/api/arquivos && break
+            curl -sf -o /dev/null http://127.0.0.1:8777/api/arquivos && break
             sleep 2
           done
-          curl -sf http://127.0.0.1:8777/ | grep -q "PDFs por" && echo "smoke ok"
+          # Sem pipe curl|grep: 'grep -q' fecha o cano cedo e o pipefail do
+          # runner transforma o SIGPIPE do curl (exit 23) em falha do job.
+          PAGE=$(curl -sf http://127.0.0.1:8777/)
+          echo "$PAGE" | grep -q "PDFs por" && echo "smoke ok"
 
       - name: Compactar .app (mac)
         if: runner.os == 'macOS'
