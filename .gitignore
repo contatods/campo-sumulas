@@ -10,6 +10,8 @@ venv/
 # Mac
 .DS_Store
 Icon?
+Captura de Tela*.png
+Screenshot*.png
 
 # Outputs temporários
 *.zip
@@ -29,4 +31,4 @@ VERSION.txt
 *.spec
 
 # Arquivos Icon do Finder/Creative Cloud (quebram checkout no Windows)
-Icon
+Icon

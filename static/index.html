@@ -17,6 +17,7 @@
   <button class="hdr-add-dia" id="hdrAddDia" onclick="adicionarDia()" title="Adicionar dia">+</button>
   <div class="hdr-right">
     <span class="hdr-save" id="saveIndicator" title="Tudo é salvo automaticamente no navegador"></span>
+    <button class="hdr-cfg" onclick="abrirAppPdf()" title="Baixar o app que converte as súmulas em PDF (última versão)"><span>⬇</span> App PDF</button>
     <button class="hdr-cfg" onclick="abrirAjuda()" title="Como usar o sistema"><span>?</span> Ajuda</button>
     <button class="hdr-cfg" onclick="abrirEventos()" title="Trocar entre eventos salvos"><span>📂</span> Eventos</button>
     <button class="hdr-cfg" onclick="abrirConfig()" title="Configurações"><span>⚙</span> Configurar</button>
@@ -621,6 +622,8 @@
       <p class="cfg-hint">Em For Load com modalidade dupla/time, cada página representa o time inteiro (no modelo atual cada dupla é 1 entrada no Excel). A "MELHOR CARGA" da página é o resultado da equipe.</p>
       <h3>Imprimir</h3>
       <p>Abra o HTML no browser → Ctrl+P (Cmd+P no Mac) → "Salvar como PDF" ou imprimir direto. Cada atleta vira uma folha A4 separada (page-break-after automático).</p>
+      <h3>App conversor de PDF (opcional)</h3>
+      <p>Pra não abrir arquivo por arquivo, o app de desktop <strong>Digital Score PDFs</strong> converte o lote inteiro em PDFs prontos usando o Chrome da máquina. Baixe a última versão no botão <code>⬇ App PDF</code> do topo.</p>
     </div>
 
     <div class="cfg-pane ajuda-pane" id="ajudaPaneIA" style="display:none">
@@ -699,6 +702,45 @@
 
     <div class="ajuda-footer">
       Manual atualizado pra <strong>v{{VERSION}}</strong> · Se features mudarem em versões futuras este texto pode ficar defasado — sempre confira o <code>git log</code> do projeto.
+    </div>
+  </div>
+</div>
+
+<!-- Modal: baixar o app conversor de PDF (última release do GitHub) -->
+<div id="appPdfModal" class="cfg-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="appPdfModalTitle" aria-hidden="true">
+  <div class="cfg-overlay" onclick="fecharAppPdf()"></div>
+  <div class="cfg-panel">
+    <div class="cfg-header">
+      <span class="cfg-title" id="appPdfModalTitle">App conversor de PDF</span>
+      <button class="ed-close" onclick="fecharAppPdf()" title="Fechar" aria-label="Fechar">×</button>
+    </div>
+    <div class="cfg-pane">
+      <p class="cfg-hint" style="margin-bottom:14px">
+        O <strong>Digital Score PDFs</strong> é um app de desktop que pega os HTMLs gerados aqui e
+        converte em <strong>PDFs prontos</strong> usando o Chrome da sua máquina — sem precisar
+        abrir arquivo por arquivo e dar Ctrl+P. Os botões abaixo baixam <strong>sempre a última
+        versão</strong> publicada.
+      </p>
+      <div class="appdl-grid">
+        <a class="appdl-btn" id="appdlMac"
+           href="https://github.com/contatods/campo-sumulas/releases/latest/download/DigitalScorePDFs-Mac.zip">
+          <span class="appdl-os"> Mac</span>
+          <span class="appdl-sub">.zip · descompacte e arraste pra Aplicativos</span>
+        </a>
+        <a class="appdl-btn" id="appdlWin"
+           href="https://github.com/contatods/campo-sumulas/releases/latest/download/DigitalScorePDFs-Windows.exe">
+          <span class="appdl-os">⊞ Windows</span>
+          <span class="appdl-sub">.exe · baixe e execute direto</span>
+        </a>
+      </div>
+      <p class="cfg-hint" style="margin-top:12px">
+        Primeira abertura: no Mac, botão direito → <strong>Abrir</strong>; no Windows, se o SmartScreen
+        avisar, <strong>Mais informações → Executar assim mesmo</strong>. Requer o Google Chrome instalado.
+      </p>
+      <div class="cfg-divider"></div>
+      <a class="appdl-link" href="https://github.com/contatods/campo-sumulas/releases/latest" target="_blank" rel="noopener">
+        Ver todas as versões e notas de release ↗
+      </a>
     </div>
   </div>
 </div>

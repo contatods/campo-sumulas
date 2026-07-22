@@ -167,6 +167,23 @@ function ajudaTab(t) {
   });
 }
 
+// ─── Modal: baixar o app conversor de PDF ───────────────────────────────────
+// Detecta o SO e destaca o download certo (o outro fica como opção secundária).
+function abrirAppPdf() {
+  setDialogOpen('appPdfModal', true);
+  const ua  = (navigator.userAgent || '') + ' ' + (navigator.platform || '');
+  const win = /Windows|Win32|Win64/i.test(ua);
+  const mac = /Mac|iPhone|iPad|iPod/i.test(ua);
+  const btnMac = document.getElementById('appdlMac');
+  const btnWin = document.getElementById('appdlWin');
+  // Sem certeza (Linux/outros): não destaca nenhum, mostra os dois iguais.
+  btnMac.classList.toggle('primary', mac && !win);
+  btnWin.classList.toggle('primary', win && !mac);
+}
+function fecharAppPdf() {
+  setDialogOpen('appPdfModal', false);
+}
+
 // Reset completo: apaga TUDO do localStorage (todos eventos, prefs, cache).
 // Pede confirmação dupla com contagem real do que vai ser apagado.
 function resetCompleto() {
@@ -2765,6 +2782,7 @@ function toast(msg, type = 'ok') {
       const el = document.getElementById(id);
       return el && el.style.display && el.style.display !== 'none';
     };
+    if (aberto('appPdfModal'))  { fecharAppPdf();   return; }
     if (aberto('ajudaModal'))   { fecharAjuda();    return; }
     if (aberto('eventosModal')) { fecharEventos();  return; }
     if (aberto('configModal'))  { fecharConfig();   return; }
