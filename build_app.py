@@ -29,8 +29,14 @@ def versao():
     return m.group(1) if m else "dev"
 
 
+def _fonte_icone():
+    """app_icon.png (ícone composto, squircle) se existir; senão ds_logo.png."""
+    ic = AQUI / "app_icon.png"
+    return ic if ic.exists() else AQUI / "ds_logo.png"
+
+
 def icone_mac():
-    """ds_logo.png → build/ds.icns (sips + iconutil, nativos do macOS)."""
+    """fonte do ícone → build/ds.icns (sips + iconutil, nativos do macOS)."""
     icones = AQUI / "build" / "ds.iconset"
     shutil.rmtree(icones, ignore_errors=True)
     icones.mkdir(parents=True)
@@ -38,7 +44,7 @@ def icone_mac():
         for escala, sufixo in ((1, ""), (2, "@2x")):
             px = tam * escala
             subprocess.run(["sips", "-z", str(px), str(px),
-                            str(AQUI / "ds_logo.png"), "--out",
+                            str(_fonte_icone()), "--out",
                             str(icones / f"icon_{tam}x{tam}{sufixo}.png")],
                            capture_output=True, check=True)
     icns = AQUI / "build" / "ds.icns"
@@ -55,7 +61,7 @@ def icone_win():
         return None
     ico = AQUI / "build" / "ds.ico"
     ico.parent.mkdir(exist_ok=True)
-    Image.open(AQUI / "ds_logo.png").save(
+    Image.open(_fonte_icone()).save(
         ico, sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
     return ico
 
