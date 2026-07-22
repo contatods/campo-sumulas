@@ -38,6 +38,24 @@ def test_chegada_dirigida_pelo_excel():
     assert any(m.get("chegada") for m in w_com["movimentos"])
 
 
+def test_clausula_interrupcao_vira_descricao():
+    """Cláusula 'a cada N min o workout é interrompido para ...' (ex: Full Penance
+    do PWRD) não é movimento nem regulamento — deve sobreviver na descrição, só
+    ela, sem repetir os movimentos. EMOM comum ('every 2 min: 5 pull-ups') não."""
+    txt = ('"Full Penance"\nFor time:\n100 Wall-Ball Shots (20lbs)\n'
+           '20 Fat Bar Thruster (60kg)\n'
+           'A cada 2 minutos, o workout será interrompido para a execução de '
+           '3 complex (5 Toes-to-Ring + 1 Ring Muscle-Up).\nTime cap: 12 minutes')
+    w = parse_workout_text(txt, 1)
+    assert w["descricao"] == [
+        'A cada 2 minutos, o workout será interrompido para a execução de '
+        '3 complex (5 Toes-to-Ring + 1 Ring Muscle-Up).'
+    ]
+    # Sem cláusula de interrupção → descrição segue vazia (não polui a súmula).
+    w2 = parse_workout_text('"T"\nFor time:\n50 Wall-Ball Shots\nTime cap: 5 min', 1)
+    assert w2["descricao"] == []
+
+
 def test_distancia_k_km_vira_metros():
     """'3k'/'2k'/'1k'/'3km' = quilômetros → metros (3k=3000m) pra reps/acumulado.
     'Nm' e 'Nkg' não podem ser afetados."""

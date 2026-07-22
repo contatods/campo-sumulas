@@ -250,6 +250,20 @@ _CHEGADA_NEGADA_RE = re.compile(
 )
 
 
+# Cláusula de interrupção recorrente numa prescrição For Time: "A cada 2
+# minutos, o workout será interrompido para ..." / "Every 2 minutes, ...".
+# NÃO é movimento (não começa com reps) nem regulamento (fica antes das NOTAS),
+# então o parser a descartava e a súmula perdia essa instrução — crítica pro
+# juiz. Exige o par intervalo + verbo de interrupção pra não capturar headers
+# de EMOM comuns ('every 2 minutes: 5 pull-ups'). Genérico, sem hardcode de
+# nome de workout.
+_INTERRUPCAO_RE = re.compile(
+    r'\b(?:a\s+cada|every)\s+\d+\s*(?:minutos?|minutes?|min|segundos?|seconds?|seg|s)\b'
+    r'.*\b(?:interromp\w+|interrup\w+|interrupt\w+|pausa\w*|pause\w*)\b',
+    re.I,
+)
+
+
 # AMRAP multi-janela (PWRD Loop): 2+ blocos 'AMRAP N min' separados por 'Rest'.
 # Cada janela tem reps prescritas + uma linha 'Max ...' (o que pontua).
 _AMRAP_JANELA_RE = re.compile(r'^\s*amrap\s+(\d+)\s*(?:min|minutes?|minutos?)\b', re.I)
@@ -1029,6 +1043,15 @@ def parse_workout_text(text: str, numero: int) -> Workout:
         movs.append({"chegada": True})
     wkt["movimentos"] = movs
     _aplicar_progressao_reps(wkt)
+
+    # 5b) Preserva cláusula(s) de interrupção ("a cada 2 min o workout é
+    #     interrompido para ...") na prescrição. Não é movimento nem
+    #     regulamento — some do parse padrão. lines_movs já está truncado nas
+    #     NOTAS, então só pega a cláusula principal, não as observações.
+    if not wkt.get("descricao"):
+        interrupcoes = [l.strip() for l in lines_movs if _INTERRUPCAO_RE.search(l)]
+        if interrupcoes:
+            wkt["descricao"] = interrupcoes
 
     # 6) For Time Goal: marca linhas que começam com "Max <X>" como goal:true.
     # Render usa pra renderizar badge GOAL e omitir checkbox de reps.
