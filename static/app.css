@@ -776,6 +776,37 @@ button:focus-visible,
   border-color:#7a5a1a;font-weight:700}
 .pib-cta.pib-cta-alerta:hover{background:#4a3518}
 
+/* ── Conferência do evento (4 checagens num painel só) ────────────────
+   Cada linha tem estado próprio, então dá pra ver de relance o que passou e
+   o que pede atenção — em vez de rodar 4 botões e guardar de cabeça. */
+.conf-item{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;
+  border:1px solid var(--border);border-radius:var(--radius);background:var(--surface2);
+  margin-bottom:6px;cursor:pointer;text-align:left;font-family:inherit;color:var(--text);
+  transition:border-color .15s var(--ease),background .15s var(--ease)}
+.conf-item:hover{border-color:var(--orange-edge);background:var(--surface3)}
+.conf-item[aria-expanded="true"]{border-color:var(--border3);border-bottom-left-radius:0;
+  border-bottom-right-radius:0;margin-bottom:0}
+.conf-item-body{flex:1;min-width:0}
+.conf-t{font-size:11.5px;color:var(--text);font-weight:700;letter-spacing:.02em;
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.conf-d{font-size:9.5px;color:var(--text3);margin-top:3px;letter-spacing:.04em;line-height:1.4}
+.conf-ia{font-size:8px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--text3);border:1px solid var(--border3);border-radius:20px;padding:1px 6px}
+.conf-pill{font-size:8.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0;
+  border:1px solid var(--border3);color:var(--text3);background:var(--surface3)}
+.conf-pill.ok{color:var(--green);background:rgba(0,230,118,.1);border-color:rgba(0,230,118,.28)}
+.conf-pill.warn{color:#FFD93D;background:rgba(255,217,61,.1);border-color:rgba(255,217,61,.3)}
+.conf-pill.erro{color:var(--red);background:rgba(255,61,90,.1);border-color:rgba(255,61,90,.3)}
+.conf-pill.run{color:var(--blue);background:rgba(0,212,255,.1);border-color:rgba(0,212,255,.28)}
+.conf-det{border:1px solid var(--border3);border-top:0;border-radius:0 0 var(--radius) var(--radius);
+  background:var(--bg);padding:10px 12px;margin-bottom:6px}
+.conf-det-acoes{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.conf-det-vazio{font-size:10.5px;color:var(--text3);font-style:italic}
+.conf-ia-box{margin-top:8px;padding:11px 12px;background:rgba(0,0,0,.25);
+  border:1px solid var(--border);border-radius:var(--radius);font-size:11px;
+  line-height:1.55;color:var(--text2);white-space:pre-wrap}
+
 /* ── Validação (lista de avisos) ──────────────────────────────────── */
 .valid-row{display:flex;gap:10px;padding:8px 10px;margin-bottom:4px;
   border-radius:var(--radius);background:var(--surface2);

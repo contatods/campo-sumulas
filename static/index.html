@@ -341,14 +341,9 @@
       <div class="pib-row">
         <span class="pib-icon" id="pibIcon">✓</span>
         <span class="pib-msg" id="pibMsg">Importado.</span>
-        <button class="pib-cta" onclick="abrirConfig('dias')">Configurar datas</button>
-        <button class="pib-cta secondary" id="pibValidarBtn" onclick="abrirValidacao()" title="Verificar problemas no evento">Validar</button>
-        <button class="pib-cta secondary" id="pibAIBtn" onclick="explicarComIA()" style="display:none" title="Pedir pra IA explicar os avisos do import">🤖 Explicar com IA</button>
-        <button class="pib-cta secondary" id="pibRevBtn" onclick="revisarProgramacaoIA()" style="display:none" title="IA revisa o escalonamento e a coerência da programação entre divisões (Fat Bar leve demais, carga invertida, etc)">🤖 Revisar programação</button>
-        <button class="pib-cta secondary" id="pibLeituraBtn" onclick="revisarLeituraIA()" style="display:none" title="IA confere se a leitura automática bateu com o texto do Excel (movimento faltando, rounds/pontuação lidos errado) antes de imprimir">🔍 Conferir leitura</button>
+        <button class="pib-cta" id="pibConferirBtn" onclick="abrirConferencia()" title="Estrutura, leitura do Excel, programação e datas — tudo num painel só">Conferir evento</button>
         <button class="pib-close" onclick="dispensarBanner()" title="Fechar">×</button>
       </div>
-      <div id="pibAIBox" style="display:none"></div>
     </div>
 
     <div class="preview-empty" id="previewEmpty">
@@ -382,12 +377,12 @@
       <div class="cfg-overlay" onclick="fecharValidacao()"></div>
       <div class="cfg-panel">
         <div class="cfg-header">
-          <span class="cfg-title" id="validModalTitle">Validação do evento</span>
-          <button class="ed-close" onclick="fecharValidacao()" title="Fechar" aria-label="Fechar validação">×</button>
+          <span class="cfg-title" id="validModalTitle">Conferência do evento</span>
+          <button class="ed-close" onclick="fecharValidacao()" title="Fechar" aria-label="Fechar conferência">×</button>
         </div>
         <div class="cfg-pane" id="validacaoPane">
-          <p class="cfg-hint" id="validacaoStatus">Analisando…</p>
-          <div id="validacaoLista"></div>
+          <p class="cfg-hint">Quatro checagens antes de imprimir. Clique numa linha pra rodar; as marcadas com <span class="conf-ia">IA</span> consomem chamadas da API.</p>
+          <div id="confLista"></div>
         </div>
       </div>
     </div>
@@ -589,16 +584,27 @@
 
     <div class="cfg-pane ajuda-pane" id="ajudaPaneGerar" style="display:none">
       <h3>Baixar súmulas</h3>
-      <p>O botão primário <code>⬇ Gerar categoria selecionada</code> fica na sidebar. Os outros escopos ficam atrás do <code>outros escopos ▾</code>:</p>
+      <p>No rodapé da sidebar você responde <strong>duas perguntas</strong>: o <strong>escopo</strong> (o que entra no pacote) e a <strong>ação</strong> (o que fazer com ele). O resumo logo abaixo confirma o pacote antes do clique.</p>
+      <p><strong>Escopo:</strong></p>
       <table class="ajuda-tab-table">
         <tbody>
-          <tr><td><strong>Categoria selecionada</strong></td><td>(default, primário) só a categoria do dropdown atual — é o uso real recomendado</td></tr>
-          <tr><td><strong>Dia atual</strong></td><td>todas as categorias do dia ativo</td></tr>
-          <tr><td><strong>Evento todo</strong></td><td>todos os dias e categorias</td></tr>
-          <tr><td><strong>Pré-evento (não alocados)</strong></td><td>atletas inscritos no roster mas ainda sem bateria/raia — pasta por categoria, sem dia</td></tr>
+          <tr><td><strong>Categoria</strong></td><td>(default) só a categoria selecionada no dia atual — é o uso recomendado</td></tr>
+          <tr><td><strong>Dia</strong></td><td>todas as categorias do dia ativo</td></tr>
+          <tr><td><strong>Evento</strong></td><td>todos os dias e categorias</td></tr>
+          <tr><td><strong>Workout</strong></td><td>um workout do dia atravessando todas as categorias do dia — pra reimprimir material perdido/molhado em campo</td></tr>
+          <tr><td><strong>Pré-evento</strong></td><td>atletas inscritos no roster mas ainda sem bateria/raia — pasta por categoria, sem dia</td></tr>
+        </tbody>
+      </table>
+      <p><strong>Ação:</strong></p>
+      <table class="ajuda-tab-table">
+        <tbody>
+          <tr><td><strong>⬇ Baixar HTML</strong></td><td>(primária) ZIP com pastas Dia/Categoria/Workout</td></tr>
+          <tr><td><strong>👁 Revisar</strong></td><td>abre as súmulas do escopo numa aba nova, em branco, pra conferir o visual antes de baixar (não cobre o pré-evento)</td></tr>
+          <tr><td><strong>⬇ PDFs</strong></td><td>ZIP de PDFs prontos, um por bateria + dia completo em ordem cronológica. Exige o app de desktop; sem ele o botão abre o download do app</td></tr>
           <tr><td><strong>Incluir competidores</strong> (checkbox)</td><td>se desmarcado, súmulas saem em branco (sem nome/box/número) — pra fotocópia</td></tr>
         </tbody>
       </table>
+      <p class="cfg-hint">O resumo avisa quando alguma categoria do escopo está <strong>aguardando balizamento</strong> — antes isso só se descobria depois de gerar.</p>
       <p class="cfg-hint">⚠ Escopo <strong>Evento todo</strong> ou <strong>Dia atual</strong> pode estourar timeout em evento grande (Monstar = ~3500 páginas). Acima de 1500 páginas o sistema pede confirmação. <strong>Fluxo recomendado: gerar por categoria.</strong></p>
 
       <h3>Aguardando balizamento</h3>
@@ -636,8 +642,17 @@
         <li><code>💡 gerar</code> em <strong>Notas adicionais</strong> — escreve uma descrição enxuta do workout a partir da tabela de movimentos.</li>
       </ul>
 
-      <h3>Validação do evento</h3>
-      <p>Ao importar Excel o sistema mostra avisos (atleta sem categoria, bateria sem workout, número fora de faixa etc). O botão <code>🤖 Explicar com IA</code> abaixo da lista pede pra IA explicar cada aviso em PT-BR e sugerir o que conferir antes de gerar súmulas.</p>
+      <h3>Conferência do evento</h3>
+      <p>O banner pós-import tem um CTA só — <code>Conferir evento</code> — que abre um painel com <strong>quatro checagens</strong>, cada uma com estado próprio:</p>
+      <table class="ajuda-tab-table">
+        <tbody>
+          <tr><td><strong>Estrutura</strong></td><td>atleta sem categoria, bateria sem workout, número fora de faixa. Roda sozinha ao abrir o painel (não usa IA)</td></tr>
+          <tr><td><strong>Leitura do Excel</strong> (IA)</td><td>confere se o que o parser leu bate com o texto da planilha — pega movimento faltando, rounds/pontuação lidos errado</td></tr>
+          <tr><td><strong>Programação</strong> (IA)</td><td>escalonamento de carga e coerência entre divisões (Fat Bar leve demais, carga invertida)</td></tr>
+          <tr><td><strong>Datas dos dias</strong></td><td>lista os dias sem data e leva direto pra configuração. Roda sozinha (não usa IA)</td></tr>
+        </tbody>
+      </table>
+      <p>As duas checagens marcadas com <strong>IA</strong> rodam só quando você clica na linha — assim não gastam chamada da API sem você pedir. Dentro de <strong>Estrutura</strong>, quando há avisos, aparece <code>🤖 Explicar com IA</code>: pede pra IA explicar cada aviso em PT-BR e sugerir o que conferir antes de gerar.</p>
 
       <h3>Chat assistente</h3>
       <p>Botão flutuante <code>💬</code> no canto inferior direito. Faz perguntas livres sobre o evento carregado:</p>

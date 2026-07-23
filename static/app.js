@@ -332,12 +332,6 @@ function limparTudoModal() {
 // Banner pós-import
 function dispensarBanner() {
   document.getElementById('postImportBanner').style.display = 'none';
-  document.getElementById('pibAIBox').style.display = 'none';
-  document.getElementById('pibAIBtn').style.display = 'none';
-  const rev = document.getElementById('pibRevBtn');
-  if (rev) rev.style.display = 'none';
-  const leit = document.getElementById('pibLeituraBtn');
-  if (leit) leit.style.display = 'none';
 }
 function mostrarBannerPosImport(msg) {
   const banner = document.getElementById('postImportBanner');
@@ -366,38 +360,25 @@ function explicarComIA() {
     _renderExplicacaoIA(cached);
     return;
   }
-  const btn = document.getElementById('pibAIBtn');
-  const box = document.getElementById('pibAIBox');
-  btn.disabled = true;
-  btn.textContent = '🤖 Pensando…';
+  _confEstado.estrutura.ia = '🤖 Pensando…';
+  _confRender();
   apiFetch('/api/ai/explicar-avisos', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ stats: _ultimosStats, avisos: _ultimosAvisos }),
   }).then(r => r.json()).then(res => {
-    btn.disabled = false;
-    btn.textContent = '🤖 Explicar com IA';
-    if (res.error) {
-      box.textContent = 'Erro: ' + res.error;
-      box.style.display = '';
-      return;
-    }
+    if (res.error) { _renderExplicacaoIA('Erro: ' + res.error); return; }
     const texto = res.texto || '(sem resposta)';
     try { sessionStorage.setItem(chave, texto); } catch (e) {}
     _renderExplicacaoIA(texto);
-  }).catch(e => {
-    btn.disabled = false;
-    btn.textContent = '🤖 Explicar com IA';
-    box.textContent = 'Erro: ' + e.message;
-    box.style.display = '';
-  });
+  }).catch(e => _renderExplicacaoIA('Erro: ' + e.message));
 }
 
+// A explicação da IA fica dentro da linha "Estrutura" da conferência.
 function _renderExplicacaoIA(texto) {
-  const box = document.getElementById('pibAIBox');
-  // texto vem com quebras de linha — preserva via white-space pre-wrap
-  box.textContent = texto;
-  box.style.display = '';
+  _confEstado.estrutura.ia = texto;
+  _confAberta = 'estrutura';
+  _confRender();
 }
 
 function _hashStr(s) {
@@ -516,51 +497,192 @@ function removerThinking() {
   if (last) last.remove();
 }
 
-// Renderiza a lista de avisos no modal (erros primeiro). Compartilhado pelo
-// snapshot do import e pela re-validação do config.
-function _renderValidacao(avisos) {
-  const status = document.getElementById('validacaoStatus');
-  const lista  = document.getElementById('validacaoLista');
-  avisos = avisos || [];
-  if (!avisos.length) {
-    status.innerHTML = '<strong style="color:var(--green)">✓ Nenhum problema encontrado.</strong>';
-    lista.innerHTML = '';
-    return;
-  }
-  const erros = avisos.filter(a => a.severidade === 'erro');
-  const aviso = avisos.filter(a => a.severidade !== 'erro');
-  status.innerHTML = `${erros.length} erro${erros.length !== 1 ? 's' : ''}, ${aviso.length} aviso${aviso.length !== 1 ? 's' : ''}.`;
-  lista.innerHTML = [...erros, ...aviso].map(a => `
-    <div class="valid-row valid-${a.severidade}">
-      <span class="valid-icon">${a.severidade === 'erro' ? '✗' : '⚠'}</span>
-      <div class="valid-body">
-        <div class="valid-msg">${esc(a.msg)}</div>
-        <div class="valid-onde">${esc(a.onde || '')}</div>
-      </div>
-    </div>`).join('');
+// ═══════════════════════════════════════════════════════════════════
+//  CONFERÊNCIA DO EVENTO
+//  Quatro checagens num painel só, cada uma com estado próprio. Substitui os
+//  5 CTAs soltos do banner pós-import — todos respondiam à mesma pergunta
+//  ("dá pra imprimir?") competindo entre si.
+// ═══════════════════════════════════════════════════════════════════
+const CONF_CHECKS = [
+  {id: 'estrutura',   titulo: 'Estrutura',        ia: false,
+   desc: 'atleta sem categoria, bateria sem workout, número fora de faixa'},
+  {id: 'leitura',     titulo: 'Leitura do Excel', ia: true,
+   desc: 'o que o parser leu bate com o texto da planilha'},
+  {id: 'programacao', titulo: 'Programação',      ia: true,
+   desc: 'escalonamento de carga e coerência entre divisões'},
+  {id: 'datas',       titulo: 'Datas dos dias',   ia: false,
+   desc: 'a data aparece no header da súmula impressa'},
+];
+
+// status: 'idle' | 'run' | 'ok' | 'warn' | 'erro'
+let _confEstado = {};
+let _confAberta = null;
+
+function _confReset() {
+  _confEstado = {};
+  CONF_CHECKS.forEach(c => {
+    _confEstado[c.id] = {status: 'idle', pill: 'conferir', avisos: [], msg: '', ia: ''};
+  });
+  _confAberta = null;
+}
+_confReset();
+
+function abrirConferencia() {
+  setDialogOpen('validModal', true);
+  // As checagens locais (grátis) rodam sozinhas; as de IA ficam sob demanda
+  // pra não gastar chamada da API sem o usuário pedir.
+  if (_confEstado.datas.status === 'idle') _confRodar('datas');
+  if (_confEstado.estrutura.status === 'idle') _confRodar('estrutura');
+  _confRender();
+}
+// Compat: chamadas antigas continuam abrindo o painel novo.
+function abrirValidacao() { abrirConferencia(); }
+
+function _confPillClass(status) {
+  return {run: 'run', ok: 'ok', warn: 'warn', erro: 'erro'}[status] || '';
 }
 
-function abrirValidacao() {
-  setDialogOpen('validModal', true);
-  // Snapshot do import (parser + validar unificados) inclui avisos que só
-  // existem no momento do import: categoria órfã, colisão de bateria.
-  if (_ultimosAvisos && _ultimosAvisos.length) {
-    _renderValidacao(_ultimosAvisos);
-    return;
+function _confRender() {
+  const wrap = document.getElementById('confLista');
+  if (!wrap) return;
+  wrap.innerHTML = CONF_CHECKS.map(c => {
+    const st = _confEstado[c.id];
+    const aberta = _confAberta === c.id;
+    const linha = `
+      <button type="button" class="conf-item" onclick="_confClick('${c.id}')" aria-expanded="${aberta}">
+        <span class="conf-item-body">
+          <span class="conf-t">${esc(c.titulo)}${c.ia ? '<span class="conf-ia">IA</span>' : ''}</span>
+          <span class="conf-d">${esc(c.desc)}</span>
+        </span>
+        <span class="conf-pill ${_confPillClass(st.status)}">${esc(st.pill)}</span>
+      </button>`;
+    return aberta ? linha + `<div class="conf-det">${_confDetalhe(c)}</div>` : linha;
+  }).join('');
+}
+
+function _confDetalhe(c) {
+  const st = _confEstado[c.id];
+  let html = '';
+  if (st.status === 'run') {
+    html = '<p class="conf-det-vazio">Analisando…</p>';
+  } else if (st.status === 'erro') {
+    html = `<p class="conf-det-vazio">${esc(st.msg || 'falhou')}</p>`;
+  } else if (st.avisos.length) {
+    const erros = st.avisos.filter(a => a.severidade === 'erro');
+    const outros = st.avisos.filter(a => a.severidade !== 'erro');
+    html = [...erros, ...outros].map(a => `
+      <div class="valid-row valid-${a.severidade === 'erro' ? 'erro' : 'aviso'}">
+        <span class="valid-icon">${a.severidade === 'erro' ? '✗' : '⚠'}</span>
+        <div class="valid-body">
+          <div class="valid-msg">${esc(a.msg)}</div>
+          <div class="valid-onde">${esc(a.onde || '')}</div>
+        </div>
+      </div>`).join('');
+  } else {
+    html = `<p class="conf-det-vazio">${esc(st.msg || 'Nada a corrigir aqui.')}</p>`;
   }
-  // Sem snapshot (estado carregado sem import recente): revalida o config atual.
-  document.getElementById('validacaoStatus').textContent = 'Analisando…';
-  document.getElementById('validacaoLista').innerHTML = '';
-  apiFetch('/api/ai/validar-evento', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ config })
-  }).then(r => r.json()).then(res => {
-    if (res.error) throw new Error(res.error);
-    _renderValidacao(res.avisos || []);
-  }).catch(e => {
-    document.getElementById('validacaoStatus').textContent = 'Erro: ' + e.message;
-  });
+  if (st.ia) html += `<div class="conf-ia-box">${esc(st.ia)}</div>`;
+
+  const acoes = [];
+  if (c.id === 'datas' && st.status === 'warn') {
+    acoes.push(`<button class="pib-cta" onclick="fecharValidacao();abrirConfig('dias')">Configurar datas</button>`);
+  }
+  if (c.id === 'estrutura' && st.avisos.length && chatAIAtiva && !st.ia) {
+    acoes.push(`<button class="pib-cta secondary" onclick="explicarComIA()">🤖 Explicar com IA</button>`);
+  }
+  if (st.status !== 'run') {
+    acoes.push(`<button class="pib-cta secondary" onclick="_confRodar('${c.id}', true)">Conferir de novo</button>`);
+  }
+  if (acoes.length) html += `<div class="conf-det-acoes">${acoes.join('')}</div>`;
+  return html;
+}
+
+function _confClick(id) {
+  const st = _confEstado[id];
+  if (st.status === 'idle') { _confAberta = id; _confRodar(id); return; }
+  _confAberta = (_confAberta === id) ? null : id;
+  _confRender();
+}
+
+// Roda uma checagem. `forcar` re-roda mesmo que já tenha resultado.
+function _confRodar(id, forcar) {
+  const st = _confEstado[id];
+  if (st.status === 'run') return;
+  if (forcar) { st.avisos = []; st.ia = ''; _confAberta = id; }
+
+  const feito = (status, pill, avisos, msg) => {
+    st.status = status; st.pill = pill;
+    st.avisos = avisos || []; st.msg = msg || '';
+    _confRender();
+  };
+  const falhou = (e) => feito('erro', 'erro', [], e.message || String(e));
+  const nAvisos = (a) => {
+    const erros = a.filter(x => x.severidade === 'erro').length;
+    return erros ? `${erros} erro${erros !== 1 ? 's' : ''}` : `${a.length} a revisar`;
+  };
+
+  if (id === 'datas') {
+    const dias = config.dias || [];
+    const sem = dias.filter(d => !(d.data || d.data_iso));
+    if (!dias.length) return feito('ok', 'sem dias', [], 'Nenhum dia configurado ainda.');
+    if (!sem.length) {
+      return feito('ok', 'preenchidas', [],
+        dias.map(d => `${d.label || 'Dia'} ${d.data || ''}`.trim()).join(' · '));
+    }
+    return feito('warn', `${sem.length} sem data`,
+      sem.map(d => ({severidade: 'aviso', msg: `${d.label || 'Dia'} está sem data`,
+                     onde: 'a súmula impressa sai sem a data no header'})), '');
+  }
+
+  if (id === 'estrutura') {
+    // Snapshot do import inclui avisos que só existem naquele momento
+    // (categoria órfã, colisão de bateria). Sem snapshot, revalida o config.
+    if (!forcar && _ultimosAvisos && _ultimosAvisos.length) {
+      return feito('warn', nAvisos(_ultimosAvisos), _ultimosAvisos.slice(), '');
+    }
+    st.status = 'run'; st.pill = 'analisando…'; _confRender();
+    return apiFetch('/api/ai/validar-evento', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ config })
+    }).then(r => r.json()).then(res => {
+      if (res.error) throw new Error(res.error);
+      const a = res.avisos || [];
+      a.length ? feito('warn', nAvisos(a), a, '')
+               : feito('ok', 'sem avisos', [], 'Estrutura consistente.');
+    }).catch(falhou);
+  }
+
+  if (!chatAIAtiva) {
+    return feito('erro', 'IA inativa', [],
+      'Configure ANTHROPIC_API_KEY no servidor pra usar esta checagem.');
+  }
+  if (!temDados()) {
+    return feito('erro', 'sem evento', [], 'Importe ou monte um evento primeiro.');
+  }
+
+  st.status = 'run'; st.pill = 'analisando…'; _confRender();
+  if (id === 'leitura') {
+    return apiFetch('/api/ai/revisar-leitura', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ config })
+    }).then(r => r.json()).then(res => {
+      if (res.error) throw new Error(res.error);
+      const a = (res.avisos || []).map(x => ({...x, msg: '🔍 ' + x.msg}));
+      a.length ? feito('warn', nAvisos(a), a, '')
+               : feito('ok', 'confere', [], 'A leitura bate com o Excel.');
+    }).catch(falhou);
+  }
+  if (id === 'programacao') {
+    return apiFetch('/api/ai/revisar-programacao', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ config })
+    }).then(r => r.json()).then(res => {
+      if (res.error) throw new Error(res.error);
+      const a = (res.avisos || []).map(x => ({...x, msg: '🤖 ' + x.msg}));
+      a.length ? feito('warn', nAvisos(a), a, '')
+               : feito('ok', 'sem avisos', [], 'A IA não achou problema de programação.');
+    }).catch(falhou);
+  }
 }
 
 function fecharValidacao() {
@@ -595,61 +717,6 @@ function previewGrid(escopo) {
   });
 }
 
-// Review de PROGRAMAÇÃO por IA: escalonamento invertido, sanidade cross-divisão
-// (o que o linter de regras não pega). Mostra no modal, mesclado com os avisos
-// determinísticos do import pra dar a visão completa.
-function revisarProgramacaoIA() {
-  if (!temDados()) { toast('Importe ou monte um evento primeiro', 'warn'); return; }
-  setDialogOpen('validModal', true);
-  document.getElementById('validacaoStatus').textContent = 'Revisando programação com IA…';
-  document.getElementById('validacaoLista').innerHTML = '';
-  apiFetch('/api/ai/revisar-programacao', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ config }),
-  }).then(r => r.json()).then(res => {
-    if (res.error) throw new Error(res.error);
-    const ia  = (res.avisos || []).map(a => ({...a, msg: '🤖 ' + a.msg}));
-    const det = _ultimosAvisos || [];
-    if (!ia.length && !det.length) {
-      document.getElementById('validacaoStatus').innerHTML =
-        '<strong style="color:var(--green)">✓ IA não encontrou problemas de programação.</strong>';
-      return;
-    }
-    _renderValidacao([...det, ...ia]);
-    if (!ia.length) {
-      document.getElementById('validacaoStatus').innerHTML +=
-        ' <span style="color:var(--muted)">(IA não achou nada novo na programação)</span>';
-    }
-  }).catch(e => {
-    document.getElementById('validacaoStatus').textContent = 'Erro na IA: ' + e.message;
-  });
-}
-
-// Fase 3: IA confere a fidelidade da leitura (parse vs texto do Excel).
-function revisarLeituraIA() {
-  if (!temDados()) { toast('Importe ou monte um evento primeiro', 'warn'); return; }
-  setDialogOpen('validModal', true);
-  document.getElementById('validacaoStatus').textContent = 'Conferindo a leitura com IA…';
-  document.getElementById('validacaoLista').innerHTML = '';
-  apiFetch('/api/ai/revisar-leitura', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ config }),
-  }).then(r => r.json()).then(res => {
-    if (res.error) throw new Error(res.error);
-    const ia = (res.avisos || []).map(a => ({...a, msg: '🔍 ' + a.msg}));
-    if (!ia.length) {
-      document.getElementById('validacaoStatus').innerHTML =
-        '<strong style="color:var(--green)">✓ A leitura bate com o Excel — nenhuma divergência encontrada.</strong>';
-      return;
-    }
-    _renderValidacao(ia);
-  }).catch(e => {
-    document.getElementById('validacaoStatus').textContent = 'Erro na IA: ' + e.message;
-  });
-}
-
 // Atualiza o banner pós-import com resumo curto + botão validar
 function atualizarBannerPosImport() {
   if (!temDados()) return;
@@ -658,7 +725,9 @@ function atualizarBannerPosImport() {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ config })
   }).then(r => r.json()).then(res => {
-    if (res.resumo) document.getElementById('pibMsg').textContent = res.resumo + ' Configure as datas pra aparecerem nas súmulas.';
+    // Não repete a cobrança de datas: isso agora é uma linha da conferência,
+    // com estado próprio (e a v2.11.0 preserva as datas na reimportação).
+    if (res.resumo) document.getElementById('pibMsg').textContent = res.resumo;
   }).catch(()=>{});
 }
 
@@ -2387,29 +2456,20 @@ function aplicarImport(result) {
         s2 + (c.baterias || []).reduce((s3, b) => s3 + (b.alocacoes || []).length, 0), 0), 0),
     roster: (result.roster || []).length,
   };
-  const aiBtn = document.getElementById('pibAIBtn');
-  if (aiBtn) aiBtn.style.display = (avisos.length && chatAIAtiva) ? '' : 'none';
-  // Review de programação por IA fica disponível sempre que a IA está ativa —
-  // acha problemas mesmo sem aviso determinístico (escalonamento, sanidade).
-  const revBtn = document.getElementById('pibRevBtn');
-  if (revBtn) revBtn.style.display = chatAIAtiva ? '' : 'none';
-  // Conferir leitura (fidelidade parse vs Excel) — disponível sempre que a IA
-  // está ativa; pega leitura errada que passa no schema (tipo/rounds/pontuação).
-  const leituraBtn = document.getElementById('pibLeituraBtn');
-  if (leituraBtn) leituraBtn.style.display = chatAIAtiva ? '' : 'none';
-  // Reflete a contagem no ícone + rótulo do botão Validar (não depende do
-  // resumo assíncrono que sobrescreve o pibMsg). Erros mudam o ícone pra ✗.
+  // Import novo → conferência zerada (os resultados antigos não valem mais).
+  _confReset();
+  // Ícone e rótulo do CTA refletem a contagem do import na hora, sem depender
+  // do resumo assíncrono que sobrescreve o pibMsg. Erros mudam o ícone pra ✗.
   const nErros = avisos.filter(a => a.severidade === 'erro').length;
   const icon = document.getElementById('pibIcon');
-  const validBtn = document.getElementById('pibValidarBtn');
+  const confBtn = document.getElementById('pibConferirBtn');
   if (icon) icon.textContent = nErros ? '✗' : (avisos.length ? '⚠' : '✓');
-  if (validBtn) {
-    validBtn.textContent = avisos.length
-      ? (nErros ? `✗ ${nErros} erro${nErros > 1 ? 's' : ''}` +
-                  (avisos.length - nErros ? ` · ${avisos.length - nErros} aviso(s)` : '')
-                : `⚠ ${avisos.length} aviso${avisos.length > 1 ? 's' : ''}`)
-      : 'Validar';
-    validBtn.classList.toggle('pib-cta-alerta', avisos.length > 0);
+  if (confBtn) {
+    confBtn.textContent = avisos.length
+      ? (nErros ? `Conferir · ${nErros} erro${nErros > 1 ? 's' : ''}`
+                : `Conferir · ${avisos.length} aviso${avisos.length > 1 ? 's' : ''}`)
+      : 'Conferir evento';
+    confBtn.classList.toggle('pib-cta-alerta', avisos.length > 0);
   }
   if (avisos.length) {
     console.warn(`Import com ${avisos.length} aviso(s):`, avisos);
