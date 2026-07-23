@@ -2231,13 +2231,49 @@ function importarJSON(input) {
   reader.readAsText(file);
 }
 
+// Datas dos dias são configuração MANUAL: a planilha traz só o rótulo
+// ('Sexta'), nunca a data de calendário. Como o import substitui config.dias
+// inteiro, sem isso toda reimportação apagava as datas já preenchidas.
+// Casa por rótulo normalizado; o que sobrar dos dois lados casa por ordem
+// (cobre dia renomeado à mão, ex. 'Sexta' → 'Sexta - abertura').
+function _preservarDatasDosDias(diasNovos, diasAntigos) {
+  const norm = (s) => String(s || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const temData = (d) => !!(d && (d.data || d.data_iso));
+  const antigos = (diasAntigos || []).filter(temData);
+  if (!antigos.length) return diasNovos;
+
+  const usados = new Set();
+  const restantes = [];
+  diasNovos.forEach((novo, i) => {
+    const j = antigos.findIndex((velho, k) => !usados.has(k)
+      && norm(velho.label) === norm(novo.label));
+    if (j >= 0) {
+      usados.add(j);
+      novo.data     = antigos[j].data     || '';
+      novo.data_iso = antigos[j].data_iso || '';
+    } else {
+      restantes.push(i);
+    }
+  });
+  // Sobras: parear na ordem em que aparecem, sem reaproveitar nada já casado.
+  const sobrandoAntigos = antigos.filter((_, k) => !usados.has(k));
+  restantes.forEach((i, n) => {
+    const velho = sobrandoAntigos[n];
+    if (!velho) return;
+    diasNovos[i].data     = velho.data     || '';
+    diasNovos[i].data_iso = velho.data_iso || '';
+  });
+  return diasNovos;
+}
+
 function aplicarImport(result) {
   if (!result || !result.dias) {
     toast('Resposta sem dias — formato inesperado', 'err');
     return;
   }
   invalidatePreviewCache();   // dados novos — cache antigo é inválido
-  config.dias = result.dias;
+  config.dias = _preservarDatasDosDias(result.dias, config.dias);
   config.roster = result.roster || [];
   config.equipamento = result.equipamento || null;   // pro linter (carga fora do rol)
   if (result.evento_nome && !config.evento.nome) {
@@ -2259,7 +2295,13 @@ function aplicarImport(result) {
 
   const totalCats = result.dias.reduce((s, d) => s + (d.categorias || []).length, 0);
   // Mensagem inicial (depois é substituída pelo resumo via IA/algoritmo)
-  mostrarBannerPosImport(`${result.dias.length} dia(s), ${totalCats} categoria(s) importadas. Configure as datas pra aparecerem nas súmulas.`);
+  // Só cobra as datas se alguma faltar — reimportação que preservou tudo não
+  // precisa mandar o usuário reconfigurar o que já está lá.
+  const semData = config.dias.filter((d) => !(d.data || d.data_iso)).length;
+  mostrarBannerPosImport(
+    `${result.dias.length} dia(s), ${totalCats} categoria(s) importadas.`
+    + (semData ? ' Configure as datas pra aparecerem nas súmulas.'
+               : ' Datas dos dias preservadas.'));
   atualizarBannerPosImport();  // busca resumo formatado
   toast(`${result.dias.length} dia(s), ${totalCats} categoria(s) importadas`, 'ok');
 
