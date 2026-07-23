@@ -19,7 +19,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '2.11.0'
+VERSION = '2.12.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -486,6 +486,36 @@ class SumulaHandler(BaseHTTPRequestHandler):
         else:
             dias_sel = dias
 
+        # Escopos mais estreitos que o dia — espelham os filtros do
+        # /api/generate pra a matriz "escopo × ação" da sidebar poder oferecer
+        # Revisar em qualquer escopo, não só dia/evento.
+        cat_idx = body.get('cat_idx')
+        if cat_idx is not None:
+            if dia_idx is None:
+                raise BadRequest("cat_idx requer dia_idx")
+            try:
+                cat_idx = int(cat_idx)
+            except (TypeError, ValueError):
+                raise BadRequest("cat_idx inválido")
+            cats_do_dia = dias_sel[0].get('categorias', []) or []
+            if not (0 <= cat_idx < len(cats_do_dia)):
+                raise BadRequest(f"cat_idx fora do range (0..{len(cats_do_dia) - 1})")
+            dias_sel = [{**dias_sel[0], 'categorias': [cats_do_dia[cat_idx]]}]
+
+        # wkt_idx: um workout só, atravessando as categorias do dia. Índice é a
+        # posição em cat['workouts'] — mesma semântica do ZIP. Categoria que não
+        # tem esse índice fica de fora silenciosamente.
+        wkt_idx = body.get('wkt_idx')
+        if wkt_idx is not None:
+            if dia_idx is None:
+                raise BadRequest("wkt_idx requer dia_idx")
+            try:
+                wkt_idx = int(wkt_idx)
+            except (TypeError, ValueError):
+                raise BadRequest("wkt_idx inválido")
+            if wkt_idx < 0:
+                raise BadRequest("wkt_idx deve ser >= 0")
+
         ev       = cfg.get('evento', {}) or {}
         logo     = _resolve_logo(ev.get('logo_empresa', ''))
         logo_evt = _resolve_logo(ev.get('logo_evento', ''))
@@ -515,6 +545,10 @@ class SumulaHandler(BaseHTTPRequestHandler):
                     'data':      dia.get('data', '') or ev.get('data', ''),
                 }
                 for wp, wkt in enumerate(workouts, start=1):
+                    # Filtra pela POSIÇÃO original (não por fatia da lista): o
+                    # `workouts_que_rodam` das baterias é indexado por posição.
+                    if wkt_idx is not None and wp - 1 != wkt_idx:
+                        continue
                     roda = algum_sem_cron or any(
                         wp in (b.get('workouts_que_rodam') or []) for b in bat_com_cron)
                     if baterias and not roda:

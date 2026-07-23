@@ -567,12 +567,13 @@ function fecharValidacao() {
   setDialogOpen('validModal', false);
 }
 
-// Preview em grade: abre TODAS as súmulas (dia ou evento) numa aba nova, em
-// branco, pra revisar o visual antes de gerar o ZIP. escopo: 'dia' | 'evento'.
+// Preview em grade: abre as súmulas do escopo numa aba nova, em branco, pra
+// revisar o visual antes de baixar. Escopo: 'cat' | 'dia' | 'evento' | 'workout'
+// — mesmo payload do /api/generate, então os filtros são os mesmos.
 function previewGrid(escopo) {
   if (!temDados()) { toast('Importe ou monte um evento primeiro', 'warn'); return; }
-  const body = { config };
-  if (escopo === 'dia') body.dia_idx = diaAtual;
+  const body = _buildPayloadGerar(escopo);
+  if (!body) return;
   // Abre a aba ANTES do await pra não ser bloqueada como popup.
   const win = window.open('', '_blank');
   if (win) win.document.write('<!doctype html><meta charset="utf-8"><title>Pré-visualização…</title>' +
@@ -659,21 +660,6 @@ function atualizarBannerPosImport() {
   }).then(r => r.json()).then(res => {
     if (res.resumo) document.getElementById('pibMsg').textContent = res.resumo + ' Configure as datas pra aparecerem nas súmulas.';
   }).catch(()=>{});
-}
-
-// Toggle de "outras opções" no rodapé
-function toggleMaisOpcoes() {
-  const wrap = document.getElementById('gerarMaisOpcoes');
-  const btn  = document.getElementById('btnMaisOpcoes');
-  const open = wrap.style.display === 'none';
-  wrap.style.display = open ? '' : 'none';
-  if (btn) {
-    btn.textContent = open ? 'menos escopos ▴' : 'outros escopos ▾';
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  }
-  if (open && typeof _atualizarSelGerarWorkout === 'function') {
-    _atualizarSelGerarWorkout();
-  }
 }
 
 function onEventoChange() {
@@ -926,6 +912,7 @@ function selecionarCategoria(ci) {
   catSel = ci;
   catListOpen = false;
   renderCategoriasList();
+  atualizarBotaoGerar();   // o resumo do escopo 'cat' depende do catSel
 }
 
 function adicionarCategoria() {
@@ -1051,71 +1038,183 @@ function _contagemPaginas(escopo, competidoresOn) {
   return total;
 }
 
-function atualizarBotaoGerar() {
-  const btnEv  = document.getElementById('btnGerarEvento');
-  const btnDi  = document.getElementById('btnGerarDia');
-  const btnCt  = document.getElementById('btnGerarCat');
-  const subEv  = document.getElementById('bgeSubEvento');
-  const subDi  = document.getElementById('bgeSubDia');
-  const subCt  = document.getElementById('bgeSubCat');
-  if (!btnEv || !btnDi || !btnCt) return;
+// ─── Matriz de geração: ESCOPO (o que entra) × AÇÃO (o que fazer) ────────────
+// Escopo ativo: 'cat' | 'dia' | 'evento' | 'workout' | 'pre'.
+let escopoGerar = 'cat';
+// Chrome local disponível pra converter em PDF (vem de /api/status).
+let pdfAtivo = false;
 
+function setEscopoGerar(esc) {
+  escopoGerar = esc;
+  document.querySelectorAll('#mxScope .mx-chip').forEach(c => {
+    c.setAttribute('aria-pressed', String(c.dataset.escopo === esc));
+  });
+  const sel = document.getElementById('selGerarWorkout');
+  if (sel) {
+    sel.style.display = (esc === 'workout') ? '' : 'none';
+    if (esc === 'workout') _atualizarSelGerarWorkout();
+  }
+  atualizarBotaoGerar();
+}
+
+// Páginas de UM workout do dia atual, atravessando as categorias que o rodam.
+function _contagemPaginasWorkout(wktIdx) {
+  const dia = (config.dias || [])[diaAtual] || {};
+  let total = 0;
+  for (const cat of (dia.categorias || [])) {
+    if ((cat.workouts || []).length <= wktIdx) continue;
+    const wktPos = wktIdx + 1;
+    for (const b of (cat.baterias || [])) {
+      const wqr = b.workouts_que_rodam || [];
+      if (wqr.length && !wqr.includes(wktPos)) continue;
+      total += (b.alocacoes || []).length;
+    }
+  }
+  return total;
+}
+
+// Categorias do escopo que têm workout mas ninguém alocado — a súmula sai com
+// o banner "aguardando balizamento". Avisar antes evita baixar folhas em branco
+// sem entender por quê.
+function _catsAguardando() {
+  let n = 0;
+  (config.dias || []).forEach((d, i) => {
+    if (escopoGerar !== 'evento' && i !== diaAtual) return;
+    (d.categorias || []).forEach((c, ci) => {
+      if (escopoGerar === 'cat' && ci !== catSel) return;
+      if (!(c.workouts || []).length) return;
+      const nA = (c.baterias || []).reduce((s, b) => s + (b.alocacoes || []).length, 0);
+      if (!nA) n++;
+    });
+  });
+  return n;
+}
+
+// Descreve o pacote que sai no escopo ativo. Fonte única pro resumo E pro
+// enable/disable das ações — assim os dois nunca divergem.
+function _resumoGerar() {
   const dias = config.dias || [];
-  const totalWkts = dias.reduce((sum, d) =>
-    sum + (d.categorias || []).reduce((s, c) => s + (c.workouts || []).length, 0), 0);
+  const dia  = dias[diaAtual];
+  const cat  = dia && (dia.categorias || [])[catSel];
   const incluir = document.getElementById('chkIncluirCompetidores');
-  const compOn = !incluir || incluir.checked;
+  const compOn  = !incluir || incluir.checked;
+  const semComp = compOn ? '' : ' · sem competidores';
+  const pag = n => `${n} página${n !== 1 ? 's' : ''}`;
+  const totalWkts = dias.reduce((s, d) =>
+    s + (d.categorias || []).reduce((s2, c) => s2 + (c.workouts || []).length, 0), 0);
 
-  // Botão "Evento todo"
-  btnEv.disabled = totalWkts === 0;
-  const nEvt = _contagemPaginas('evento', compOn);
-  subEv.textContent = totalWkts === 0
-    ? 'importe um Excel pra começar'
-    : `${nEvt} página${nEvt !== 1 ? 's' : ''} · ${dias.length} dia${dias.length !== 1 ? 's' : ''}${compOn ? '' : ' · sem competidores'}`;
+  if (!totalWkts) {
+    return {titulo: '—', sub: 'importe um Excel pra começar', vazio: true, aguardando: 0};
+  }
+  if (escopoGerar === 'pre') {
+    const st = _statsPreEvento();
+    return {
+      titulo: 'Pré-evento · não alocados',
+      sub: st.total === 0
+        ? (st.semCategoria ? `${st.semCategoria} no roster sem categoria definida`
+                           : 'todos do roster já estão alocados')
+        : `${st.total} não alocado${st.total !== 1 ? 's' : ''} em ${st.cats} categoria${st.cats !== 1 ? 's' : ''}`,
+      vazio: st.total === 0,
+      aguardando: 0,
+    };
+  }
+  if (escopoGerar === 'workout') {
+    const sel = document.getElementById('selGerarWorkout');
+    const val = sel && sel.value !== '' ? parseInt(sel.value, 10) : NaN;
+    if (isNaN(val)) {
+      return {titulo: 'Workout específico', sub: 'selecione um workout do dia',
+              vazio: true, aguardando: 0};
+    }
+    const nome = sel.options[sel.selectedIndex].textContent;
+    const nCats = (dia.categorias || []).filter(c => (c.workouts || []).length > val).length;
+    const n = _contagemPaginasWorkout(val);
+    return {
+      titulo: `${nome} · ${dia.label || 'dia atual'}`,
+      sub: (n ? pag(n) : 'sem atletas alocados') +
+           ` · atravessa ${nCats} categoria${nCats !== 1 ? 's' : ''}` + semComp,
+      vazio: false,
+      aguardando: _catsAguardando(),
+    };
+  }
+  if (escopoGerar === 'evento') {
+    const n = _contagemPaginas('evento', compOn);
+    const nCats = dias.reduce((s, d) => s + (d.categorias || []).length, 0);
+    return {
+      titulo: `Evento todo · ${dias.length} dia${dias.length !== 1 ? 's' : ''}`,
+      sub: `${nCats} categoria${nCats !== 1 ? 's' : ''} · ${pag(n)}${semComp}`,
+      vazio: n === 0,
+      aguardando: _catsAguardando(),
+    };
+  }
+  if (escopoGerar === 'dia') {
+    const nCats = dia ? (dia.categorias || []).length : 0;
+    const n = _contagemPaginas('dia', compOn);
+    return {
+      titulo: `${(dia && dia.label) || 'Dia atual'} · todas as categorias`,
+      sub: dia ? `${nCats} categoria${nCats !== 1 ? 's' : ''} · ${pag(n)}${semComp}`
+               : 'sem dia ativo',
+      vazio: !dia || nCats === 0,
+      aguardando: _catsAguardando(),
+    };
+  }
+  // 'cat' (default)
+  const n = _contagemPaginas('cat', compOn);
+  return {
+    titulo: cat ? `${cat.nome} · ${(dia && dia.label) || ''}`.trim().replace(/ ·\s*$/, '')
+                : 'Categoria',
+    sub: cat ? `${(cat.workouts || []).length} workout${(cat.workouts || []).length !== 1 ? 's' : ''} · ${pag(n)}${semComp}`
+             : 'sem categoria selecionada',
+    vazio: !cat || (cat.workouts || []).length === 0,
+    aguardando: _catsAguardando(),
+  };
+}
 
-  // Botão "Dia atual"
-  const diaCur = dias[diaAtual];
-  btnDi.disabled = !diaCur || (diaCur.categorias || []).length === 0;
-  const nDia = _contagemPaginas('dia', compOn);
-  subDi.textContent = !diaCur ? 'sem dia ativo'
-    : `${nDia} página${nDia !== 1 ? 's' : ''} · ${diaCur.label || 'dia atual'}${compOn ? '' : ' · sem competidores'}`;
+function atualizarBotaoGerar() {
+  const btnZip  = document.getElementById('btnAcaoZip');
+  const btnPrev = document.getElementById('btnAcaoPreview');
+  const btnPdf  = document.getElementById('btnAcaoPdf');
+  const elT = document.getElementById('mxSumT');
+  const elS = document.getElementById('mxSumS');
+  const elF = document.getElementById('mxSumFlag');
+  if (!btnZip || !btnPrev || !btnPdf || !elT) return;
 
-  // Botão "Categoria selecionada" (primário) — usa catSel atual
-  const dia = dias[diaAtual];
-  const cat = dia && (dia.categorias || [])[catSel];
-  btnCt.disabled = !cat || (cat.workouts || []).length === 0;
-  if (!cat) {
-    subCt.textContent = 'sem categoria';
-  } else {
-    const nCat = _contagemPaginas('cat', compOn);
-    subCt.textContent = `${nCat} página${nCat !== 1 ? 's' : ''} · ${cat.nome}${compOn ? '' : ' · sem competidores'}`;
+  // Repopula a lista de workouts se o escopo for workout (dia pode ter mudado)
+  if (escopoGerar === 'workout') _atualizarSelGerarWorkout();
+
+  const r = _resumoGerar();
+  elT.textContent = r.titulo;
+  elS.textContent = r.sub;
+  if (elF) {
+    elF.style.display = r.aguardando ? '' : 'none';
+    elF.textContent = `⏳ ${r.aguardando} categoria${r.aguardando !== 1 ? 's' : ''} aguardando balizamento — sai com nomes do roster`;
   }
 
-  // Botão "PDFs por bateria (dia atual)" — só visível com pdf_ativo
-  const btnPdf = document.getElementById('btnGerarPdfDia');
-  const subPdf = document.getElementById('bgeSubPdfDia');
-  if (btnPdf && subPdf) {
-    btnPdf.disabled = btnDi.disabled;
-    subPdf.textContent = !diaCur ? 'sem dia ativo'
-      : `${nDia} página${nDia !== 1 ? 's' : ''} · ${diaCur.label || 'dia atual'} · Chrome local`;
-  }
+  btnZip.disabled = r.vazio;
+  // Preview em grade não cobre o pré-evento (gerador é outro).
+  btnPrev.disabled = r.vazio || escopoGerar === 'pre';
+  btnPrev.title = escopoGerar === 'pre'
+    ? 'Revisar não cobre o pré-evento — baixe o HTML pra conferir'
+    : 'Abre as súmulas do escopo numa aba nova, pra revisar o visual antes de baixar';
+  // PDFs precisa do Chrome da máquina. Sem ele o botão vira porta de entrada
+  // do app de desktop, que é exatamente o que falta pra pessoa nesse momento.
+  btnPdf.disabled = r.vazio || escopoGerar === 'pre';
+  const subPdf = document.getElementById('mxSubPdf');
+  if (subPdf) subPdf.textContent = pdfAtivo ? 'Chrome local' : 'baixar o app';
+  btnPdf.title = pdfAtivo
+    ? 'ZIP de PDFs prontos: um por bateria + dia completo em ordem cronológica (horário → bateria → raia).'
+    : 'Converter em PDF exige o app de desktop — clique pra baixar a última versão.';
+}
 
-  // Linha "Workout específico" — só repopula se o painel estiver aberto
-  const wktRow = document.getElementById('gerarWkpRow');
-  if (wktRow && wktRow.style.display !== 'none') {
-    _atualizarSelGerarWorkout();
+// Dispara a ação escolhida no escopo ativo.
+function acaoGerar(acao) {
+  if (acao === 'preview') { previewGrid(escopoGerar); return; }
+  if (acao === 'pdf') {
+    if (!pdfAtivo) { abrirAppPdf(); return; }
+    gerarPDFsEscopo();
+    return;
   }
-
-  // Botão "Pré-evento" — atletas no roster sem bateria
-  const btnPre = document.getElementById('btnGerarPreEvento');
-  const subPre = document.getElementById('bgeSubPreEvento');
-  if (btnPre && subPre) {
-    const stats = _statsPreEvento();
-    btnPre.disabled = stats.total === 0;
-    subPre.textContent = stats.total === 0
-      ? (stats.semCategoria ? `${stats.semCategoria} no roster sem categoria definida` : 'todos do roster já estão alocados')
-      : `${stats.total} não alocado${stats.total !== 1 ? 's' : ''} em ${stats.cats} categoria${stats.cats !== 1 ? 's' : ''}`;
-  }
+  if (escopoGerar === 'pre') { gerarPreEvento(); return; }
+  gerarZIPEscopo(escopoGerar);
 }
 
 function _statsPreEvento() {
@@ -1165,12 +1264,15 @@ function _downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-// Desabilita botões + mostra 'gerando…'. Retorna closure pra restaurar estado.
-function _gerarBtnsBusy(btnIds, activeBtnId, subId) {
-  btnIds.forEach(id => { const b = document.getElementById(id); if (b) b.disabled = true; });
+// Desabilita as três ações + mostra 'gerando…' na linha de resumo. Retorna
+// closure pra restaurar o estado.
+function _gerarBtnsBusy(activeBtnId) {
+  ['btnAcaoZip', 'btnAcaoPreview', 'btnAcaoPdf'].forEach(id => {
+    const b = document.getElementById(id); if (b) b.disabled = true;
+  });
   const btn = activeBtnId ? document.getElementById(activeBtnId) : null;
   if (btn) btn.classList.add('generating');
-  const sub = subId ? document.getElementById(subId) : null;
+  const sub = document.getElementById('mxSumS');
   const subOriginal = sub ? sub.textContent : '';
   if (sub) sub.textContent = 'gerando…';
   return () => {
@@ -1186,7 +1288,7 @@ function gerarPreEvento() {
     toast('Nada a gerar — todos do roster já estão alocados', 'warn');
     return;
   }
-  const restore = _gerarBtnsBusy(['btnGerarPreEvento'], 'btnGerarPreEvento', 'bgeSubPreEvento');
+  const restore = _gerarBtnsBusy('btnAcaoZip');
   apiFetch('/api/generate/pre-evento', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1281,19 +1383,14 @@ function _workoutMetaDoDia(dia, wktIdx) {
 
 // Popula o select com workouts do dia atual. Chamado quando dia muda + quando
 // outros-escopos abre.
+// Repopula o seletor de workout do escopo 'workout' (dia atual). Preserva a
+// escolha anterior quando o workout ainda existe no dia.
 function _atualizarSelGerarWorkout() {
   const sel = document.getElementById('selGerarWorkout');
-  const row = document.getElementById('gerarWkpRow');
-  const btn = document.getElementById('btnGerarWorkout');
-  if (!sel || !row || !btn) return;
+  if (!sel) return;
   assignWorkoutNumbersGlobal();
   const dia = (config.dias || [])[diaAtual] || {};
   const wkts = _workoutsDoDia(dia);
-  if (!wkts.length) {
-    row.style.display = 'none';
-    return;
-  }
-  row.style.display = '';
   const prevVal = sel.value;
   sel.innerHTML = '<option value="">— Workout —</option>' +
     wkts.map(w => {
@@ -1303,39 +1400,11 @@ function _atualizarSelGerarWorkout() {
   if (prevVal && wkts.some(w => String(w.idx) === prevVal)) {
     sel.value = prevVal;
   }
-  onSelGerarWorkoutChange();
+  void _workoutMetaDoDia;
 }
 
 function onSelGerarWorkoutChange() {
-  const sel = document.getElementById('selGerarWorkout');
-  const btn = document.getElementById('btnGerarWorkout');
-  const sub = document.getElementById('bgeSubWorkout');
-  if (!sel || !btn) return;
-  const empty = !sel.value;
-  btn.disabled = empty;
-  if (sub) {
-    if (empty) {
-      sub.textContent = '—';
-    } else {
-      const dia = (config.dias || [])[diaAtual] || {};
-      const wktIdx = parseInt(sel.value, 10);
-      // Conta páginas que vão sair (sumar atletas das categorias que têm esse workout)
-      let total = 0;
-      for (const cat of (dia.categorias || [])) {
-        if ((cat.workouts || []).length <= wktIdx) continue;
-        const bats = cat.baterias || [];
-        const wktPos = wktIdx + 1;
-        for (const b of bats) {
-          const wqr = b.workouts_que_rodam || [];
-          if (wqr.length && !wqr.includes(wktPos)) continue;
-          total += (b.alocacoes || []).length;
-        }
-      }
-      sub.textContent = total ? `${total} súmula${total === 1 ? '' : 's'}` : '— sem atletas alocados —';
-    }
-  }
-  // Atualiza meta do workout no _workoutMetaDoDia cache se precisar
-  void _workoutMetaDoDia;
+  atualizarBotaoGerar();
 }
 
 
@@ -1361,9 +1430,7 @@ function gerarZIPEscopo(escopo) {
   }
   const payload = _buildPayloadGerar(escopo);
   if (!payload) return;
-  const btnIdMap = { evento: 'btnGerarEvento', dia: 'btnGerarDia', cat: 'btnGerarCat', workout: 'btnGerarWorkout' };
-  const subIdMap = { evento: 'bgeSubEvento',   dia: 'bgeSubDia',   cat: 'bgeSubCat',   workout: 'bgeSubWorkout' };
-  const restore = _gerarBtnsBusy(Object.values(btnIdMap), btnIdMap[escopo], subIdMap[escopo]);
+  const restore = _gerarBtnsBusy('btnAcaoZip');
   apiFetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1381,12 +1448,12 @@ function gerarZIPEscopo(escopo) {
 // Compat: gerarZIP() ainda existe pro botão antigo (caso ainda referenciado)
 function gerarZIP() { gerarZIPEscopo('evento'); }
 
-function gerarPDFsDia() {
-  // ZIP de PDFs por bateria do dia atual (endpoint local — usa o Chrome da
-  // máquina). Mesmo payload do /api/generate com escopo dia.
-  const payload = _buildPayloadGerar('dia');
+function gerarPDFsEscopo() {
+  // ZIP de PDFs por bateria (endpoint local — usa o Chrome da máquina). Aceita
+  // o mesmo payload do /api/generate, então respeita o escopo ativo.
+  const payload = _buildPayloadGerar(escopoGerar);
   if (!payload) return;
-  const restore = _gerarBtnsBusy(['btnGerarPdfDia'], 'btnGerarPdfDia', 'bgeSubPdfDia');
+  const restore = _gerarBtnsBusy('btnAcaoPdf');
   toast('Gerando PDFs — um dia cheio pode levar ~2 minutos…', 'ok');
   apiFetch('/api/gerar-pdfs', {
     method: 'POST',
@@ -2789,10 +2856,10 @@ function toast(msg, type = 'ok') {
 (function initApp() {
   apiFetch('/api/status').then(r=>r.json()).then(s => {
     chatAIAtiva = !!s.ai_ativo;
-    if (s.pdf_ativo) {
-      const bp = document.getElementById('btnGerarPdfDia');
-      if (bp) bp.style.display = '';
-    }
+    // Sem Chrome local o botão PDFs continua visível — clicar abre o download
+    // do app de desktop, que é o que resolve pra pessoa naquele momento.
+    pdfAtivo = !!s.pdf_ativo;
+    atualizarBotaoGerar();
     if (s.ai_ativo) document.getElementById('aiBadge').style.display = '';
   }).catch(()=>{});
   loadState();

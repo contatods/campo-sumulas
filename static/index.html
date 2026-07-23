@@ -50,50 +50,50 @@
       <div id="categoriasList"></div>
     </div>
 
-    <!-- Generate (categoria selecionada é a opção primária) -->
+    <!-- Gerar: duas perguntas — ESCOPO (o que entra) × AÇÃO (o que fazer).
+         Substitui a lista de 9 combinações escritas por extenso. -->
     <div class="sidebar-footer">
-      <button class="btn-gerar-escopo primary" id="btnGerarCat" onclick="gerarZIPEscopo('cat')" disabled>
-        <span class="bge-main">⬇ Gerar categoria selecionada</span>
-        <span class="bge-sub" id="bgeSubCat">—</span>
-      </button>
-      <button class="ger-toggle-more" type="button" onclick="toggleMaisOpcoes()" id="btnMaisOpcoes" aria-expanded="false" aria-controls="gerarMaisOpcoes">outros escopos ▾</button>
-      <div id="gerarMaisOpcoes" style="display:none">
-        <label class="ger-chk">
-          <input type="checkbox" id="chkIncluirCompetidores" checked onchange="onGerarOptChange()">
-          <span>Incluir competidores</span>
-        </label>
-        <button class="btn-gerar-escopo" id="btnPreviewDia" onclick="previewGrid('dia')" title="Abre todas as súmulas do dia atual numa aba nova, pra revisar o visual antes de gerar o ZIP">
-          <span class="bge-main">👁 Revisar dia (preview)</span>
-          <span class="bge-sub">todas as súmulas do dia numa aba</span>
-        </button>
-        <button class="btn-gerar-escopo" id="btnPreviewEvento" onclick="previewGrid('evento')" title="Abre todas as súmulas do evento inteiro numa aba nova">
-          <span class="bge-main">👁 Revisar evento (preview)</span>
-          <span class="bge-sub">todas as súmulas do evento</span>
-        </button>
-        <button class="btn-gerar-escopo" id="btnGerarDia" onclick="gerarZIPEscopo('dia')" disabled>
-          <span class="bge-main">Dia atual</span>
-          <span class="bge-sub" id="bgeSubDia">—</span>
-        </button>
-        <button class="btn-gerar-escopo" id="btnGerarEvento" onclick="gerarZIPEscopo('evento')" disabled>
-          <span class="bge-main">Evento todo</span>
-          <span class="bge-sub" id="bgeSubEvento">—</span>
-        </button>
-        <button class="btn-gerar-escopo" id="btnGerarPdfDia" onclick="gerarPDFsDia()" disabled style="display:none"
-                title="ZIP de PDFs prontos: um por bateria + dia completo em ordem cronológica (horário → bateria → raia). Converte com o Chrome desta máquina — disponível rodando o app local.">
-          <span class="bge-main">PDFs por bateria (dia atual)</span>
-          <span class="bge-sub" id="bgeSubPdfDia">—</span>
-        </button>
-        <button class="btn-gerar-escopo" id="btnGerarPreEvento" onclick="gerarPreEvento()" disabled title="Súmulas pra atletas/times inscritos que ainda não têm bateria/raia">
-          <span class="bge-main">Pré-evento (não alocados)</span>
-          <span class="bge-sub" id="bgeSubPreEvento">—</span>
-        </button>
-        <div class="ger-wkt-row" id="gerarWkpRow" style="display:none">
-          <select id="selGerarWorkout" onchange="onSelGerarWorkoutChange()" title="Workout específico do dia atual"></select>
-          <button class="btn-gerar-escopo btn-gerar-wkt" id="btnGerarWorkout" onclick="gerarZIPEscopo('workout')" disabled title="Gera súmulas só do workout selecionado, atravessando todas as categorias do dia atual">
-            <span class="bge-main">⬇ Gerar workout</span>
-            <span class="bge-sub" id="bgeSubWorkout">—</span>
+      <div class="mx-block">
+        <div class="mx-lbl">Escopo <i>o que entra no pacote</i></div>
+        <div class="mx-chips" id="mxScope" role="group" aria-label="Escopo da geração">
+          <button type="button" class="mx-chip" data-escopo="cat"     onclick="setEscopoGerar('cat')"     aria-pressed="true">Categoria</button>
+          <button type="button" class="mx-chip" data-escopo="dia"     onclick="setEscopoGerar('dia')"     aria-pressed="false">Dia</button>
+          <button type="button" class="mx-chip" data-escopo="evento"  onclick="setEscopoGerar('evento')"  aria-pressed="false">Evento</button>
+          <button type="button" class="mx-chip" data-escopo="workout" onclick="setEscopoGerar('workout')" aria-pressed="false">Workout</button>
+          <button type="button" class="mx-chip" data-escopo="pre"     onclick="setEscopoGerar('pre')"     aria-pressed="false" title="Súmulas pra atletas/times inscritos que ainda não têm bateria/raia">Pré-evento</button>
+        </div>
+        <select id="selGerarWorkout" class="mx-wkt-sel" onchange="onSelGerarWorkoutChange()" style="display:none" title="Workout específico do dia atual"></select>
+      </div>
+
+      <div class="mx-block">
+        <div class="mx-lbl">Ação</div>
+        <div class="mx-acts">
+          <button type="button" class="mx-act wide" id="btnAcaoZip" onclick="acaoGerar('zip')" disabled>
+            <span class="m">⬇ Baixar HTML</span>
+            <span class="s">ZIP com pastas dia / categoria</span>
+          </button>
+          <button type="button" class="mx-act" id="btnAcaoPreview" onclick="acaoGerar('preview')" disabled
+                  title="Abre as súmulas do escopo numa aba nova, pra revisar o visual antes de baixar">
+            <span class="m">👁 Revisar</span>
+            <span class="s">abre numa aba</span>
+          </button>
+          <button type="button" class="mx-act" id="btnAcaoPdf" onclick="acaoGerar('pdf')" disabled
+                  title="ZIP de PDFs prontos: um por bateria + dia completo em ordem cronológica. Converte com o Chrome desta máquina — disponível rodando o app local.">
+            <span class="m">⬇ PDFs</span>
+            <span class="s" id="mxSubPdf">app local</span>
           </button>
         </div>
+      </div>
+
+      <label class="ger-chk">
+        <input type="checkbox" id="chkIncluirCompetidores" checked onchange="onGerarOptChange()">
+        <span>Incluir competidores</span>
+      </label>
+
+      <div class="mx-sum" aria-live="polite">
+        <div class="mx-sum-t" id="mxSumT">—</div>
+        <div class="mx-sum-s" id="mxSumS">importe um Excel pra começar</div>
+        <div class="mx-flag" id="mxSumFlag" style="display:none">⏳ aguardando balizamento — sai com nomes do roster</div>
       </div>
     </div>
   </aside>
