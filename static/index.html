@@ -17,10 +17,19 @@
   <button class="hdr-add-dia" id="hdrAddDia" onclick="adicionarDia()" title="Adicionar dia">+</button>
   <div class="hdr-right">
     <span class="hdr-save" id="saveIndicator" title="Tudo é salvo automaticamente no navegador"></span>
-    <button class="hdr-cfg" onclick="abrirAppPdf()" title="Baixar o app que converte as súmulas em PDF (última versão)"><span>⬇</span> App PDF</button>
-    <button class="hdr-cfg" onclick="abrirAjuda()" title="Como usar o sistema"><span>?</span> Ajuda</button>
     <button class="hdr-cfg" onclick="abrirEventos()" title="Trocar entre eventos salvos"><span>📂</span> Eventos</button>
     <button class="hdr-cfg" onclick="abrirConfig()" title="Configurações"><span>⚙</span> Configurar</button>
+    <!-- Utilitários (instalação, consulta, backup) saem do topo: são de uma vez
+         por evento, não de todo dia como Eventos e Configurar. -->
+    <div class="hdr-menu-wrap">
+      <button class="hdr-cfg hdr-more" id="hdrMore" onclick="toggleHdrMenu(event)"
+              aria-expanded="false" aria-haspopup="true" title="Mais" aria-label="Mais opções">⋯</button>
+      <div class="hdr-menu" id="hdrMenu" style="display:none" role="menu">
+        <button role="menuitem" onclick="fecharHdrMenu();abrirAppPdf()">⬇ App PDF<span class="mi-sub">converter em PDF</span></button>
+        <button role="menuitem" onclick="fecharHdrMenu();abrirAjuda()">? Manual do sistema</button>
+        <button role="menuitem" onclick="fecharHdrMenu();exportarJSON()">💾 Exportar backup<span class="mi-sub">.json</span></button>
+      </div>
+    </div>
     <span class="hdr-version">v{{VERSION}}</span>
     <span id="aiBadge" title="IA estimando rounds AMRAP via Claude Haiku" style="display:none;font-size:9px;font-weight:700;color:#5A9;letter-spacing:.1em;
       background:rgba(90,153,90,.12);border:1px solid rgba(90,153,90,.3);
@@ -629,7 +638,7 @@
       <h3>Imprimir</h3>
       <p>Abra o HTML no browser → Ctrl+P (Cmd+P no Mac) → "Salvar como PDF" ou imprimir direto. Cada atleta vira uma folha A4 separada (page-break-after automático).</p>
       <h3>App conversor de PDF (opcional)</h3>
-      <p>Pra não abrir arquivo por arquivo, o app de desktop <strong>Digital Score PDFs</strong> converte o lote inteiro em PDFs prontos usando o Chrome da máquina. Baixe a última versão no botão <code>⬇ App PDF</code> do topo.</p>
+      <p>Pra não abrir arquivo por arquivo, o app de desktop <strong>Digital Score PDFs</strong> converte o lote inteiro em PDFs prontos usando o Chrome da máquina. Baixe a última versão no menu <code>⋯</code> do topo → <strong>App PDF</strong>; a ação <code>⬇ PDFs</code> da sidebar também leva pro download quando o app não está rodando.</p>
     </div>
 
     <div class="cfg-pane ajuda-pane" id="ajudaPaneIA" style="display:none">
@@ -693,7 +702,7 @@
       <p>Tudo fica salvo no navegador (<code>localStorage</code>). Se você limpar o cache, mudar de máquina, ou der pau no navegador, perde tudo. Backup em arquivo <code>.json</code> resolve isso.</p>
       <h3>Exportar</h3>
       <ol>
-        <li><code>⚙ Configurar</code> → aba <strong>Importar</strong> → <code>💾 Exportar JSON</code></li>
+        <li>Menu <code>⋯</code> do topo → <strong>Exportar backup</strong> (ou <code>⚙ Configurar</code> → aba <strong>Importar</strong> → <code>💾 Exportar JSON</code>)</li>
         <li>Baixa um arquivo <code>nome-do-evento-data.json</code></li>
         <li>Se os logos somarem mais de 500KB, o sistema pergunta se quer incluir (pode gerar sem pra ficar mais leve)</li>
       </ol>

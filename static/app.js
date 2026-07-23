@@ -169,6 +169,24 @@ function ajudaTab(t) {
 
 // ─── Modal: baixar o app conversor de PDF ───────────────────────────────────
 // Detecta o SO e destaca o download certo (o outro fica como opção secundária).
+// ─── Menu "⋯" do header ──────────────────────────────────────────────────────
+function toggleHdrMenu(ev) {
+  if (ev) ev.stopPropagation();   // senão o listener de click-outside fecha na hora
+  const menu = document.getElementById('hdrMenu');
+  const btn  = document.getElementById('hdrMore');
+  if (!menu || !btn) return;
+  const aberto = menu.style.display !== 'none';
+  menu.style.display = aberto ? 'none' : '';
+  btn.setAttribute('aria-expanded', String(!aberto));
+}
+
+function fecharHdrMenu() {
+  const menu = document.getElementById('hdrMenu');
+  const btn  = document.getElementById('hdrMore');
+  if (menu) menu.style.display = 'none';
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
 function abrirAppPdf() {
   setDialogOpen('appPdfModal', true);
   const ua  = (navigator.userAgent || '') + ' ' + (navigator.platform || '');
@@ -2943,14 +2961,23 @@ function toast(msg, type = 'ok') {
     setTimeout(() => location.reload(), 1500);
   });
 
+  // Clique fora fecha o menu "⋯" do header.
+  document.addEventListener('click', (e) => {
+    const menu = document.getElementById('hdrMenu');
+    if (!menu || menu.style.display === 'none') return;
+    if (menu.contains(e.target) || e.target.closest('#hdrMore')) return;
+    fecharHdrMenu();
+  });
+
   // Esc fecha o modal mais "em cima" (último aberto vence). Ordem reflete
-  // hierarquia visual: Ajuda > Eventos > Configurar > Validação > Chat.
+  // hierarquia visual: menu ⋯ > Ajuda > Eventos > Configurar > Conferência > Chat.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     const aberto = (id) => {
       const el = document.getElementById(id);
       return el && el.style.display && el.style.display !== 'none';
     };
+    if (aberto('hdrMenu')) { fecharHdrMenu(); return; }
     if (aberto('appPdfModal'))  { fecharAppPdf();   return; }
     if (aberto('ajudaModal'))   { fecharAjuda();    return; }
     if (aberto('eventosModal')) { fecharEventos();  return; }
