@@ -981,6 +981,14 @@ def parse_workout_text(text: str, numero: int) -> Workout:
         f1['janela'] = _extrair_janela(texto_f1, nome_f1)
         f2['janela'] = _extrair_janela(texto_f2, nome_f2)
         full = '\n'.join(lines)
+        # "A chegada não conta como repetição" costuma viver nas NOTAS — que o
+        # split do composto corta FORA dos blocos F1/F2. Cada sub-workout, ao
+        # ser parseado isolado, não enxerga a cláusula e re-adiciona a chegada.
+        # A regra vale pro composto inteiro: tira dos dois.
+        if _CHEGADA_NEGADA_RE.search(full):
+            for f in (f1, f2):
+                f['movimentos'] = [m for m in (f.get('movimentos') or [])
+                                   if not m.get('chegada')]
         m_cap = re.search(r'time\s*cap\s*[:\-]?\s*([^\n]+?)(?:\.|$)', full, re.I)
         time_cap_total = m_cap.group(1).strip() if m_cap else (f2.get('time_cap') or f1.get('time_cap') or '')
         m_desc = re.search(

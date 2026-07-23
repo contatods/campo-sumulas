@@ -1393,6 +1393,35 @@ def test_chegada_negada_varias_formas_omite_rep():
     assert any(m.get("chegada") for m in w["movimentos"])
 
 
+def test_chegada_negada_nas_notas_vale_para_composto():
+    """Composto ("Muscle Swim" + "3k"): o split manda as NOTAS pra fora dos
+    blocos F1/F2, então a cláusula "a chegada não conta" não chegava nos
+    sub-workouts e cada um re-adicionava a chegada. A regra vale pros dois."""
+    txt = (
+        'Arena: (Piscina)\n\n'
+        '"Muscle Swim" (00:00-08:00)\n\n'
+        'For time:\n50m Swim\n10 Devil\'s Presses (22,5kg)\n50m Swim\n\n'
+        'Rest 12 minutes, then...\n\n'
+        '"3k" (20:00-35:00)\n\n'
+        'For time:\n3k Treadmill Run\n\n'
+        'Time cap: 35 minutes\n\n'
+        '――― NOTAS ―――\n\n'
+        'Observações\n'
+        '- A chegada não conta como repetição: o workout termina na última rep '
+        'do último movimento prescrito.'
+    )
+    w = parse_workout_text(txt, 1)
+    assert w['tipo'] == 'composto'
+    for f in ('f1', 'f2'):
+        assert w[f]['movimentos'], f'{f} sem movimentos'
+        assert not any(m.get('chegada') for m in w[f]['movimentos']), \
+            f'{f} não deveria ter chegada'
+    # Sem a cláusula, o mesmo composto mantém a chegada nas duas partes.
+    w2 = parse_workout_text(txt.split('――― NOTAS ―――')[0], 1)
+    assert all(any(m.get('chegada') for m in w2[f]['movimentos'])
+               for f in ('f1', 'f2'))
+
+
 PWRD_LOOP = (
     '"PWRD Loop"\n\n'
     'AMRAP 4 minutes:\n'
