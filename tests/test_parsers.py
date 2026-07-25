@@ -851,6 +851,73 @@ def test_parse_excel_storm_separa_modalidades_por_dia():
     assert sem_cat == []
 
 
+def test_bateria_mista_filtra_por_faixa_com_ordem_de_palavras_diferente():
+    """Regressão PWRD 2026: a grade escreve 'Master Feminino 40+' e o Inscritos
+    'Master 40+ Feminino' (ordem das palavras trocada). O nome casa por fuzzy,
+    mas a busca de faixa só olhava as formas estrita/relaxada — não achava a
+    faixa, então a filtragem da bateria mista não rodava e os homens (301-399)
+    vazavam pra súmula do feminino. A faixa agora também é indexada por chave
+    fuzzy."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    # Inscritos com a ordem 'Master 40+ Feminino' / 'Master 40-44 Masculino'
+    ws = wb.create_sheet("Inscritos")
+    ws.append(["Nome", "Max", "Pago", "Nº. Inicial", "Nº. Final", "Individual"])
+    ws.append(["Master 40+ Feminino",     15, 2, 1601, 1699, "Sim"])
+    ws.append(["Master 40-44 Masculino",  45, 2, 301,  399,  "Sim"])
+    # Grade escreve a MESMA categoria com ordem diferente ('Feminino 40+')
+    ws = wb.create_sheet("Workouts - Individuais")
+    ws.append(["Master Feminino 40+", "Master Masculino 40-44"])
+    ws.append([
+        '"Stack Bad"\n\nFor time:\n10 Burpees\n\nTime cap: 10 minutes',
+        '"Stack Bad"\n\nFor time:\n10 Burpees\n\nTime cap: 10 minutes',
+    ])
+    # 2ª grade só pra o detector de grade disparar (precisa de 2+ cats/aba)
+    ws = wb.create_sheet("Workouts - Duplas")
+    ws.append(["Dupla Rx Masculino", "Dupla Rx Feminino"])
+    ws.append([
+        '"Stack Bad"\n\nFor time:\n10 Burpees\n\nTime cap: 10 minutes',
+        '"Stack Bad"\n\nFor time:\n10 Burpees\n\nTime cap: 10 minutes',
+    ])
+    # Cronograma: uma bateria mista feminino & masculino
+    heat = "Master 40+ Feminino (Single Heat) & Master 40-44 Masculino (Heat 1)"
+    ws = wb.create_sheet("Sábado")
+    ws.append(["Pwrd"])
+    ws.append(["Sábado"])
+    ws.append(["Eventos", "Categoria", "Bateria", "Arbitragem", "Quantidade",
+               "Aquecimento", "Duração Aquec.", "Fila", "Duração Fila",
+               "Horário", "Cap", "Transição"])
+    ws.append(['"Stack Bad"', heat, 1, "", "4 (4)", "06:00", "00:30",
+               "06:30", "00:15", "06:45", "00:15", "00:10"])
+    # Montagem: 2 mulheres (1601-1602) e 2 homens (331-332) na mesma bateria,
+    # separados por raias vazias (como no Excel real)
+    ws = wb.create_sheet("Sábado - Montagem")
+    ws.append(["06:45", '"Stack Bad"'])
+    ws.append([1, heat])
+    ws.append(["Raia", "Número", "Nome", "Box"])
+    ws.append([1, 1601, "LUZIA", "CT MIRAMOTO"])
+    ws.append([2, 1602, "AMANDA", "COALA"])
+    ws.append([3, None, None, None])          # raia vazia entre os blocos
+    ws.append([4, 331,  "FABIANO", "CT X"])
+    ws.append([5, 332,  "LUCAS",   "CT Y"])
+    ws = wb.create_sheet("Atletas - Sábado")
+    for n, nome in [(1601, "LUZIA"), (1602, "AMANDA"), (331, "FABIANO"), (332, "LUCAS")]:
+        ws.append([n, nome, "Box"])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    r = parse_excel(buf.getvalue())
+    sabado = next(d for d in r["dias"] if d["label"] == "Sábado")
+
+    fem = next(c for c in sabado["categorias"] if c["nome"] == "Master Feminino 40+")
+    nums_fem = sorted(a["numero"] for b in fem["baterias"] for a in b["alocacoes"])
+    assert nums_fem == ["1601", "1602"], f"homens vazaram pro feminino: {nums_fem}"
+
+    masc = next(c for c in sabado["categorias"] if c["nome"] == "Master Masculino 40-44")
+    nums_masc = sorted(a["numero"] for b in masc["baterias"] for a in b["alocacoes"])
+    assert nums_masc == ["331", "332"], f"mulheres vazaram pro masculino: {nums_masc}"
+
+
 def test_workout_numero_de_codigo_exige_prefixo_explicito():
     # Aceita formatos com prefixo
     assert _workout_numero_de_codigo("#1") == 1

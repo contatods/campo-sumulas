@@ -3001,6 +3001,26 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
     cats_ambiguas_fuzzy = {cat for cat, f in cats_grade_fuzzy.items()
                            if f and _contagem_fuzzy[f] > 1}
 
+    # Faixa de número indexada pela chave FUZZY do Inscritos (ordem de palavras,
+    # gênero, sinal do ±). Necessária porque a grade e o Inscritos podem
+    # escrever a mesma categoria em ordens diferentes ('Master Feminino 40+' vs
+    # 'Master 40+ Feminino'): o nome casa por fuzzy, mas a busca de faixa (só
+    # estrita/relaxada) não achava nada — e sem faixa a filtragem de bateria
+    # mista não roda, deixando atletas do sexo oposto vazarem pra súmula.
+    # Guarda de ambiguidade: duas categorias do Inscritos com a mesma chave
+    # fuzzy e faixas diferentes anulam a chave (não dá pra desambiguar).
+    inscritos_faixas_fuzzy: dict[str, tuple[int, int]] = {}
+    _faixa_fuzzy_ambig: set[str] = set()
+    for _cat_norm, _faixa in inscritos_faixas.items():
+        _fk = _chave_categoria_fuzzy(_cat_norm)
+        if not _fk:
+            continue
+        if _fk in inscritos_faixas_fuzzy and inscritos_faixas_fuzzy[_fk] != _faixa:
+            _faixa_fuzzy_ambig.add(_fk)
+        inscritos_faixas_fuzzy[_fk] = _faixa
+    for _fk in _faixa_fuzzy_ambig:
+        inscritos_faixas_fuzzy.pop(_fk, None)
+
     # 2) Dias detectados — em ordem de preferência:
     #    (a) abas <Dia> que TÊM par <Dia> - Montagem (atletas alocados)
     #    (b) abas <Dia> sozinhas (planejamento; gera súmulas em branco)
@@ -3122,6 +3142,9 @@ def parse_excel_grades_e_dias(wb) -> dict[str, Any]:
             # menciona a cat, mas a Montagem tem atletas dela.
             faixa_cat = inscritos_faixas.get(cat_grade_norm) or (
                 inscritos_faixas.get(cat_grade_relax) if permite_relax else None
+            ) or (
+                inscritos_faixas_fuzzy.get(cat_grade_fuzzy)
+                if permite_fuzzy and cat_grade_fuzzy else None
             )
             # Faixa colidida (mesma faixa em duas cats, típico Individuais×Duplas)
             # ainda pode servir pra match por faixa neste dia, desde que:
