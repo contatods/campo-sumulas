@@ -136,6 +136,35 @@ def _tipo_do_score(descricao: str) -> str:
     return 'reps'
 
 
+def _extrair_eliminacao(texto: str) -> Optional[dict]:
+    """Detecta o formato de ELIMINAÇÃO e extrai seus parâmetros.
+
+    Formato: rounds com janela fixa em que, a cada round, os últimos times a
+    cruzar a linha saem da prova. O que pontua é a ORDEM DE CHEGADA — e os
+    eliminados são classificados pelo round em que saíram. Nada a ver com um
+    For Time (onde o score é o relógio), então precisa de tipo próprio.
+
+    Reconhece pela seção 'Eliminação' nas notas OU pela frase que descreve o
+    corte ('os 2 últimos times a cruzar a linha são eliminados'). Retorna
+    {'eliminados_por_round': int|None} ou None se não for esse formato.
+    """
+    if not texto:
+        return None
+    linhas = texto.splitlines()
+    tem_secao = any(_ELIMINACAO_SECAO_RE.match(l.strip()) for l in linhas)
+    m_n = _ELIMINADOS_POR_ROUND_RE.search(texto)
+    if not tem_secao and not m_n:
+        return None
+    quantos = None
+    if m_n:
+        # O regex tem dois ramos alternativos (PT e EN); pega o grupo que casou.
+        for g in m_n.groups():
+            if g:
+                quantos = _num_ext(g)
+                break
+    return {'eliminados_por_round': quantos}
+
+
 def _extrair_scores(full: str) -> list[dict]:
     """Extrai os scores nomeados de um workout multi-score.
 
@@ -385,6 +414,49 @@ _ROUNDS_BLOCK_RE = re.compile(
 )
 
 
+# Cabeçalho de rounds com JANELA fixa: '5 rounds, every 3 minutes:',
+# '5 rounds, a cada 3 minutos:'. Diferente de `_ROUNDS_BLOCK_RE` ('N rounds
+# of:'), que não tem janela — aqui cada round tem um relógio próprio e o time
+# que termina antes descansa até o próximo. É a estrutura dos workouts de
+# eliminação (corrida com corte por round).
+_ROUNDS_JANELA_RE = re.compile(
+    r'^\s*' + _NUM_TOKEN_RE + r'\s+rounds?\s*,?\s*'
+    r'(?:every|a\s+cada|cada)\s+(\d+(?::\d+)?)\s*'
+    r'(?:min\w*|minutos?|\')?\s*:?\s*$',
+    re.I | re.M,   # re.M pro linter poder procurar no texto cru inteiro
+)
+# Movimento de CHEGADA por corrida: o que define a ordem em que os times
+# cruzam a linha ('Run to finish', 'Sprint to finish', 'Corrida final').
+# Não tem reps — o juiz anota POSIÇÃO, não número de repetições.
+_CHEGADA_CORRIDA_RE = re.compile(
+    r'^\s*(?:run|sprint|corrida|correr)\s*'
+    r'(?:to\s+(?:the\s+)?finish(?:\s+line)?|at[ée]\s+(?:a\s+)?(?:linha|chegada)'
+    r'[\w\s]*|final|to\s+finish)\s*\.?\s*$',
+    re.I,
+)
+# Duração total do workout declarada fora do rótulo 'Time cap'.
+# Workouts com janela por round somam a duração ('Duração total: 15 minutes').
+_DURACAO_TOTAL_RE = re.compile(
+    r'(?:dura[çc][ãa]o\s+total|tempo\s+total|total\s+(?:time|duration))'
+    r'\s*[:\-]?\s*(\d+(?::\d+)?)\s*(?:min\w*|minutos?)?',
+    re.I,
+)
+# Regra de ELIMINAÇÃO por round — o discriminante do formato. Cobre a seção
+# 'Eliminação' nas notas e a frase que descreve o corte.
+_ELIMINACAO_SECAO_RE = re.compile(
+    r'^\s*[' + _TRACO + r']*\s*(?:elimina[çc][ãa]o|elimination|corte)\s*'
+    r'[' + _TRACO + r']*\s*:?\s*$',
+    re.I,
+)
+# 'os 2 últimos times a cruzar a linha são eliminados' / 'the last 2 teams are
+# eliminated'. O número é quantos saem por round.
+_ELIMINADOS_POR_ROUND_RE = re.compile(
+    r'(?:os\s+)?' + _NUM_TOKEN_RE + r'\s+[úu]ltimos?\b[^.]*?\belimin\w+'
+    r'|\blast\s+' + _NUM_TOKEN_RE + r'\s+[\w\s]*?\belimin\w+',
+    re.I,
+)
+
+
 # Excel diz que NÃO tem rep de chegada (ou que ela não conta/pontua). Quando
 # bate, o for_time NÃO ganha a linha de chegada. Cobre várias formas em PT/EN:
 #   'chegada não conta/vale/pontua/contabiliza', 'não conta a chegada',
@@ -463,6 +535,14 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
             num_s, sep, rest = m.group(1), m.group(2), m.group(3).strip()
             if sep == '-':
                 nome = f"{num_s}-{rest}".upper()
+            elif (m_un := re.match(r'^(m|km|ft|mi|yd)\s+(\S.*)$', rest, re.I)):
+                # Unidade de DISTÂNCIA separada do número ('20 m Handstand
+                # Walk'): gruda no número, igual à forma colada ('900m Ski Erg'
+                # → '900M SKI ERG'). Sem isso o nome virava 'M HANDSTAND WALK',
+                # com a unidade solta na frente. Só distância — 'cal' fica de
+                # fora porque '100 Cal Row' já é lido como 'CAL ROW' há tempo.
+                nome = f"{num_s}{m_un.group(1)} {m_un.group(2)}".upper()
+                tem_unidade = True
             else:
                 nome = rest.upper()
     try: num = int(num_s)
@@ -893,6 +973,15 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
         s_clean = line.strip()
         # Bloco de rounds aninhado ('then, 2 rounds of:') — banner, preserva o
         # buy-in que veio antes (não vira {rounds_fixos} pra não multiplicar).
+        # 'N rounds, every M minutes:' — cada round tem relógio próprio. Sem
+        # isso o cabeçalho virava um movimento ('ROUNDS, EVERY 3 MINUTES:'
+        # com 5 reps) e a janela do round sumia da súmula.
+        if (m_rj := _ROUNDS_JANELA_RE.match(s_clean)):
+            n_rj = _num_ext(m_rj.group(1))
+            if n_rj:
+                wkt["rounds_fixos"] = n_rj
+            wkt["janela_round"] = m_rj.group(2)
+            continue
         if (m_rb := _ROUNDS_BLOCK_RE.match(s_clean)):
             n_rb = _num_ext(m_rb.group(1)) or 2
             tem_buyin = any(m.get("nome") for m in movs)
@@ -934,11 +1023,15 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
         # nem carga, e o seu tamanho fazia o filtro de flex-mov descartar a
         # linha inteira (era assim que 'Max Sync. Thrusters ... – Athletes A
         # and B' — o movimento que PONTUA — sumia da súmula).
+        # Chegada por corrida: define a ORDEM em que os times cruzam a linha.
+        # Não tem reps, então o parse normal a descartava — e é justamente ela
+        # que gera a pontuação num workout de eliminação.
+        if _CHEGADA_CORRIDA_RE.match(line_clean.strip()):
+            movs.append({"nome": line_clean.strip().upper(), "posicao": True})
+            continue
+
         line_clean, executantes = _extrair_executantes(line_clean)
 
-        # Uma linha pode carregar duas prescrições somadas ('100 Cal Row +
-        # 100 Cal Ski Erg'). Vira um movimento por parcela — senão o 1º número
-        # vira reps e o resto fica pendurado no nome.
         # Uma linha pode carregar duas prescrições somadas ('100 Cal Row +
         # 100 Cal Ski Erg'). Vira um movimento por parcela — senão o 1º número
         # vira reps e o resto fica pendurado no nome.
@@ -1194,6 +1287,14 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     # os nomes dos scores vão pra súmula e precisam da capitalização do autor.
     if (scores := _extrair_scores(text)):
         wkt["scores"] = scores
+    # Formato de eliminação: rounds com janela + corte por round, score =
+    # ordem de chegada. Só promove um workout que TEM a estrutura de rounds
+    # com janela — a regra de eliminação sozinha (numa nota solta) não muda o
+    # tipo de um For Time comum.
+    if wkt.get("janela_round") and (elim := _extrair_eliminacao(text)):
+        wkt["tipo"] = "eliminacao"
+        if elim.get("eliminados_por_round"):
+            wkt["eliminados_por_round"] = elim["eliminados_por_round"]
     return wkt
 
 
@@ -1289,6 +1390,10 @@ def _parse_workout_text_core(text: str, numero: int) -> Workout:
                          '\n'.join(lines), re.I)
         if m_tc:
             wkt["time_cap"] = f"{m_tc.group(1)} min"
+        elif (m_dt := _DURACAO_TOTAL_RE.search('\n'.join(lines))):
+            # Workout com janela por round declara o total como 'Duração
+            # total', não 'Time cap' — mas pro juiz é o mesmo relógio.
+            wkt["time_cap"] = f"{m_dt.group(1)} min"
         elif wkt.get("tipo") == "amrap":
             # AMRAP declara a duração no próprio cabeçalho ('AMRAP 16 minutes')
             # e quase nunca repete um 'Time cap:'. Sem isso o workout chegava
@@ -1302,7 +1407,9 @@ def _parse_workout_text_core(text: str, numero: int) -> Workout:
     # 5) For Time / For Time Goal fecham com chegada — A MENOS que o Excel diga
     #    que a chegada não conta como repetição (a especificidade vem do texto).
     chegada_nao_conta = bool(_CHEGADA_NEGADA_RE.search(full))
-    if wkt["tipo"] in ("for_time", "for_time_goal") and movs and not chegada_nao_conta:
+    tem_chegada_corrida = any(m.get("posicao") for m in movs)
+    if (wkt["tipo"] in ("for_time", "for_time_goal") and movs
+            and not chegada_nao_conta and not tem_chegada_corrida):
         movs.append({"chegada": True})
     wkt["movimentos"] = movs
     _aplicar_progressao_reps(wkt)
@@ -1553,7 +1660,8 @@ def parse_workout_text_robusto(text: str, numero: int) -> Workout:
 
 # ── Schema canônico + validação ─────────────────────────────────────────────
 # Tipos canônicos de workout — todo parse deve cair num destes.
-TIPOS_WORKOUT = ('for_time', 'for_time_goal', 'amrap', 'express', 'for_load', 'composto')
+TIPOS_WORKOUT = ('for_time', 'for_time_goal', 'amrap', 'express', 'for_load',
+                 'composto', 'eliminacao')
 
 _TC_NEGADO_RE = re.compile(
     r'n[ãa]o\s+(?:ter[áa]|tem|h[áa])\s+time\s*cap|sem\s+time\s*cap|no\s+time\s*cap', re.I)
@@ -1572,6 +1680,9 @@ def validar_workout_schema(wkt: Workout, raw: str = '') -> list[tuple[str, str]]
       - se o texto tem 'Time cap: N' (não negado), `time_cap` é capturado
       - se o texto declara scores nomeados ('(Score A):'), todos aparecem em
         `scores` — score perdido = súmula sem campo pra anotar aquela pontuação
+      - se o texto tem regra de eliminação + rounds com janela, o tipo é
+        `eliminacao` e traz a janela — senão a súmula oferece campo de tempo
+        num workout cujo score é ordem de chegada
 
     Retorna lista de (codigo, detalhe); vazia = ok. Base do corpus de regressão
     e reutilizável pelo linter de import. NÃO garante correção semântica total
@@ -1602,6 +1713,20 @@ def validar_workout_schema(wkt: Workout, raw: str = '') -> list[tuple[str, str]]
         if ('time cap' in rl and not _TC_NEGADO_RE.search(raw)
                 and not wkt.get('time_cap') and tipo not in ('for_load', 'composto')):
             probs.append(('timecap_perdido', 'texto tem Time cap e não foi capturado'))
+        # Eliminação: o formato muda o que o juiz anota (posição de chegada,
+        # não tempo). Ler como For Time entrega a súmula errada.
+        if _extrair_eliminacao(raw) and _ROUNDS_JANELA_RE.search(raw):
+            if tipo != 'eliminacao':
+                probs.append(('eliminacao_perdida',
+                              f'texto tem rounds com janela + regra de eliminação, '
+                              f'mas o tipo ficou {tipo!r}'))
+            elif not wkt.get('janela_round'):
+                probs.append(('janela_round_perdida',
+                              'tipo eliminacao sem a janela de cada round'))
+            if not any(m.get('posicao') for m in (wkt.get('movimentos') or [])):
+                probs.append(('chegada_corrida_perdida',
+                              'eliminação sem o movimento que define a ordem de chegada'))
+
         # Multi-score: conta as declarações no texto e compara com o parse.
         # Um score a menos na súmula é um campo que o juiz não tem pra anotar.
         declarados = _extrair_scores(raw)

@@ -809,6 +809,49 @@ body{
   font-size:4pt;font-weight:400;color:var(--ghost);
   font-style:italic;letter-spacing:.02em;margin-top:.4mm;
 }
+/* ── Eliminação: grade de rounds ────────────────────────────────────────
+   Formato em que cada round tem janela própria e os últimos a cruzar a linha
+   saem. O juiz não anota reps por round — anota a POSIÇÃO de chegada e quem
+   caiu. Por isso a grade é própria, e não a tabela de reps do For Time. */
+.elim-banner{
+  display:flex;align-items:center;gap:2.5mm;
+  background:var(--panel);color:var(--w);
+  padding:1.5mm 3mm;margin-bottom:1.5mm;border-radius:1mm;
+}
+.elim-bn-mark{
+  font-size:5pt;font-weight:900;letter-spacing:.18em;
+  background:var(--w);color:var(--panel);padding:.4mm 1.4mm;border-radius:1mm;
+}
+.elim-bn-item{font-size:6.5pt;font-weight:700;letter-spacing:.04em}
+.elim-bn-sep{opacity:.4}
+.elim-bn-sub{
+  font-size:5pt;font-weight:400;font-style:italic;
+  opacity:.75;margin-left:auto;letter-spacing:.02em;
+}
+.elim-wrap{border:2px solid var(--ink);overflow:hidden;margin-bottom:1.5mm}
+.elim-hdr{display:flex;align-items:center;background:var(--panel);height:6mm}
+.eh{
+  font-size:4.5pt;font-weight:700;color:rgba(255,255,255,.75);
+  letter-spacing:.16em;text-transform:uppercase;
+  display:flex;align-items:center;justify-content:center;
+}
+.elim-row{
+  display:flex;align-items:stretch;min-height:9mm;
+  border-top:1px solid var(--rule);background:var(--w);
+}
+.elim-row:nth-child(even){background:var(--paper)}
+.er-cell{display:flex;align-items:center;justify-content:center;
+  border-right:1px solid var(--rule)}
+.er-round{flex-shrink:0;font-weight:900;font-size:9pt;color:var(--mid)}
+.er-janela{flex-shrink:0;font-size:7pt;font-weight:700;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+/* Célula de escrita: a linha inteira é área de anotação (sem caixa aninhada,
+   que come espaço útil na folha impressa). */
+.er-write{flex:1;background:var(--field);border-right:1px solid var(--rule)}
+.er-elim-box{
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;
+}
+.er-box{width:5mm;height:5mm;background:var(--w);border:1.5px solid var(--mid)}
 /* Right dark time cap */
 .sb-tc-col{
   width:28mm;flex-shrink:0;background:var(--panel);
@@ -1341,7 +1384,11 @@ MOV_TABLE_MACRO = r"""
         <div class="mr-name">
           {% if mov.paralelo %}<span class="mr-paralelo-mark" title="Executado em paralelo">‖</span>{% endif %}
           {% if mov.max %}<span class="mr-max-badge">MAX</span>{% endif %}
-          {% if mov.reps is defined %}<span class="mr-reps-inline">({{ mov.reps }})</span>{% endif %}{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}{% if mov.executantes %} <span class="mr-exec">{{ mov.executantes }}</span>{% endif %}
+          {% if mov.posicao %}<span class="mr-max-badge">POSIÇÃO</span>{% endif %}
+          {# Movimento de distância guarda a medida no próprio nome ('900M SKI
+             ERG', '20M HANDSTAND WALK'); repetir o número na frente imprimiria
+             '(20) 20M HANDSTAND WALK'. A coluna Reps segue mostrando o valor. #}
+          {% if mov.reps is defined and not mov.nome.startswith(mov.reps|string) %}<span class="mr-reps-inline">({{ mov.reps }})</span>{% endif %}{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}{% if mov.executantes %} <span class="mr-exec">{{ mov.executantes }}</span>{% endif %}
         </div>
         {% if mov.reps is defined %}
           <div class="mr-reps">{{ mov.reps }}</div>
@@ -1509,6 +1556,54 @@ AMRAP_TABLE_MACRO = r"""
 {% endmacro %}
 """
 
+ELIMINACAO_MACRO = r"""
+{% macro elim_banner(wkt) %}
+{# Regra do formato numa faixa só: quantos rounds, quanto dura cada um e
+   quantos caem por round. É o que o juiz precisa saber antes de largar. #}
+<div class="elim-banner">
+  <span class="elim-bn-mark">Eliminação</span>
+  <span class="elim-bn-item">{{ wkt.rounds_fixos or '?' }} rounds</span>
+  {% if wkt.janela_round %}
+    <span class="elim-bn-sep">·</span>
+    <span class="elim-bn-item">janela {{ wkt.janela_round }}{% if ':' not in wkt.janela_round|string %}'{% endif %} por round</span>
+  {% endif %}
+  {% if wkt.eliminados_por_round %}
+    <span class="elim-bn-sep">·</span>
+    <span class="elim-bn-item">{{ wkt.eliminados_por_round }} eliminados por round</span>
+  {% endif %}
+  <span class="elim-bn-sub">quem não fecha a janela também está fora</span>
+</div>
+{% endmacro %}
+
+{% macro elim_rounds(wkt, janelas) %}
+{# Uma linha por round: janela do relógio, posição de chegada e marcação de
+   eliminado. Os movimentos aparecem UMA vez (tabela acima) — repetir a
+   prescrição 5× encheria a página sem dar nada ao juiz. #}
+{% set n = wkt.rounds_fixos or (janelas | length) or 5 %}
+{% set w_rnd = '16mm' %}{% set w_jan = '24mm' %}{% set w_elim = '20mm' %}
+<div class="elim-wrap">
+  <div class="elim-hdr">
+    <div class="eh" style="width:{{w_rnd}}">Round</div>
+    <div class="eh" style="width:{{w_jan}}">Janela</div>
+    <div class="eh" style="flex:1">Posição de chegada</div>
+    <div class="eh" style="width:{{w_elim}}">Eliminado</div>
+  </div>
+  {% for ri in range(n) %}
+  <div class="elim-row">
+    <div class="er-cell er-round" style="width:{{w_rnd}}">{{ ri + 1 }}</div>
+    <div class="er-cell er-janela" style="width:{{w_jan}}">
+      {{ janelas[ri] if ri < janelas|length else '—' }}
+    </div>
+    <div class="er-write"></div>
+    <div class="er-cell er-elim-box" style="width:{{w_elim}}">
+      <div class="er-box"></div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endmacro %}
+"""
+
 SCORE_BOX_MACRO = r"""
 {% macro score_box(tipo, wkt=none) %}
 {% set tb_text = wkt.tiebreak if (wkt is not none and wkt.tiebreak) else none %}
@@ -1607,6 +1702,32 @@ SCORE_BOX_MACRO = r"""
   </div>
 </div>
 <div class="goal-score-note"><span class="gsn-mark">!</span> Não finalizou? Score = time cap + 1s por rep faltante do goal.</div>
+{% elif tipo == 'eliminacao' %}
+<div class="score-section">
+  <span class="sc-t">Resultado</span>
+  <span class="sc-s">Ordem de chegada — quem foi eliminado é classificado pelo round de saída</span>
+</div>
+<div class="score-box">
+  <div class="sb-lbl-col">
+    <span class="sb-lbl-tag">Eliminação</span>
+    <span class="sb-lbl-name">Pontuação</span>
+  </div>
+  <div class="sb-field sb-field-tempo">
+    <span class="sb-field-lbl">Posição Final <span class="sb-field-sub">se chegou ao fim</span></span>
+    <div class="sb-field-line"></div>
+  </div>
+  <div class="sb-field sb-field-reps">
+    <span class="sb-field-lbl">Round de Saída <span class="sb-field-sub">se eliminado</span></span>
+    <div class="sb-field-line"></div>
+  </div>
+  {% if tb_text %}
+  <div class="sb-field sb-field-tb">
+    <span class="sb-field-lbl">Tie-break <span class="sb-field-sub">{{ tb_text }}</span></span>
+    <div class="sb-field-line"></div>
+  </div>
+  {% endif %}
+</div>
+
 {% elif tipo == 'amrap' %}
 <div class="score-section">
   <span class="sc-t">Resultado</span>
@@ -2040,7 +2161,7 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
 </div>
 
 {# ── WORKOUT ZONE ── #}
-{% set tipo_labels = {'for_time':'For Time','for_time_goal':'For Time Goal','amrap':'AMRAP','express':'Express — AMRAP + For Time','for_load':'For Load','composto':'Composto'} %}
+{% set tipo_labels = {'for_time':'For Time','for_time_goal':'For Time Goal','amrap':'AMRAP','express':'Express — AMRAP + For Time','for_load':'For Load','composto':'Composto','eliminacao':'Eliminação'} %}
 <div class="wkt-zone">
   {% if tipo in ('express', 'composto') and wkt.numero_f2 is defined %}
   <div class="wkt-badge-dual">
@@ -2147,6 +2268,14 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
      vão na tabela). Em AMRAP simples, descrição ajuda o juiz. #}
   {% if wkt.descricao and not wkt.emom_janela %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
   {{ amrap_table(wkt.movimentos, wkt.numero, wkt.n_rounds|default(3), wkt, linhas=n_rounds_fit|default(0)) }}
+
+{% elif tipo == 'eliminacao' %}
+  {# Eliminação: banner com a regra, a prescrição do round UMA vez, e a grade
+     de rounds onde o juiz anota posição de chegada e quem caiu. #}
+  {{ elim_banner(wkt) }}
+  {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
+  {{ mov_table(wkt.movimentos, wkt.numero, hide_cum=true) }}
+  {{ elim_rounds(wkt, janelas_round|default([])) }}
 
 {% elif tipo == 'for_load' %}
   {# Descrição NÃO é exibida pra For Load: a banda 'Sequência' dentro da
@@ -2308,10 +2437,44 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
 
 # Templates compilados uma vez no import — recompilar a cada página de atleta
 # custava ~115ms × N na produção (80 páginas = ~9s só de Jinja compile).
-_PAGE_TMPL = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + SCORE_BOX_MACRO
-                      + FOR_LOAD_TABLE_MACRO + PAGE_TMPL_STR, autoescape=True)
+_PAGE_TMPL = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + ELIMINACAO_MACRO
+                      + SCORE_BOX_MACRO + FOR_LOAD_TABLE_MACRO + PAGE_TMPL_STR,
+                      autoescape=True)
 _DOC_TMPL = Template(DOC_TMPL_STR, autoescape=True)
 _FOR_LOAD_TEAM_SUMMARY_PAGE_TMPL = Template(FOR_LOAD_TEAM_SUMMARY_TMPL, autoescape=True)
+
+
+def janelas_de_round(janela: str, n_rounds: int) -> list[str]:
+    """Janelas acumuladas de um workout com relógio por round.
+
+    'every 3 minutes' × 5 rounds → ['0:00–3:00', '3:00–6:00', …]. O juiz
+    precisa do relógio de cada round na mão: num formato de eliminação o time
+    que não fecha a janela está fora, então a hora do corte é informação de
+    arbitragem, não decoração.
+
+    `janela` aceita minutos ('3') ou m:s ('2:30'). Devolve [] se não parsear.
+    """
+    if not janela or not n_rounds:
+        return []
+    txt = str(janela).strip()
+    if ':' in txt:
+        partes = txt.split(':')
+        try:
+            passo = int(partes[0]) * 60 + int(partes[1])
+        except (ValueError, IndexError):
+            return []
+    else:
+        try:
+            passo = int(float(txt.replace(',', '.'))) * 60
+        except ValueError:
+            return []
+    if passo <= 0:
+        return []
+    out = []
+    for i in range(n_rounds):
+        ini, fim = i * passo, (i + 1) * passo
+        out.append(f'{ini // 60}:{ini % 60:02d}–{fim // 60}:{fim % 60:02d}')
+    return out
 
 
 # ── Orçamento vertical da página (scorecard AMRAP) ──────────────────────────
@@ -2430,9 +2593,13 @@ def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
     n_rounds_fit = (linhas_amrap_que_cabem(wkt)
                     if wkt.get('tipo') == 'amrap' and not wkt.get('emom_janela')
                     else 0)
+    # Janelas de relógio por round (formato de eliminação).
+    janelas_round = janelas_de_round(wkt.get('janela_round', ''),
+                                     wkt.get('rounds_fixos') or 0)
     return _PAGE_TMPL.render(ev=ev, wkt=wkt,
                              logo_src=logo_src, logo_evento_src=logo_evento_src,
-                             atleta=atleta, n_rounds_fit=n_rounds_fit)
+                             atleta=atleta, n_rounds_fit=n_rounds_fit,
+                             janelas_round=janelas_round)
 
 
 def render_workout(ev, wkt, fonts, logo_src, logo_evento="", atleta=None):

@@ -622,3 +622,68 @@ def test_progressao_extrapola_alem_da_lista_pre_computada(evento_basico, fonts_e
     refs = re.findall(r'<span class="ar-ref-lbl">ref</span>([^<]*)</span>', html)
     assert refs[:7] == ['30', '40', '50', '60', '70', '80', '90'], refs[:7]
     assert '30' not in refs[5:], 'voltou pra rep base depois da lista pré-computada'
+
+
+# ── Render do formato de eliminação ─────────────────────────────────────────
+def _elim_wkt():
+    return {
+        "numero": 13, "nome": "THE LAST OF US", "tipo": "eliminacao",
+        "modalidade": "quarteto", "time_cap": "15 min",
+        "rounds_fixos": 5, "janela_round": "3", "eliminados_por_round": 2,
+        "movimentos": [
+            {"nome": "20M HANDSTAND WALK", "reps": 20},
+            {"nome": "SYNC. DUAL-DUMBBELL DEVIL PRESS", "carga": "22,5/15 KG", "reps": 15},
+            {"nome": "RUN TO FINISH", "posicao": True},
+        ],
+    }
+
+
+def test_janelas_de_round():
+    """O juiz precisa do relógio de cada round: num formato de eliminação,
+    quem não fecha a janela está fora, então a hora do corte é arbitragem."""
+    from campo_generator import janelas_de_round
+    assert janelas_de_round('3', 5) == ['0:00–3:00', '3:00–6:00', '6:00–9:00',
+                                        '9:00–12:00', '12:00–15:00']
+    assert janelas_de_round('2:30', 2) == ['0:00–2:30', '2:30–5:00']
+    assert janelas_de_round('', 5) == [] and janelas_de_round('x', 3) == []
+    assert janelas_de_round('3', 0) == []
+
+
+def test_render_eliminacao_grade_de_rounds(evento_basico, fonts_empty):
+    """Uma linha por round com janela, campo de posição e marcação de
+    eliminado — a prescrição aparece UMA vez, não repetida 5×."""
+    html = render_workout(evento_basico, _elim_wkt(), fonts_empty, "")
+    corpo = html.split('</style>')[-1]
+    linhas = re.findall(r'<div class="elim-row">', corpo)
+    assert len(linhas) == 5, f'esperava 5 rounds, veio {len(linhas)}'
+    for janela in ('0:00–3:00', '3:00–6:00', '12:00–15:00'):
+        assert janela in corpo, f'janela {janela} ausente'
+    assert corpo.count('er-box') == 5          # um checkbox de eliminado por round
+    # prescrição aparece uma vez só
+    assert corpo.count('20M HANDSTAND WALK') == 1
+
+
+def test_render_eliminacao_banner_e_score(evento_basico, fonts_empty):
+    """Banner traz a regra do formato; o score box pede posição de chegada e
+    round de saída — não tempo, que não é o score deste workout."""
+    html = render_workout(evento_basico, _elim_wkt(), fonts_empty, "")
+    corpo = html.split('</style>')[-1]
+    assert '5 rounds' in corpo and '2 eliminados por round' in corpo
+    campos = re.findall(r'<span class="sb-field-lbl">(.*?)<', corpo)
+    assert any('Posição Final' in c for c in campos), campos
+    assert any('Round de Saída' in c for c in campos), campos
+    assert not any('Tempo' in c for c in campos), 'tempo não é o score aqui'
+    assert 'POSIÇÃO' in corpo                  # badge no movimento de chegada
+    assert 'Eliminação' in corpo               # rótulo do tipo no cabeçalho
+
+
+def test_render_nao_repete_distancia_no_nome(evento_basico, workout_for_time, fonts_empty):
+    """'900M SKI ERG' já traz a medida — o render não pode imprimir
+    '(900) 900M SKI ERG'. Movimento de reps normal segue com o '(N)'."""
+    wkt = {**workout_for_time, "movimentos": [
+        {"nome": "900M SKI ERG", "reps": 900},
+        {"nome": "THRUSTERS", "reps": 20},
+    ]}
+    corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
+    assert '(900)' not in corpo
+    assert '(20)' in corpo

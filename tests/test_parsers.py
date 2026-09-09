@@ -1836,3 +1836,93 @@ def test_composto_com_e_literal_no_nome_ainda_casa():
              'f1': {'nome': 'BARBELLS AND JUMP'}, 'f2': {'nome': 'RUN IN THE PARK'}}]
     assert _workouts_que_rodam_da_bateria(
         '"Barbells and Jump & Run in the Park"', comp) == [1]
+
+
+# ── Formato de eliminação (rounds com janela + corte por round) ─────────────
+_ELIMINACAO_TXT = (
+    '"The Last of Us"\n\n5 rounds, every 3 minutes:\n'
+    '20 m Handstand Walk\n'
+    '15 Sync. Dual-Dumbbell Devil Press (22,5/15 kg) (2 athletes)\n'
+    '20 m Handstand Walk\n+\nRun to finish\n\n'
+    'Duração total: 15 minutes\n\n━━━ NOTAS ━━━\n\n'
+    'Eliminação\n'
+    '- A cada round os 2 últimos times a cruzar a linha são eliminados.\n'
+    '- Time que não concluir o round dentro dos 3\' também está eliminado.\n\n'
+    'Pontuação\n'
+    '- Será a ordem de chegada no Run to finish; os times eliminados são '
+    'classificados pelo round em que saíram (200 pontos).'
+)
+
+
+def test_eliminacao_parse_completo():
+    """Rounds com janela + corte por round é um formato próprio: o score é
+    ORDEM DE CHEGADA, não tempo. Lido como For Time, a súmula oferecia campo
+    de tempo e perdia a estrutura inteira."""
+    w = parse_workout_text(_ELIMINACAO_TXT, 1)
+    assert w['tipo'] == 'eliminacao'
+    assert w['rounds_fixos'] == 5
+    assert w['janela_round'] == '3'
+    assert w['eliminados_por_round'] == 2
+    assert w['time_cap'] == '15 min'          # veio de 'Duração total'
+    nomes = [m.get('nome') for m in w['movimentos']]
+    # cabeçalho não vira movimento
+    assert not any('ROUNDS' in (n or '') for n in nomes), nomes
+    # 'Run to finish' preservado e marcado como posição
+    corrida = [m for m in w['movimentos'] if m.get('posicao')]
+    assert len(corrida) == 1 and corrida[0]['nome'] == 'RUN TO FINISH'
+    # unidade de distância gruda no número em vez de virar 'M HANDSTAND WALK'
+    assert 'HANDSTAND WALK' in nomes[0] and nomes[0].startswith('20M')
+    # sem linha de CHEGADA extra — a corrida JÁ é a chegada
+    assert not [m for m in w['movimentos'] if m.get('chegada')]
+
+
+def test_eliminacao_nao_promove_for_time_comum():
+    """A regra de eliminação sozinha não muda o tipo — precisa da estrutura de
+    rounds com janela. Senão qualquer nota sobre corte viraria eliminação."""
+    txt = ('"X"\n\nFor time:\n21 Thrusters\nTime cap: 8 min\n\n━━━ NOTAS ━━━\n\n'
+           'Observações\n- O último time é eliminado da próxima fase.')
+    w = parse_workout_text(txt, 1)
+    assert w['tipo'] == 'for_time'
+    # e um workout com janela mas SEM regra de corte também não é eliminação
+    w2 = parse_workout_text('"Y"\n\n5 rounds, every 3 minutes:\n10 Burpees', 1)
+    assert w2['tipo'] != 'eliminacao'
+    assert w2['rounds_fixos'] == 5 and w2['janela_round'] == '3'
+
+
+def test_eliminacao_aceita_pt_e_en():
+    """Formato genérico: o organizador escreve em PT-BR ou EN."""
+    pt = parse_workout_text(
+        '"P"\n\n4 rounds, a cada 2 minutos:\n10 Burpees\nCorrida final\n\n'
+        '━━━ NOTAS ━━━\n\nEliminação\n- Os 3 últimos são eliminados.', 1)
+    assert pt['tipo'] == 'eliminacao' and pt['rounds_fixos'] == 4
+    assert pt['janela_round'] == '2' and pt['eliminados_por_round'] == 3
+    en = parse_workout_text(
+        '"E"\n\n3 rounds, every 2:30 minutes:\n10 Burpees\nSprint to finish\n\n'
+        '━━━ NOTAS ━━━\n\nElimination\n- The last 2 teams are eliminated.', 1)
+    assert en['tipo'] == 'eliminacao' and en['janela_round'] == '2:30'
+
+
+def test_linter_acusa_eliminacao_lida_como_for_time():
+    """Ler eliminação como For Time entrega a súmula errada (campo de tempo
+    onde deveria ter posição de chegada) — o linter tem que pegar."""
+    from parsers import validar_workout_schema
+    w = parse_workout_text(_ELIMINACAO_TXT, 1)
+    assert validar_workout_schema(w, _ELIMINACAO_TXT) == []
+    ruim = dict(w, tipo='for_time')
+    ruim.pop('janela_round', None)
+    assert 'eliminacao_perdida' in dict(validar_workout_schema(ruim, _ELIMINACAO_TXT))
+    sem_corrida = dict(w, movimentos=[m for m in w['movimentos'] if not m.get('posicao')])
+    assert 'chegada_corrida_perdida' in dict(
+        validar_workout_schema(sem_corrida, _ELIMINACAO_TXT))
+
+
+def test_unidade_de_distancia_separada_do_numero():
+    """'20 m Handstand Walk' tem que virar '20M HANDSTAND WALK', igual à forma
+    colada '900m Ski Erg'. Antes o 'm' ficava solto ('M HANDSTAND WALK')."""
+    from parsers import _parse_mov_line
+    assert _parse_mov_line('20 m Handstand Walk') == (20, '20M HANDSTAND WALK')
+    assert _parse_mov_line('5 km Run') == (5, '5KM RUN')
+    assert _parse_mov_line('900m Ski Erg') == (900, '900M SKI ERG')
+    # 'cal' fica de fora: '100 Cal Row' já era lido como 'CAL ROW'
+    assert _parse_mov_line('100 Cal Row') == (100, 'CAL ROW')
+    assert _parse_mov_line('21 Thrusters') == (21, 'THRUSTERS')

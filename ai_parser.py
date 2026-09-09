@@ -220,7 +220,10 @@ def _mov_resumo(m: dict) -> str:
     if m.get("separador"):
         return "[then…]"
     s = m.get("nome") or "?"
-    if m.get("reps") is not None:
+    if m.get("reps") is not None and not s.startswith(str(m["reps"])):
+        # Movimento de distância já traz a medida no nome ('20M HANDSTAND
+        # WALK') — prefixar as reps daria '20 20M HANDSTAND WALK' e a IA
+        # reportaria isso como divergência com o texto do Excel.
         s = f"{m['reps']} {s}"
     if m.get("max"):
         s = f"MAX {s}"
@@ -228,6 +231,8 @@ def _mov_resumo(m: dict) -> str:
         s = f"GOAL {s}"
     if m.get("pontua") is False:
         s += " (não pontua)"
+    if m.get("posicao"):
+        s = f"{s} (POSIÇÃO de chegada — sem reps)"
     if m.get("executantes"):
         s += f" [atletas {m['executantes']}]"
     return s
@@ -256,7 +261,8 @@ def _resumo_parse_fidelidade(wkt: dict) -> dict:
         d["tentativas"] = wkt.get("tentativas")
     else:
         d["movs"] = [_mov_resumo(m) for m in wkt.get("movimentos", [])]
-    for k in ("rounds_fixos", "rounds_bloco", "goal_reps", "goal_movimento"):
+    for k in ("rounds_fixos", "rounds_bloco", "goal_reps", "goal_movimento",
+              "janela_round", "eliminados_por_round"):
         if wkt.get(k):
             d[k] = wkt[k]
     # Multi-score: a IA precisa ver quantas pontuações o sistema entendeu, pra
@@ -281,6 +287,11 @@ _SYSTEM_FIDELIDADE = (
     "- tipo errado (ex: era AMRAP de 2 janelas e leu como for time simples);\n"
     "- rounds não detectados; pontuação/score lido errado (ex: perdeu a linha "
     "  'Max' que conta pontos, ou contou reps que não pontuam);\n"
+    "- eliminação: texto com rounds de janela fixa ('5 rounds, every 3 minutes') "
+    "  MAIS regra de corte ('os 2 últimos times são eliminados') é tipo "
+    "  'eliminacao', não 'for_time' — ali o score é ORDEM DE CHEGADA, e o "
+    "  parse tem que trazer janela_round e o movimento de chegada por corrida "
+    "  ('Run to finish') marcado como posição;\n"
     "- multi-score: o texto declara scores nomeados ('Fire Burning 1 (Score A): "
     "  ... (100 pontos)') e o parse tem que trazer UM item em 'scores' por "
     "  score declarado, com o tipo certo (reps/tempo/carga). Score declarado "

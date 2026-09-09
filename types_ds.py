@@ -34,6 +34,9 @@ class Movimento(TypedDict, total=False):
     reps_por_round: list[Union[int, str]]   # progressão de reps (ex: [10,12,14,16,'MAX'])
     tiebreak: bool      # checkpoint inline — render insere linha 'TIEBREAK · ___'
                         # após este mov (For Time multi-checkpoint)
+    posicao: bool       # movimento de chegada por CORRIDA ('Run to finish'):
+                        # o juiz anota a POSIÇÃO em que o time cruzou a linha,
+                        # não repetições
     max: bool           # linha 'Max <mov>' — sem reps prescritas, o juiz anota
                         # o acumulado (render dá caixa em vez de nº de reps)
     pontua: bool        # este movimento é o que gera pontuação do workout
@@ -66,7 +69,8 @@ class Workout(TypedDict, total=False):
     numero: int
     numero_f2: int      # Express ocupa 2 slots (numero e numero_f2)
     nome: str
-    tipo: str           # 'for_time' | 'for_time_goal' | 'amrap' | 'express' | 'for_load' | 'composto' (cf. WORKOUT_TIPOS)
+    tipo: str           # 'for_time' | 'for_time_goal' | 'amrap' | 'express' |
+                        # 'for_load' | 'composto' | 'eliminacao' (cf. WORKOUT_TIPOS)
     estilo: str         # alias de tipo, mantido por compat com template
     modalidade: str     # 'individual' | 'dupla' | 'time'
     time_cap: str
@@ -98,6 +102,11 @@ class Workout(TypedDict, total=False):
     # Multi-score: workout que vale 2+ pontuações independentes (ver Score).
     # Ausente/vazio = pontuação única, e o render usa o score_box do tipo.
     scores: list[Score]
+    # Eliminação ('5 rounds, every 3 minutes' + corte por round): cada round
+    # tem janela própria e os últimos a cruzar a linha saem. O que pontua é a
+    # ordem de chegada, e quem foi eliminado é classificado pelo round de saída.
+    janela_round: str             # janela de cada round (ex: '3', '2:30')
+    eliminados_por_round: int     # quantos times saem a cada round
 
 
 class Evento(TypedDict, total=False):
