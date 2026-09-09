@@ -809,6 +809,20 @@ body{
   font-size:4pt;font-weight:400;color:var(--ghost);
   font-style:italic;letter-spacing:.02em;margin-top:.4mm;
 }
+/* Janela de relógio e marcação de eliminado no header do round. */
+.rd-janela{
+  font-size:6pt;font-weight:700;color:var(--mid);
+  font-variant-numeric:tabular-nums;margin-left:2mm;letter-spacing:.02em;
+}
+.rd-elim{display:flex;align-items:center;gap:1.2mm;flex-shrink:0;margin-left:2mm}
+.rd-elim-lbl{
+  font-size:4.5pt;font-weight:700;color:var(--ghost);
+  text-transform:uppercase;letter-spacing:.12em;
+}
+.rd-elim-box{
+  width:4mm;height:4mm;background:var(--w);border:1.2px solid var(--mid);
+  display:inline-block;flex-shrink:0;
+}
 /* ── Eliminação: grade de rounds ────────────────────────────────────────
    Formato em que cada round tem janela própria e os últimos a cruzar a linha
    saem. O juiz não anota reps por round — anota a POSIÇÃO de chegada e quem
@@ -828,30 +842,39 @@ body{
   font-size:5pt;font-weight:400;font-style:italic;
   opacity:.75;margin-left:auto;letter-spacing:.02em;
 }
-.elim-wrap{border:2px solid var(--ink);overflow:hidden;margin-bottom:1.5mm}
-.elim-hdr{display:flex;align-items:center;background:var(--panel);height:6mm}
-.eh{
-  font-size:4.5pt;font-weight:700;color:rgba(255,255,255,.75);
-  letter-spacing:.16em;text-transform:uppercase;
-  display:flex;align-items:center;justify-content:center;
+/* Janela de relógio e marcação de eliminado no header do round. */
+.rd-janela{
+  font-size:6pt;font-weight:700;color:var(--mid);
+  font-variant-numeric:tabular-nums;margin-left:2mm;letter-spacing:.02em;
 }
-.elim-row{
-  display:flex;align-items:stretch;min-height:9mm;
-  border-top:1px solid var(--rule);background:var(--w);
+.rd-elim{display:flex;align-items:center;gap:1.2mm;flex-shrink:0;margin-left:2mm}
+.rd-elim-lbl{
+  font-size:4.5pt;font-weight:700;color:var(--ghost);
+  text-transform:uppercase;letter-spacing:.12em;
 }
-.elim-row:nth-child(even){background:var(--paper)}
-.er-cell{display:flex;align-items:center;justify-content:center;
-  border-right:1px solid var(--rule)}
-.er-round{flex-shrink:0;font-weight:900;font-size:9pt;color:var(--mid)}
-.er-janela{flex-shrink:0;font-size:7pt;font-weight:700;color:var(--ink);
-  font-variant-numeric:tabular-nums}
-/* Célula de escrita: a linha inteira é área de anotação (sem caixa aninhada,
-   que come espaço útil na folha impressa). */
-.er-write{flex:1;background:var(--field);border-right:1px solid var(--rule)}
-.er-elim-box{
-  flex-shrink:0;display:flex;align-items:center;justify-content:center;
+.rd-elim-box{
+  width:4mm;height:4mm;background:var(--w);border:1.2px solid var(--mid);
+  display:inline-block;flex-shrink:0;
 }
-.er-box{width:5mm;height:5mm;background:var(--w);border:1.5px solid var(--mid)}
+/* ── Eliminação: grade de rounds ────────────────────────────────────────
+   Formato em que cada round tem janela própria e os últimos a cruzar a linha
+   saem. O juiz não anota reps por round — anota a POSIÇÃO de chegada e quem
+   caiu. Por isso a grade é própria, e não a tabela de reps do For Time. */
+.elim-banner{
+  display:flex;align-items:center;gap:2.5mm;
+  background:var(--panel);color:var(--w);
+  padding:1.5mm 3mm;margin-bottom:1.5mm;border-radius:1mm;
+}
+.elim-bn-mark{
+  font-size:5pt;font-weight:900;letter-spacing:.18em;
+  background:var(--w);color:var(--panel);padding:.4mm 1.4mm;border-radius:1mm;
+}
+.elim-bn-item{font-size:6.5pt;font-weight:700;letter-spacing:.04em}
+.elim-bn-sep{opacity:.4}
+.elim-bn-sub{
+  font-size:5pt;font-weight:400;font-style:italic;
+  opacity:.75;margin-left:auto;letter-spacing:.02em;
+}
 /* Right dark time cap */
 .sb-tc-col{
   width:28mm;flex-shrink:0;background:var(--panel);
@@ -1338,10 +1361,16 @@ MOV_TABLE_MACRO = r"""
     {% elif mov.round_header is defined %}
       {# Header 'Round N' antes de cada repetição em 'N rounds for time'.
          Reusa visual do atleta_header (banner com badge + linha pra tempo) — pode
-         servir pra juiz anotar split time do round. #}
+         servir pra juiz anotar split time do round.
+         Com janela de relógio (eliminação), mostra o intervalo do round: quem
+         não fecha a janela está fora, então a hora do corte é arbitragem. #}
       <div class="atleta-sep-row">
         <span class="atleta-sep-pos">Round {{ mov.round_header }}</span>
+        {% if mov.round_janela %}<span class="rd-janela">{{ mov.round_janela }}</span>{% endif %}
         <div class="atleta-sep-nome"></div>
+        {% if mov.round_elim %}
+        <span class="rd-elim"><span class="rd-elim-lbl">eliminado</span><span class="rd-elim-box"></span></span>
+        {% endif %}
       </div>
     {% elif mov.separador is defined and mov.separador %}
       <div class="sep-row"><span class="sep-txt">{{ mov.separador | upper }}</span></div>
@@ -1579,33 +1608,6 @@ ELIMINACAO_MACRO = r"""
 </div>
 {% endmacro %}
 
-{% macro elim_rounds(wkt, janelas) %}
-{# Uma linha por round: janela do relógio, posição de chegada e marcação de
-   eliminado. Os movimentos aparecem UMA vez (tabela acima) — repetir a
-   prescrição 5× encheria a página sem dar nada ao juiz. #}
-{% set n = wkt.emom_rounds or (janelas | length) or 5 %}
-{% set w_rnd = '16mm' %}{% set w_jan = '24mm' %}{% set w_elim = '20mm' %}
-<div class="elim-wrap">
-  <div class="elim-hdr">
-    <div class="eh" style="width:{{w_rnd}}">Round</div>
-    <div class="eh" style="width:{{w_jan}}">Janela</div>
-    <div class="eh" style="flex:1">Posição de chegada</div>
-    <div class="eh" style="width:{{w_elim}}">Eliminado</div>
-  </div>
-  {% for ri in range(n) %}
-  <div class="elim-row">
-    <div class="er-cell er-round" style="width:{{w_rnd}}">{{ ri + 1 }}</div>
-    <div class="er-cell er-janela" style="width:{{w_jan}}">
-      {{ janelas[ri] if ri < janelas|length else '—' }}
-    </div>
-    <div class="er-write"></div>
-    <div class="er-cell er-elim-box" style="width:{{w_elim}}">
-      <div class="er-box"></div>
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% endmacro %}
 """
 
 SCORE_BOX_MACRO = r"""
@@ -2088,8 +2090,10 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
    buy-in + rounds_bloco): conta as linhas efetivas de movimento pra decidir
    se precisa comprimir e caber no A4. Buy-in conta 1x; bloco × N. #}
 {% set _base_rows = (wkt.movimentos | selectattr('nome', 'defined') | list | length) if wkt.movimentos else 0 %}
-{% if wkt.rounds_fixos and wkt.rounds_fixos > 1 %}
-  {% set _tot_rows = _base_rows * wkt.rounds_fixos + wkt.rounds_fixos %}
+{% set _rounds_exp = wkt.rounds_fixos if wkt.rounds_fixos
+                     else (wkt.emom_rounds if wkt.tipo == 'eliminacao' else 0) %}
+{% if _rounds_exp and _rounds_exp > 1 %}
+  {% set _tot_rows = _base_rows * _rounds_exp + _rounds_exp %}
 {% elif wkt.rounds_bloco and wkt.rounds_bloco > 1 %}
   {% set _sp = namespace(buy=0, blk=0, found=false) %}
   {% for m in wkt.movimentos %}{% if m.rounds_bloco is defined %}{% set _sp.found = true %}{% elif m.nome %}{% if _sp.found %}{% set _sp.blk = _sp.blk + 1 %}{% else %}{% set _sp.buy = _sp.buy + 1 %}{% endif %}{% endif %}{% endfor %}
@@ -2274,12 +2278,23 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
   {{ amrap_table(wkt.movimentos, wkt.numero, wkt.n_rounds|default(3), wkt, linhas=n_rounds_fit|default(0)) }}
 
 {% elif tipo == 'eliminacao' %}
-  {# Eliminação: banner com a regra, a prescrição do round UMA vez, e a grade
-     de rounds onde o juiz anota posição de chegada e quem caiu. #}
+  {# Eliminação: banner com a regra e a tabela EXPANDIDA por round — cada round
+     com seus movimentos e quantidades, a janela do relógio no header e a caixa
+     de eliminado. Estruturalmente é um For Time de N rounds, não um EMOM: o
+     time executa a mesma prescrição a cada round e o juiz acompanha round a
+     round. A linha 'Run to finish' de cada round já traz a caixa de posição. #}
   {{ elim_banner(wkt) }}
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
-  {{ mov_table(wkt.movimentos, wkt.numero, hide_cum=true) }}
-  {{ elim_rounds(wkt, janelas_round|default([])) }}
+  {% set _n_elim = wkt.emom_rounds or 1 %}
+  {% set _movs_elim = wkt.movimentos | rejectattr('chegada','defined') | list %}
+  {% set ns_el = namespace(out=[]) %}
+  {% for r in range(1, _n_elim + 1) %}
+    {% set ns_el.out = ns_el.out + [{
+        'round_header': r,
+        'round_janela': (janelas_round[r - 1] if (janelas_round and r <= janelas_round|length) else ''),
+        'round_elim': true}] + _movs_elim %}
+  {% endfor %}
+  {{ mov_table(ns_el.out, wkt.numero, hide_cum=true) }}
 
 {% elif tipo == 'for_load' %}
   {# Descrição NÃO é exibida pra For Load: a banda 'Sequência' dentro da

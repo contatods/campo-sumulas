@@ -656,18 +656,30 @@ def test_janelas_de_round():
     assert janelas_de_round('3', 0) == []
 
 
-def test_render_eliminacao_grade_de_rounds(evento_basico, fonts_empty):
-    """Uma linha por round com janela, campo de posição e marcação de
-    eliminado — a prescrição aparece UMA vez, não repetida 5×."""
-    html = render_workout(evento_basico, _elim_wkt(), fonts_empty, "")
+def test_render_eliminacao_expande_rounds_com_quantidades(evento_basico, fonts_empty):
+    """Cada round traz a prescrição COM as quantidades — estruturalmente é um
+    For Time de N rounds, não um EMOM: o time repete a mesma sequência e o juiz
+    acompanha round a round. Header de round leva a janela do relógio (quem não
+    fecha está fora) e a caixa de eliminado."""
+    wkt = _elim_wkt()
+    html = render_workout(evento_basico, wkt, fonts_empty, "")
     corpo = html.split('</style>')[-1]
-    linhas = re.findall(r'<div class="elim-row">', corpo)
-    assert len(linhas) == 5, f'esperava 5 rounds, veio {len(linhas)}'
+    # 5 headers de round, cada um seguido dos 3 movimentos
+    assert corpo.count('atleta-sep-pos') == 5
+    assert corpo.count('20M HANDSTAND WALK') == 5, 'prescrição tem que repetir por round'
+    assert corpo.count('rd-elim-box') == 5      # caixa de eliminado por round
+    assert corpo.count('>POSIÇÃO<') == 5        # chegada por corrida em cada round
     for janela in ('0:00–3:00', '3:00–6:00', '12:00–15:00'):
         assert janela in corpo, f'janela {janela} ausente'
-    assert corpo.count('er-box') == 5          # um checkbox de eliminado por round
-    # prescrição aparece uma vez só
-    assert corpo.count('20M HANDSTAND WALK') == 1
+
+
+def test_render_eliminacao_comprime_para_caber(evento_basico, fonts_empty):
+    """5 rounds × 3 movimentos passa do que a página comporta em altura normal
+    — a classe de densidade tem que entrar, senão o corte de 281mm come as
+    últimas linhas sem avisar."""
+    html = render_workout(evento_basico, _elim_wkt(), fonts_empty, "")
+    classe = re.search(r'<div class="(page[^"]*)"', html).group(1)
+    assert 'is-denso' in classe, classe
 
 
 def test_render_eliminacao_banner_e_score(evento_basico, fonts_empty):
