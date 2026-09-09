@@ -102,3 +102,83 @@ def test_estimar_rounds_algoritmico_retorna_inteiro_razoavel():
     n = _estimar_rounds_algoritmico(movs, "AMRAP 5 MIN")
     assert isinstance(n, int)
     assert n >= 2  # mínimo de 2 linhas no scorecard
+
+
+# ── Estimativa de rounds: simulação round a round ───────────────────────────
+def test_pace_diferencia_movimentos():
+    """Um pace único pra tudo trata 30 double-unders como 30 strict HSPU e erra
+    por ordens de grandeza. O custo por rep tem que refletir o movimento."""
+    from ai_rounds import _segundos_do_movimento as seg
+    du = seg({'nome': 'DOUBLE UNDERS', 'reps': 30})
+    hspu = seg({'nome': 'STRICT HANDSTAND PUSH-UPS', 'reps': 20})
+    assert hspu > du * 5, f'strict HSPU ({hspu}s) deveria custar muito mais que DU ({du}s)'
+    # variante específica ganha da genérica
+    assert (seg({'nome': 'LEGLESS ROPE CLIMBS', 'reps': 2})
+            > seg({'nome': 'ROPE CLIMBS', 'reps': 2}))
+    assert (seg({'nome': 'STRICT HANDSTAND PUSH-UPS', 'reps': 10})
+            > seg({'nome': 'HANDSTAND PUSH-UPS', 'reps': 10}))
+    # distância cobra por metro, não por "rep"
+    assert seg({'nome': '900M SKI ERG', 'reps': 900}) > 0
+    assert (seg({'nome': '20M HANDSTAND WALK', 'reps': 20})
+            > seg({'nome': '20M RUN', 'reps': 20}))
+    # sem reps mensuráveis não gera tempo
+    assert seg({'nome': 'MAX PULL-UPS'}) == 0.0
+    assert seg({'nome': 'X', 'reps': 0}) == 0.0
+
+
+def test_reps_do_round_aplica_progressao():
+    """A simulação precisa das reps DAQUELE round — com progressão, o round 6
+    é mais longo que o round 1."""
+    from ai_rounds import _reps_do_round
+    mov = {'nome': 'WALL-BALL', 'reps': 30, 'reps_delta': 10,
+           'reps_por_round': [30, 40, 50]}
+    assert _reps_do_round(mov, 0) == 30
+    assert _reps_do_round(mov, 2) == 50
+    # além da lista pré-computada, extrapola pelo passo
+    assert _reps_do_round(mov, 5) == 80
+    # movimento sem progressão devolve a base em qualquer round
+    fixo = {'nome': 'PULL-UPS', 'reps': 10}
+    assert _reps_do_round(fixo, 0) == _reps_do_round(fixo, 7) == 10
+    assert _reps_do_round({'nome': 'MAX X'}, 0) is None
+
+
+def test_estimar_rounds_realista_por_peso_do_round():
+    """Round pesado dá poucos rounds; round leve dá muitos. O modelo antigo
+    (reps ÷ pace fixo) projetava 18 rounds do Fast Relay, em que cabem ~3."""
+    fast_relay = [
+        {'nome': 'LEGLESS ROPE CLIMBS (15 FT)', 'reps': 2},
+        {'nome': 'DOUBLE UNDERS', 'reps': 30},
+        {'nome': 'STRICT HANDSTAND PUSH-UPS', 'reps': 20},
+        {'nome': 'WALL-BALL SHOTS', 'reps': 30, 'reps_delta': 10,
+         'reps_por_round': [30, 40, 50, 60, 70]},
+    ]
+    n = _estimar_rounds_algoritmico(fast_relay, '16 min')
+    assert 4 <= n <= 9, f'{n} linhas — fora da faixa plausível pro Fast Relay'
+
+    # Cindy (5 pull-ups / 10 push-ups / 15 air squats em 20') roda ~20 rounds
+    cindy = [{'nome': 'PULL-UPS', 'reps': 5}, {'nome': 'PUSH-UPS', 'reps': 10},
+             {'nome': 'AIR SQUATS', 'reps': 15}]
+    n_cindy = _estimar_rounds_algoritmico(cindy, '20 min')
+    assert n_cindy > n, 'round leve tem que render mais rounds que round pesado'
+    assert 12 <= n_cindy <= 30, n_cindy
+
+
+def test_estimar_rounds_conta_a_progressao():
+    """Com progressão cada round demora mais — a projeção tem que ser MENOR
+    que a do mesmo workout sem progressão."""
+    base = [{'nome': 'WALL-BALL SHOTS', 'reps': 30}]
+    prog = [{'nome': 'WALL-BALL SHOTS', 'reps': 30, 'reps_delta': 20}]
+    assert (_estimar_rounds_algoritmico(prog, '15 min')
+            < _estimar_rounds_algoritmico(base, '15 min'))
+
+
+def test_estimar_rounds_fallbacks():
+    """Sem duração ou sem movimentos mensuráveis, cai num mínimo seguro."""
+    from ai_rounds import ROUNDS_MIN_LINHAS, ROUNDS_MAX_LINHAS
+    movs = [{'nome': 'PULL-UPS', 'reps': 5}]
+    assert _estimar_rounds_algoritmico(movs, '') == ROUNDS_MIN_LINHAS
+    assert _estimar_rounds_algoritmico([], '10 min') == ROUNDS_MIN_LINHAS
+    assert _estimar_rounds_algoritmico([{'nome': 'MAX BURPEES'}], '10 min') == ROUNDS_MIN_LINHAS
+    # prescrição degenerada (round quase instantâneo) não explode a página
+    leve = [{'nome': 'SINGLE UNDERS', 'reps': 1}]
+    assert _estimar_rounds_algoritmico(leve, '60 min') <= ROUNDS_MAX_LINHAS

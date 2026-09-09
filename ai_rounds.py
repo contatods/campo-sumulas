@@ -88,19 +88,148 @@ def _extrair_minutos(texto: str) -> Optional[int]:
     return None
 
 
+# ── Modelo de pace por movimento ────────────────────────────────────────────
+# Segundos por repetição, por família de movimento. Um pace único pra tudo
+# (o modelo antigo) trata 30 double-unders como 30 strict handstand push-ups
+# e erra por ordens de grandeza — num AMRAP de 16' isso chegava a projetar 18
+# rounds de um workout em que cabem 3.
+#
+# Valores de atleta competitivo em ritmo de prova, incluindo transição. São
+# aproximações deliberadas: servem pra dimensionar quantas linhas a súmula
+# precisa, não pra prever resultado. Chave = trecho procurado no nome.
+# A ordem importa: a primeira chave contida no nome vence, então as variantes
+# mais específicas ('strict handstand push-up') vêm antes das genéricas.
+_PACE_SEG_POR_REP: tuple[tuple[str, float], ...] = (
+    # Ginástica pesada
+    ('legless rope climb', 24.0),
+    ('rope climb',         14.0),
+    ('strict handstand push-up', 7.0),
+    ('strict hspu',        7.0),
+    ('handstand push-up',  4.0),
+    ('hspu',               4.0),
+    ('ring muscle-up',     7.5),
+    ('bar muscle-up',      6.0),
+    ('muscle-up',          7.0),
+    ('wall walk',          10.0),
+    ('pegboard',           20.0),
+    ('legless',            20.0),
+    # Ginástica média
+    ('chest-to-bar',       3.0),
+    ('toes-to-bar',        3.0),
+    ('pull-up',            2.5),
+    ('pull over',          4.0),
+    ('burpee',             4.0),
+    ('ghd sit-up',         3.0),
+    ('sit-up',             2.0),
+    ('box jump',           3.0),
+    ('devil press',        7.0),
+    ('wall-ball',          3.0),
+    ('wall ball',          3.0),
+    ('double under',       0.6),
+    ('single under',       0.4),
+    ('lunge',              2.5),
+    ('squat',              2.0),
+    # Levantamento (barra / halteres)
+    ('worm clean and jerk', 8.0),
+    ('worm deadlift',      6.0),
+    ('clean and jerk',     5.5),
+    ('snatch',             5.0),
+    ('thruster',           4.0),
+    ('clean',              5.0),
+    ('jerk',               4.5),
+    ('deadlift',           3.0),
+    ('press',              3.5),
+    ('swing',              2.0),
+    ('carry',              3.0),
+)
+_PACE_PADRAO_SEG: float = 3.0        # movimento desconhecido
+_PACE_CAL_SEG: float = 4.0           # segundos por caloria (row/bike/ski)
+_PACE_METRO_SEG: float = 0.30        # segundos por metro (corrida/erg)
+# Margem de segurança: linhas ALÉM do último round que a simulação alcança.
+# Um time acima da curva estoura a projeção, e faltar linha é pior que sobrar.
+ROUNDS_MARGEM_SEGURANCA: int = 3
+ROUNDS_MIN_LINHAS: int = 4
+ROUNDS_MAX_LINHAS: int = 30          # trava contra prescrição degenerada
+
+
+def _segundos_do_movimento(mov: Movimento, reps: Optional[int] = None) -> float:
+    """Quanto tempo uma linha de movimento leva, em segundos.
+
+    `reps` sobrescreve mov['reps'] — usado pra simular um round em que a
+    progressão já aumentou as repetições.
+    """
+    nome = (mov.get('nome') or '').lower()
+    n = reps if reps is not None else mov.get('reps')
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return 0.0
+    if n <= 0:
+        return 0.0
+    # Distância: o nome carrega a medida ('900M SKI ERG', '20M HANDSTAND WALK')
+    # e `reps` é a própria distância — cobra por metro, não por repetição.
+    if re.match(r'^\d+\s*(m|km)\b', nome):
+        metros = n * (1000 if re.match(r'^\d+\s*km\b', nome) else 1)
+        # Handstand walk é muito mais lento que corrida por metro.
+        if 'handstand' in nome:
+            return metros * 6.0
+        return metros * _PACE_METRO_SEG
+    if 'cal' in nome:
+        return n * _PACE_CAL_SEG
+    for chave, seg in _PACE_SEG_POR_REP:
+        if chave in nome:
+            return n * seg
+    return n * _PACE_PADRAO_SEG
+
+
+def _reps_do_round(mov: Movimento, ri: int) -> Optional[int]:
+    """Repetições do movimento no round `ri` (0-based), aplicando progressão."""
+    seq = mov.get('reps_por_round')
+    if seq and ri < len(seq):
+        v = seq[ri]
+        return v if isinstance(v, int) else None
+    base = mov.get('reps')
+    if not isinstance(base, int):
+        return None
+    delta = mov.get('reps_delta') or 0
+    return base + ri * delta
+
+
 def _estimar_rounds_algoritmico(movimentos: list[Movimento], duracao_str: str) -> int:
-    """Estimativa baseada em reps totais e tempo disponível (pace 6-10 reps/min).
-    Retorna número de linhas a mostrar no scorecard (rounds esperados + buffer).
+    """Quantas linhas de round o scorecard de um AMRAP precisa.
+
+    Simula round a round: soma o tempo estimado de cada movimento (pace por
+    família, ver `_PACE_SEG_POR_REP`) e vai gastando o relógio até estourar a
+    duração. Dois motivos pra simular em vez de dividir reps por um pace médio:
+
+      1. o custo por repetição varia por ordens de grandeza — 30 double-unders
+         levam ~18s e 20 strict HSPU levam ~140s;
+      2. com progressão de reps cada round demora MAIS que o anterior, então a
+         média subestima o começo e superestima o fim.
+
+    Ao número alcançado soma `ROUNDS_MARGEM_SEGURANCA`: um time acima da curva
+    estoura qualquer projeção, e faltar linha na súmula é pior que sobrar.
     """
     mins = _extrair_minutos(duracao_str or '')
-    if not mins: return 4
     movs = [m for m in (movimentos or [])
             if not m.get('separador') and not m.get('chegada')]
-    reps_round = sum(int(m['reps']) for m in movs if m.get('reps') and str(m['reps']).isdigit())
-    if not reps_round: return 4
-    pace = 6 if reps_round > 50 else 8 if reps_round > 25 else 10
-    rounds_esperados = (mins * pace) / reps_round
-    return max(3, round(rounds_esperados) + 2)
+    if not mins or not movs:
+        return ROUNDS_MIN_LINHAS
+    segundos_totais = mins * 60
+    gasto = 0.0
+    rounds = 0
+    while rounds < ROUNDS_MAX_LINHAS:
+        dur_round = sum(_segundos_do_movimento(m, _reps_do_round(m, rounds))
+                        for m in movs)
+        if dur_round <= 0:
+            # Nenhum movimento com reps mensuráveis — sem base pra simular.
+            return ROUNDS_MIN_LINHAS
+        rounds += 1
+        gasto += dur_round
+        if gasto >= segundos_totais:
+            break          # este round é o último, ainda que parcial
+    return max(ROUNDS_MIN_LINHAS,
+               min(ROUNDS_MAX_LINHAS, rounds + ROUNDS_MARGEM_SEGURANCA))
 
 
 def _estimar_rounds_ia(movimentos: list[Movimento], duracao_str: str) -> int:

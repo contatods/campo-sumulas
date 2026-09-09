@@ -1426,11 +1426,15 @@ AMRAP_TABLE_MACRO = r"""
 {% set is_emom = wkt is not none and wkt.emom_janela %}
 {% set has_tb = wkt is not none and wkt.tiebreak_por_round %}
 {% set _n_rounds = wkt.emom_rounds if is_emom else n_rounds %}
-{# `linhas` = quantas linhas cabem na página (0 = não informado, usa o antigo
-   'estimativa + 1'). O EMOM tem número de rounds FECHADO — não se enche. #}
+{# Quantas linhas o scorecard mostra. `n_rounds` já vem da simulação round a
+   round (com margem de segurança embutida), então ele é quem manda; `linhas`
+   — o que cabe na página — entra só como TETO, pra nunca escrever além do
+   corte de 281mm. Encher a página sempre produzia rounds fisicamente
+   impossíveis num workout pesado (18 rounds de um AMRAP em que cabem 3).
+   O EMOM tem número de rounds FECHADO pela prescrição. #}
 {% set show_rplus = not is_emom %}
 {% set _total_linhas = wkt.emom_rounds if is_emom
-                       else ([linhas, _n_rounds + 1] | max if linhas else _n_rounds + 1) %}
+                       else ([linhas, _n_rounds] | min if linhas else _n_rounds + 1) %}
 {% set has_progressao = data_movs | selectattr('reps_por_round','defined') | list | length > 0 %}
 {# Passo da progressão pro rótulo do header: a diretriz global quando existe,
    senão o passo declarado no próprio movimento ('(+10 reps per round)').

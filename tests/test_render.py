@@ -585,14 +585,15 @@ def test_linhas_amrap_cabem_na_pagina():
         assert usado <= PAGE_ALTURA_MM, f'{wkt}: {usado}mm > {PAGE_ALTURA_MM}mm'
 
 
-def test_amrap_enche_a_pagina_em_vez_de_travar_em_4_rounds(evento_basico, fonts_empty):
-    """AMRAP com estimativa baixa ainda ganha linhas até encher a página. Um
-    time que supera a estimativa precisa de onde anotar — limitar a súmula em
-    3-4 rounds é o risco, não o desperdício de linha em branco."""
+def test_amrap_usa_a_estimativa_com_a_pagina_como_teto(evento_basico, fonts_empty):
+    """`n_rounds` (simulação round a round, já com margem) manda no scorecard;
+    o espaço da página entra só como TETO. Encher a página cegamente produzia
+    rounds impossíveis — 18 linhas num AMRAP de 16' em que cabem 3."""
     import re
+    from campo_generator import linhas_amrap_que_cabem
     wkt = {
         "numero": 7, "nome": "FAST RELAY", "tipo": "amrap",
-        "modalidade": "quarteto", "time_cap": "16 min", "n_rounds": 3,
+        "modalidade": "quarteto", "time_cap": "16 min", "n_rounds": 6,
         "movimentos": [
             {"nome": "DOUBLE UNDERS", "reps": 30},
             {"nome": "WALL-BALL SHOTS", "reps": 30, "carga": "9/6 KG",
@@ -602,9 +603,15 @@ def test_amrap_enche_a_pagina_em_vez_de_travar_em_4_rounds(evento_basico, fonts_
     }
     html = render_workout(evento_basico, wkt, fonts_empty, "")
     linhas = re.findall(r'<div class="amrap-row([^"]*)">', html)
-    assert len(linhas) >= 12, f'só {len(linhas)} linhas — estimativa travou a tabela'
-    # nenhuma linha esmaecida: quando a tabela enche a página, todas valem igual
+    assert len(linhas) == 6, f'esperava a estimativa (6), veio {len(linhas)}'
     assert not [x for x in linhas if 'rplus' in x]
+
+    # Estimativa acima do que a página comporta é cortada no teto.
+    cabe = linhas_amrap_que_cabem(wkt)
+    html2 = render_workout(evento_basico, {**wkt, "n_rounds": cabe + 40},
+                           fonts_empty, "")
+    linhas2 = re.findall(r'<div class="amrap-row', html2)
+    assert len(linhas2) == cabe, f'passou do teto da página: {len(linhas2)} > {cabe}'
 
 
 def test_progressao_extrapola_alem_da_lista_pre_computada(evento_basico, fonts_empty):
@@ -613,7 +620,7 @@ def test_progressao_extrapola_alem_da_lista_pre_computada(evento_basico, fonts_e
     import re
     wkt = {
         "numero": 7, "nome": "FR", "tipo": "amrap", "modalidade": "quarteto",
-        "time_cap": "16 min", "n_rounds": 3,
+        "time_cap": "16 min", "n_rounds": 8,      # além dos 5 pré-computados
         "movimentos": [{"nome": "WALL-BALL SHOTS", "reps": 30,
                         "progressivo": True, "reps_delta": 10,
                         "reps_por_round": [30, 40, 50, 60, 70]}],
