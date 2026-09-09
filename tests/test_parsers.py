@@ -1807,3 +1807,32 @@ def test_progressao_global_continua_valendo():
     assert w['reps_delta_por_round'] == 5
     assert thr['reps_por_round'][:3] == [10, 15, 20]
     assert not pu.get('reps_por_round'), 'mov sem marcador não progride'
+
+
+def test_codigo_de_bateria_com_qualificador_de_fase():
+    """O cronograma qualifica a fase FORA das aspas ('"The Last of Us" (Final)').
+    O strip de aspas só limpava as pontas — como a string termina em ')', a
+    aspa de fechamento ficava presa no nome, nenhuma bateria "rodava" aquele
+    workout, e o filtro de fim de dia o removia da súmula inteira.
+    """
+    movs = [{'nome': 'UPSIDE DOWN WORLD'}, {'nome': 'THE LAST OF US'}]
+    assert _workouts_que_rodam_da_bateria('"The Last of Us" (Final)', movs) == [2]
+    assert _workouts_que_rodam_da_bateria('"The Last of Us" (Semifinal)', movs) == [2]
+    assert _workouts_que_rodam_da_bateria('"Upside Down World"', movs) == [1]
+    # sem aspas continua valendo
+    assert _workouts_que_rodam_da_bateria('The Last of Us', movs) == [2]
+    # e o código com DOIS workouts não pode casar só o primeiro
+    assert _workouts_que_rodam_da_bateria(
+        '"Upside Down World" & "The Last of Us"', movs) == [1, 2]
+    # códigos numéricos intactos
+    assert _workouts_que_rodam_da_bateria('#1 & #2', movs) == [1, 2]
+    assert _workouts_que_rodam_da_bateria('WKT 2', movs) == [2]
+
+
+def test_composto_com_e_literal_no_nome_ainda_casa():
+    """Regressão: o atalho de 'código inteiro' existe pro composto cujo nome
+    tem '&' literal. Não pode ter sido perdido ao consertar o qualificador."""
+    comp = [{'nome': 'BARBELLS AND JUMP + RUN IN THE PARK', 'tipo': 'composto',
+             'f1': {'nome': 'BARBELLS AND JUMP'}, 'f2': {'nome': 'RUN IN THE PARK'}}]
+    assert _workouts_que_rodam_da_bateria(
+        '"Barbells and Jump & Run in the Park"', comp) == [1]

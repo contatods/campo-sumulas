@@ -2602,6 +2602,29 @@ def _workout_numero_de_codigo(codigo: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+# Nome do workout DENTRO das aspas, ignorando o que vier depois:
+#   '"The Last of Us" (Final)' → 'The Last of Us'
+# O cronograma qualifica a fase da bateria fora das aspas ('(Final)',
+# '(Semifinal)', '(Repescagem)'). Um strip das pontas não resolve — a string
+# termina em ')', então a aspa de fechamento fica presa no meio do nome e o
+# workout não casa com a grade (some da súmula, porque só entram no dia os
+# workouts que alguma bateria roda).
+_NOME_ENTRE_ASPAS_RE = re.compile(r'["“”\'](?P<n>[^"“”\']+)["“”\']')
+
+
+def _limpar_nome_codigo(txt: str) -> str:
+    """Nome de workout normalizado a partir de um pedaço de codigo_evento.
+
+    Prefere o conteúdo entre aspas quando existe; senão devolve o texto sem
+    aspas nas pontas. Sempre em caixa alta pra comparar com o nome da grade.
+    """
+    if not txt:
+        return ""
+    if (m := _NOME_ENTRE_ASPAS_RE.search(txt)):
+        return m.group('n').strip().upper()
+    return txt.strip().strip('"“”\'').upper()
+
+
 def _workouts_que_rodam_da_bateria(codigo_evento: str, workouts: list[dict]) -> list[int]:
     """Mapeia o codigo_evento de uma bateria pra lista de posições 1-based
     de workouts da categoria. Aceita 4 formas:
@@ -2619,11 +2642,15 @@ def _workouts_que_rodam_da_bateria(codigo_evento: str, workouts: list[dict]) -> 
         return []
     # Antes de split, testa match exato do codigo cheio com nome de algum
     # workout (cobre composto onde o nome dele JÁ tem `+` ou `&` literal).
-    nome_full = codigo_evento.strip().strip('"“”\'').upper()
-    for idx, w in enumerate(workouts, start=1):
-        nome_w = (w.get('nome', '') or '').strip().upper()
-        if nome_w and nome_w == nome_full:
-            return [idx]
+    # Só tenta casar o código INTEIRO quando ele cita um único workout —
+    # com dois nomes entre aspas ('"A" & "B"') esse atalho casaria só o
+    # primeiro e devolveria uma bateria que roda metade do que deveria.
+    if len(_NOME_ENTRE_ASPAS_RE.findall(codigo_evento)) <= 1:
+        nome_full = _limpar_nome_codigo(codigo_evento)
+        for idx, w in enumerate(workouts, start=1):
+            nome_w = (w.get('nome', '') or '').strip().upper()
+            if nome_w and nome_w == nome_full:
+                return [idx]
     # Split em '&' pra suportar baterias mistas (workout A & workout B)
     partes = _split_codigo_evento(codigo_evento) or [codigo_evento]
     posicoes: list[int] = []
@@ -2634,7 +2661,7 @@ def _workouts_que_rodam_da_bateria(codigo_evento: str, workouts: list[dict]) -> 
             if n not in posicoes: posicoes.append(n)
             continue
         # Forma 2/3: nome do workout (entre aspas ou não) — match case-insensitive
-        nome_busca = p.strip().strip('"“”\'').upper()
+        nome_busca = _limpar_nome_codigo(p)
         if not nome_busca: continue
         for idx, w in enumerate(workouts, start=1):
             nome_w = (w.get('nome', '') or '').strip().upper()
