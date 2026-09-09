@@ -827,6 +827,17 @@ _SKIP_PREFIXES = ('for time', 'por tempo', 'amrap', 'as many reps', 'rest',
                   'atenção', 'atencao', 'obs', 'note', '"', '“')
 _MARKER_END_RE = re.compile(r'[*★↑↗](?:\s*\([^)*]*\))?\s*$')
 _MARKER_INLINE_RE = re.compile(r'\((?:prog|progressivo|progressive|\+)\)\s*$', re.I)
+# Progressão declarada NO PRÓPRIO movimento, com o passo explícito:
+#   '30 Wall-Ball Shots (9/6 kg to 10/9 ft) (+10 reps per round)'
+# Difere do marcador '(+)' (que só sinaliza "progride" e depende de uma
+# diretriz global '*Add N reps each round') e da diretriz global em si: aqui
+# o passo é do movimento, e só ELE progride — os outros do round são fixos.
+# Aceita o sufixo em qualquer posição, não só no fim: costuma vir antes de
+# outro parêntese ('(+10 reps per round) (2 athletes)').
+_PROG_INLINE_DELTA_RE = re.compile(
+    r'\s*\(\s*\+\s*(\d+)\s*reps?\s+(?:per|each|a\s+cada|por|cada)\s+round\s*\)',
+    re.IGNORECASE,
+)
 _DIRECTIVE_PROG_RE = re.compile(
     r'^\s*\*?\s*(?:add|acrescent[ae]r?|adicione|\+)\s+\d+\s+reps?\s+(?:each|a\s+cada|por)\s+round', re.I)
 _DIRECTIVE_GOAL_RE = re.compile(r'^\s*(?:goal|objetivo|alvo)\s*[:\-]', re.I)
@@ -906,10 +917,17 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
         # Marca progressivo + remove markers do nome
         s_strip = line.strip()
         is_progressivo = bool(_MARKER_END_RE.search(s_strip)) or bool(_MARKER_INLINE_RE.search(s_strip))
+        # Passo de progressão declarado no próprio movimento — sai do nome e
+        # vira o delta daquela linha (o global não se aplica aos outros movs).
+        delta_inline = None
+        if (m_di := _PROG_INLINE_DELTA_RE.search(s_strip)):
+            delta_inline = _safe_int(m_di.group(1))
+            is_progressivo = True
         line_clean = line
         if not line_clean.lstrip().startswith(('*', '★', '↑', '↗')):
             line_clean = re.sub(r'[*★↑↗](?=\s|\(|$)', '', line_clean)
         line_clean = _MARKER_INLINE_RE.sub('', line_clean).rstrip()
+        line_clean = _PROG_INLINE_DELTA_RE.sub('', line_clean).rstrip()
         if _DIRECTIVE_PROG_RE.match(line_clean): continue   # '*Add N reps each round'
 
         # Sufixo '– Athletes A and B' sai da linha antes do parse: não é nome
@@ -930,6 +948,8 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
                 continue
             if is_progressivo and "reps" in mov:
                 mov["progressivo"] = True
+                if delta_inline:
+                    mov["reps_delta"] = delta_inline
             if atleta_label:
                 mov["label"] = atleta_label
             elif has_then and not has_atleta and block in BLOCK_LABELS:
@@ -1033,16 +1053,25 @@ def _tentar_flex_mov(line_clean: str, has_seps: bool,
 def _aplicar_progressao_reps(wkt: Workout) -> None:
     """Pós-processamento: gera mov.reps_por_round nos movs marcados como
     progressivos. Strict: SÓ aplica nos marcados com '*' explícito —
-    diretriz '*Add N reps' sem markers não chuta geral. Mutação in-place."""
-    delta = wkt.get("reps_delta_por_round", 0)
-    if not delta: return
+    diretriz '*Add N reps' sem markers não chuta geral. Mutação in-place.
+
+    O passo pode vir de dois lugares, nessa ordem de precedência:
+      1. `mov.reps_delta` — declarado no próprio movimento
+         ('30 Wall-Ball Shots (+10 reps per round)'). Só ELE progride.
+      2. `wkt.reps_delta_por_round` — diretriz global ('*Add 5 reps each
+         round'), aplicada a todos os movs marcados com '*'.
+    """
+    delta_global = wkt.get("reps_delta_por_round", 0)
     movs = wkt.get("movimentos") or []
     if not movs: return
+    if not delta_global and not any(m.get("reps_delta") for m in movs): return
     n_rounds = wkt.get("emom_rounds") or wkt.get("n_rounds") or 5
     ultimo_max = wkt.get("ultimo_round_max", False)
     for m in movs:
         if m.get("chegada") or m.get("separador"): continue
         if not m.get("progressivo"): continue
+        delta = m.get("reps_delta") or delta_global
+        if not delta: continue
         base = m.get("reps")
         if not isinstance(base, int): continue
         seq: list = [base + i * delta for i in range(n_rounds)]
@@ -1260,6 +1289,15 @@ def _parse_workout_text_core(text: str, numero: int) -> Workout:
                          '\n'.join(lines), re.I)
         if m_tc:
             wkt["time_cap"] = f"{m_tc.group(1)} min"
+        elif wkt.get("tipo") == "amrap":
+            # AMRAP declara a duração no próprio cabeçalho ('AMRAP 16 minutes')
+            # e quase nunca repete um 'Time cap:'. Sem isso o workout chegava
+            # sem duração na estimativa de rounds, que caía num fallback fixo
+            # de 4 linhas — e um time que fizesse 5 rounds ficava sem onde
+            # anotar o último.
+            m_am = next((m for l in lines if (m := _AMRAP_JANELA_RE.match(l))), None)
+            if m_am:
+                wkt["time_cap"] = f"{m_am.group(1)} min"
 
     # 5) For Time / For Time Goal fecham com chegada — A MENOS que o Excel diga
     #    que a chegada não conta como repetição (a especificidade vem do texto).

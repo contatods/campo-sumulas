@@ -1753,3 +1753,57 @@ def test_padronizar_movimento_preserva_caixa_alta():
     assert padronizar_movimento('SYNC. MUSCLE-UPS') == 'SYNC. MUSCLE-UPS'
     # entrada em caixa mista segue normalizando o prefixo como antes
     assert padronizar_movimento('sync. thrusters').startswith('Sync.')
+
+
+# ── Progressão declarada no próprio movimento ───────────────────────────────
+_FAST_RELAY_TXT = (
+    '"Fast Relay"\n\nAMRAP 16 minutes (4\' per athlete):\n'
+    '2 Legless Rope Climbs (15 ft)\n30 Double Unders\n'
+    '20 Strict Handstand Push-Ups\n'
+    '30 Wall-Ball Shots (9/6 kg to 10/9 ft) (+10 reps per round)\n\n'
+    '━━━ NOTAS ━━━\n\nExecução\n'
+    '- Wall-Ball Shots: 30 no round 1, 40 no round 2, 50 no round 3 e assim por diante.'
+)
+
+
+def test_progressao_inline_por_movimento():
+    """'(+10 reps per round)' no próprio movimento vira progressão daquela
+    linha. Antes ficava preso no NOME ('WALL-BALL SHOTS (+10 REPS PER ROUND)')
+    e a súmula imprimia 30 reps em todos os rounds."""
+    w = parse_workout_text(_FAST_RELAY_TXT, 1)
+    movs = {m['nome']: m for m in w['movimentos'] if m.get('nome')}
+    wb = next(m for n, m in movs.items() if 'WALL-BALL' in n)
+    assert wb['reps'] == 30 and wb['reps_delta'] == 10 and wb['progressivo']
+    assert wb['reps_por_round'][:4] == [30, 40, 50, 60]
+    # o sufixo sai do nome
+    assert 'REPS PER ROUND' not in wb['nome'], wb['nome']
+    # e SÓ o wall-ball progride — os outros do round são fixos
+    for n, m in movs.items():
+        if 'WALL-BALL' not in n:
+            assert not m.get('progressivo'), f'{n} não devia progredir'
+            assert not m.get('reps_por_round')
+
+
+def test_amrap_declara_duracao_no_cabecalho():
+    """'AMRAP 16 minutes' é a duração do workout. Sem virar time_cap, a
+    estimativa de rounds recebia string vazia e caía num fallback fixo de 4
+    linhas — um time que fizesse mais rounds ficava sem onde anotar."""
+    w = parse_workout_text(_FAST_RELAY_TXT, 1)
+    assert w['tipo'] == 'amrap'
+    assert w['time_cap'] == '16 min'
+    # 'Time cap:' explícito continua tendo precedência
+    w2 = parse_workout_text('"X"\n\nAMRAP 20 minutes:\n10 Burpees\nTime cap: 12 min', 1)
+    assert w2['time_cap'] == '12 min'
+
+
+def test_progressao_global_continua_valendo():
+    """A diretriz global ('*Add 5 reps each round' + movs marcados com '*')
+    não pode ter regredido com a progressão por movimento."""
+    w = parse_workout_text(
+        '"G"\n\nAMRAP 10 minutes:\n10 Thrusters*\n10 Pull-Ups\n'
+        '*Add 5 reps each round', 1)
+    thr = next(m for m in w['movimentos'] if 'THRUSTERS' in (m.get('nome') or ''))
+    pu = next(m for m in w['movimentos'] if 'PULL-UPS' in (m.get('nome') or ''))
+    assert w['reps_delta_por_round'] == 5
+    assert thr['reps_por_round'][:3] == [10, 15, 20]
+    assert not pu.get('reps_por_round'), 'mov sem marcador não progride'

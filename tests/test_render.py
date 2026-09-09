@@ -537,3 +537,88 @@ def test_render_badge_max_e_chip_de_executantes(evento_basico, workout_for_time,
     assert '<span class="mr-exec">C/D</span>' in corpo
     # o badge não pode duplicar o nome ('MAX MAX SYNC. THRUSTERS')
     assert 'MAX SYNC. THRUSTERS' not in re.sub(r'<[^>]+>', '', corpo)
+
+
+# ── Scorecard AMRAP: enche a página em vez de limitar rounds ────────────────
+def test_constantes_de_altura_batem_com_o_css():
+    """`linhas_amrap_que_cabem` soma alturas que espelham o CSS. Se o layout
+    mudar e as constantes não, a conta erra em silêncio e a súmula perde (ou
+    estoura) linhas. Este teste reparseia o CSS e trava o acoplamento."""
+    import re
+    from campo_generator import (CSS, PAGE_ALTURA_MM, AMRAP_ROW_MM,
+                                 _AMRAP_BLOCOS_FIXOS_MM)
+
+    # Comentários do CSS contêm chaves literais ('page-footer{margin-top:auto}')
+    # que truncariam a captura do bloco — tira antes de parsear.
+    css = re.sub(r'/\*.*?\*/', '', CSS, flags=re.S)
+
+    def altura(seletor, prop='height'):
+        m = re.search(r'(?:^|\})\s*' + re.escape(seletor) + r'\s*\{([^}]*)\}', css, re.M)
+        assert m, f'seletor {seletor} sumiu do CSS'
+        mh = re.search(r'(?:min-)?' + prop + r'\s*:\s*([\d.]+)mm', m.group(1))
+        assert mh, f'{seletor} não declara {prop} em mm'
+        return float(mh.group(1))
+
+    assert altura('.page') == PAGE_ALTURA_MM
+    assert altura('.amrap-row') == AMRAP_ROW_MM
+    assert altura('.hdr') == _AMRAP_BLOCOS_FIXOS_MM['hdr']
+    # score_box = .score-section + .score-box + margem 1.5
+    assert (altura('.score-section') + altura('.score-box') + 1.5
+            == _AMRAP_BLOCOS_FIXOS_MM['score_box'])
+    # obs_box = .obs-box{min-height} + margin-bottom 1
+    assert altura('.obs-box') + 1.0 == _AMRAP_BLOCOS_FIXOS_MM['obs_box']
+    # amrap_chrome = .amrap-hdr + .amrap-subhdr + bordas
+    assert (altura('.amrap-hdr') + altura('.amrap-subhdr') + 4.0
+            == _AMRAP_BLOCOS_FIXOS_MM['amrap_chrome'])
+
+
+def test_linhas_amrap_cabem_na_pagina():
+    """O total calculado + os blocos fixos não pode passar da altura da página
+    — senão o CSS (`overflow:hidden`) corta a última linha sem avisar."""
+    from campo_generator import (linhas_amrap_que_cabem, PAGE_ALTURA_MM,
+                                 AMRAP_ROW_MM, _AMRAP_BLOCOS_FIXOS_MM)
+    fixo = sum(_AMRAP_BLOCOS_FIXOS_MM.values())
+    for wkt in ({}, {'descricao': ['a', 'b', 'c']}, {'descricao': ['x'] * 8}):
+        n = linhas_amrap_que_cabem(wkt)
+        desc = len(wkt.get('descricao') or [])
+        usado = fixo + n * AMRAP_ROW_MM + (3.0 + desc * 4.0 if desc else 0)
+        assert usado <= PAGE_ALTURA_MM, f'{wkt}: {usado}mm > {PAGE_ALTURA_MM}mm'
+
+
+def test_amrap_enche_a_pagina_em_vez_de_travar_em_4_rounds(evento_basico, fonts_empty):
+    """AMRAP com estimativa baixa ainda ganha linhas até encher a página. Um
+    time que supera a estimativa precisa de onde anotar — limitar a súmula em
+    3-4 rounds é o risco, não o desperdício de linha em branco."""
+    import re
+    wkt = {
+        "numero": 7, "nome": "FAST RELAY", "tipo": "amrap",
+        "modalidade": "quarteto", "time_cap": "16 min", "n_rounds": 3,
+        "movimentos": [
+            {"nome": "DOUBLE UNDERS", "reps": 30},
+            {"nome": "WALL-BALL SHOTS", "reps": 30, "carga": "9/6 KG",
+             "progressivo": True, "reps_delta": 10,
+             "reps_por_round": [30, 40, 50, 60, 70]},
+        ],
+    }
+    html = render_workout(evento_basico, wkt, fonts_empty, "")
+    linhas = re.findall(r'<div class="amrap-row([^"]*)">', html)
+    assert len(linhas) >= 12, f'só {len(linhas)} linhas — estimativa travou a tabela'
+    # nenhuma linha esmaecida: quando a tabela enche a página, todas valem igual
+    assert not [x for x in linhas if 'rplus' in x]
+
+
+def test_progressao_extrapola_alem_da_lista_pre_computada(evento_basico, fonts_empty):
+    """`reps_por_round` é gerada no parse com 5 rounds. Nas linhas seguintes as
+    reps têm que continuar progredindo (80, 90, 100…), não voltar pra base."""
+    import re
+    wkt = {
+        "numero": 7, "nome": "FR", "tipo": "amrap", "modalidade": "quarteto",
+        "time_cap": "16 min", "n_rounds": 3,
+        "movimentos": [{"nome": "WALL-BALL SHOTS", "reps": 30,
+                        "progressivo": True, "reps_delta": 10,
+                        "reps_por_round": [30, 40, 50, 60, 70]}],
+    }
+    html = render_workout(evento_basico, wkt, fonts_empty, "")
+    refs = re.findall(r'<span class="ar-ref-lbl">ref</span>([^<]*)</span>', html)
+    assert refs[:7] == ['30', '40', '50', '60', '70', '80', '90'], refs[:7]
+    assert '30' not in refs[5:], 'voltou pra rep base depois da lista pré-computada'

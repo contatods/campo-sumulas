@@ -1374,14 +1374,25 @@ MOV_TABLE_MACRO = r"""
 """
 
 AMRAP_TABLE_MACRO = r"""
-{% macro amrap_table(movimentos, num, n_rounds, wkt=none) %}
+{% macro amrap_table(movimentos, num, n_rounds, wkt=none, linhas=0) %}
 {% set data_movs = movimentos | rejectattr('separador','defined') | rejectattr('chegada','defined') | list %}
 {% set is_emom = wkt is not none and wkt.emom_janela %}
 {% set has_tb = wkt is not none and wkt.tiebreak_por_round %}
 {% set _n_rounds = wkt.emom_rounds if is_emom else n_rounds %}
+{# `linhas` = quantas linhas cabem na página (0 = não informado, usa o antigo
+   'estimativa + 1'). O EMOM tem número de rounds FECHADO — não se enche. #}
 {% set show_rplus = not is_emom %}
+{% set _total_linhas = wkt.emom_rounds if is_emom
+                       else ([linhas, _n_rounds + 1] | max if linhas else _n_rounds + 1) %}
 {% set has_progressao = data_movs | selectattr('reps_por_round','defined') | list | length > 0 %}
-{% set delta = (wkt.reps_delta_por_round if wkt is not none else 0) | default(0) %}
+{# Passo da progressão pro rótulo do header: a diretriz global quando existe,
+   senão o passo declarado no próprio movimento ('(+10 reps per round)').
+   Com passos diferentes por movimento o header omite o número — a sequência
+   exata de cada um já aparece no subheader da coluna. #}
+{% set _deltas_mov = data_movs | selectattr('reps_delta','defined')
+                     | map(attribute='reps_delta') | list | unique | list %}
+{% set delta = (wkt.reps_delta_por_round if (wkt is not none and wkt.reps_delta_por_round)
+                else (_deltas_mov[0] if _deltas_mov | length == 1 else 0)) | default(0) %}
 {% set reps_round = data_movs | map(attribute='reps') | list | sum %}
 {# Calcula tempo total EMOM (ex: 2:30 × 5 = 12:30) — info útil pro juiz. #}
 {% set tempo_total = '' %}
@@ -1402,7 +1413,7 @@ AMRAP_TABLE_MACRO = r"""
       <div class="ah-title">Scorecard AMRAP</div>
     {% endif %}
     {% if has_progressao %}
-      <div class="ah-ref ah-ref-prog">+{{ delta }} reps/round{% if wkt.ultimo_round_max %} · último MAX{% endif %}</div>
+      <div class="ah-ref ah-ref-prog">{% if delta %}+{{ delta }} reps/round{% else %}reps progridem por round{% endif %}{% if wkt.ultimo_round_max %} · último MAX{% endif %}</div>
     {% else %}
       <div class="ah-ref">{{ reps_round }} reps / round</div>
     {% endif %}
@@ -1427,15 +1438,30 @@ AMRAP_TABLE_MACRO = r"""
     {% if has_tb %}<div class="ash ash-tb" style="width:{{tb_w}};border-left:1px solid var(--rule)">Tie-break<br>(m:s)</div>{% endif %}
   </div>
   {% set ns = namespace(cum=0) %}
-  {% set total_rows = _n_rounds + (1 if show_rplus else 0) %}
+  {# Linhas ALÉM dos rounds esperados existem por segurança: o time pode
+     superar a estimativa e o juiz precisa de onde escrever. Elas mostram o
+     número do round e a referência de reps (essencial quando um movimento
+     progride), mas não o acumulado — esse vira palpite depois do previsto. #}
+  {% set total_rows = _total_linhas %}
   {% for ri in range(total_rows) %}
-    {% set ip = (show_rplus and ri == _n_rounds) %}
+    {# Quando a tabela é dimensionada pelo espaço da página (`linhas`), toda
+       linha é igual — o juiz preenche até onde o time chegar, e não faz
+       sentido esmaecer 15 das 18. O modo legado (sem `linhas`) mantém a
+       última linha como 'R+', só um respiro além da estimativa. #}
+    {% set ip = (show_rplus and not linhas and ri >= _n_rounds) %}
     {% set rl = 'R+' if ip else (ri+1)|string %}
     {# Reps por round (com progressão se houver) — usado pra ref e pra somar.
        Quando algum mov tem 'MAX' no round, ref do total fica indeterminado. #}
     {% set ns_rps = namespace(sum=0, vals=[], tem_max=false) %}
     {% for m in data_movs %}
-      {% set r = m.reps_por_round[ri] if (m.reps_por_round and ri < m.reps_por_round|length) else m.reps %}
+      {# Reps do round `ri`. A lista `reps_por_round` é pré-computada no parse
+         com um número de rounds provisório; quando a súmula mostra MAIS linhas
+         que isso (estimativa maior, ou a linha R+), extrapola pelo passo em
+         vez de cair de volta na rep base — senão o round 6 de um movimento
+         que progride +10 imprimiria a carga do round 1. #}
+      {% set r = m.reps_por_round[ri] if (m.reps_por_round and ri < m.reps_por_round|length)
+                 else ((m.reps + ri * m.reps_delta) if (m.reps_delta and m.reps is number)
+                       else m.reps) %}
       {% set ns_rps.vals = ns_rps.vals + [r] %}
       {% if r is integer %}
         {% set ns_rps.sum = ns_rps.sum + r %}
@@ -1451,7 +1477,7 @@ AMRAP_TABLE_MACRO = r"""
         {% for m in data_movs %}
         <div class="ar-mov-cell">
           <div class="ar-write">
-            {% if not ip %}<span class="ar-ref{% if m.reps_por_round %} ar-ref-prog{% endif %}"><span class="ar-ref-lbl">ref</span>{{ ns_rps.vals[loop.index0] }}</span>{% endif %}
+            <span class="ar-ref{% if m.reps_por_round or m.reps_delta %} ar-ref-prog{% endif %}"><span class="ar-ref-lbl">ref</span>{{ ns_rps.vals[loop.index0] }}</span>
           </div>
         </div>
         {% endfor %}
@@ -2120,7 +2146,7 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
   {# Em EMOM, descrição é redundante (rítmo, movs, progressão e tiebreak já
      vão na tabela). Em AMRAP simples, descrição ajuda o juiz. #}
   {% if wkt.descricao and not wkt.emom_janela %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% elif 'time cap' in l.lower() %}dl-tc{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
-  {{ amrap_table(wkt.movimentos, wkt.numero, wkt.n_rounds|default(3), wkt) }}
+  {{ amrap_table(wkt.movimentos, wkt.numero, wkt.n_rounds|default(3), wkt, linhas=n_rounds_fit|default(0)) }}
 
 {% elif tipo == 'for_load' %}
   {# Descrição NÃO é exibida pra For Load: a banda 'Sequência' dentro da
@@ -2288,6 +2314,59 @@ _DOC_TMPL = Template(DOC_TMPL_STR, autoescape=True)
 _FOR_LOAD_TEAM_SUMMARY_PAGE_TMPL = Template(FOR_LOAD_TEAM_SUMMARY_TMPL, autoescape=True)
 
 
+# ── Orçamento vertical da página (scorecard AMRAP) ──────────────────────────
+# A página é A4 com hard cap (`.page{height:281mm;overflow:hidden}`): o que
+# passa é CLIPADO em silêncio. Um scorecard AMRAP com poucas linhas não estoura
+# nada, mas cria o risco oposto — o time faz mais rounds do que a súmula
+# comporta e o juiz fica sem onde anotar. Como o número de linhas é gerado no
+# template (CSS não cria linhas), o cálculo é feito aqui: mede o que os blocos
+# fixos ocupam e enche o resto da página com linhas de round.
+#
+# Os valores espelham o CSS logo acima. `test_render` reparseia o CSS e falha
+# se algum divergir — assim uma mudança de layout não deixa a conta em silêncio.
+PAGE_ALTURA_MM = 281.0
+AMRAP_ROW_MM = 7.0            # .amrap-row{min-height}
+
+# Blocos sempre presentes numa página de AMRAP, com margens já embutidas.
+_AMRAP_BLOCOS_FIXOS_MM = {
+    'hdr':           10.0,    # .hdr{height}
+    'prekit':        32.0,    # margin 2 + header 5 + athlete 9 + sub 8 + ops 8
+    'wkt_zone':      12.5,    # .wkt-zone{min-height 11} + margin-bottom 1.5
+    'amrap_chrome':  14.5,    # .amrap-hdr 6 + .amrap-subhdr 4.5 + bordas 4
+    'score_box':     24.0,    # .score-section 4.5 + .score-box 18 + margem 1.5
+    'sign_zone':     13.0,    # margin-top 3 + célula ~9 + margin-bottom 1
+    'no_rasure':      4.0,
+    'obs_box':       25.0,    # .obs-box{min-height 24} + margin-bottom 1
+    'footer':         6.0,
+}
+# Folga pra o que não dá pra medir por CSS: nome de workout que quebra em duas
+# linhas, nome de movimento longo esticando o subheader (`height:auto`),
+# diferença de leading entre navegadores. Sem isso a última linha pode cair
+# fora do corte e sumir sem aviso.
+_AMRAP_FOLGA_MM = 14.0
+# Piso: abaixo disso o scorecard não serve como súmula, melhor deixar apertar.
+_AMRAP_MIN_LINHAS = 6
+
+
+def linhas_amrap_que_cabem(wkt: dict) -> int:
+    """Quantas linhas de round cabem no scorecard AMRAP desta página.
+
+    Preenche o espaço livre em vez de confiar na estimativa de rounds: a
+    estimativa serve pra calcular as referências de reps acumuladas, não pra
+    limitar onde o juiz pode escrever. Um time que faz mais rounds que o
+    previsto precisa de linha; uma linha em branco a mais não custa nada.
+    """
+    ocupado = sum(_AMRAP_BLOCOS_FIXOS_MM.values()) + _AMRAP_FOLGA_MM
+    # Descrição do workout, quando exibida (AMRAP não-EMOM), come altura.
+    linhas_desc = len(wkt.get('descricao') or []) if not wkt.get('emom_janela') else 0
+    if linhas_desc:
+        ocupado += 3.0 + linhas_desc * 4.0        # .desc padding+margem + linhas
+    if wkt.get('tiebreak_por_round'):
+        ocupado += 0.0                            # coluna lateral, não altura
+    livre = PAGE_ALTURA_MM - ocupado
+    return max(_AMRAP_MIN_LINHAS, int(livre // AMRAP_ROW_MM))
+
+
 def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
     # autoescape: nomes de evento/atleta/box/movimento são input do usuário e
     # podem conter `<`, `>`, `&` ou aspas — escapar previne quebra de layout e
@@ -2346,9 +2425,14 @@ def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
         wkt = dict(wkt)
         wkt['descricao'] = _truncar_descricao_em_notas(wkt['descricao'])
 
+    # Scorecard AMRAP enche a página: o número de linhas vem do espaço livre,
+    # não da estimativa de rounds (que só serve pras referências de acumulado).
+    n_rounds_fit = (linhas_amrap_que_cabem(wkt)
+                    if wkt.get('tipo') == 'amrap' and not wkt.get('emom_janela')
+                    else 0)
     return _PAGE_TMPL.render(ev=ev, wkt=wkt,
                              logo_src=logo_src, logo_evento_src=logo_evento_src,
-                             atleta=atleta)
+                             atleta=atleta, n_rounds_fit=n_rounds_fit)
 
 
 def render_workout(ev, wkt, fonts, logo_src, logo_evento="", atleta=None):
