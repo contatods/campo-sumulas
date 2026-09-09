@@ -628,6 +628,22 @@ body{
   padding:.3mm 1.4mm;border-radius:2px;font-size:6pt;font-weight:900;
   letter-spacing:.08em;margin-right:1.8mm;vertical-align:1px;
 }
+/* Badge 'MAX' — irmão do GOAL, mesmo desenho. Marca a linha sem reps
+   prescritas que é o que PONTUA (ex: 'Max Sync. Thrusters' valendo Score A).
+   Sem ele o juiz vê só uma caixa vazia e não sabe que ali pontua. */
+.mr-max-badge{
+  display:inline-block;background:var(--ink);color:var(--w);
+  padding:.3mm 1.4mm;border-radius:2px;font-size:6pt;font-weight:900;
+  letter-spacing:.08em;margin-right:1.8mm;vertical-align:1px;
+}
+/* Chip 'A/B' — quem do time executa aquela linha (vem do sufixo
+   '– Athletes A and B'). Discreto: é atribuição, não o movimento. */
+.mr-exec{
+  display:inline-block;font-size:5.5pt;font-weight:700;color:var(--mid);
+  border:.5px solid var(--rule);border-radius:2px;
+  padding:.2mm 1.2mm;margin-left:1.8mm;letter-spacing:.06em;
+  white-space:nowrap;vertical-align:1px;
+}
 .mr-cum-dash{text-align:center;color:var(--text3);font-weight:700}
 
 /* Coluna lateral Tiebreak (For Time Goal): célula INTEIRA é a área de
@@ -770,6 +786,28 @@ body{
 .sb-field-line{
   border-bottom:2px solid var(--ink);
   flex:1;margin-top:3mm;
+}
+/* Multi-score: um .sb-field por pontuação, cada um com rótulo A/B/C.
+   Reusa .sb-field/.sb-field-line — só acrescenta o badge e o nome. */
+.sb-field-score{flex:1;min-width:0}
+.sb-score-hd{display:flex;align-items:baseline;gap:1mm;flex-shrink:0}
+.sb-score-badge{
+  font-size:4.5pt;font-weight:900;color:var(--w);
+  background:var(--panel);border-radius:1mm;
+  padding:.3mm 1.2mm;letter-spacing:.1em;flex-shrink:0;
+}
+.sb-score-name{
+  font-size:5pt;font-weight:700;color:var(--ink);
+  text-transform:uppercase;letter-spacing:.06em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.sb-score-pts{
+  font-size:4pt;font-weight:700;color:var(--ghost);
+  letter-spacing:.06em;flex-shrink:0;margin-left:auto;
+}
+.sb-score-unit{
+  font-size:4pt;font-weight:400;color:var(--ghost);
+  font-style:italic;letter-spacing:.02em;margin-top:.4mm;
 }
 /* Right dark time cap */
 .sb-tc-col{
@@ -1289,7 +1327,7 @@ MOV_TABLE_MACRO = r"""
       <div class="mov-row mov-row-goal">
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
-          <span class="mr-goal-badge">GOAL</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
+          <span class="mr-goal-badge">GOAL</span>{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}{% if mov.executantes %} <span class="mr-exec">{{ mov.executantes }}</span>{% endif %}
         </div>
         <div class="mr-reps mr-reps-empty"><div class="mr-reps-empty-box"></div></div>
         {% if not hide_cum %}<div class="mr-cum mr-cum-dash">—</div>{% endif %}
@@ -1302,7 +1340,8 @@ MOV_TABLE_MACRO = r"""
         {% if has_lbl %}<div class="mr-lbl">{{ mov.label | default('') }}</div>{% endif %}
         <div class="mr-name">
           {% if mov.paralelo %}<span class="mr-paralelo-mark" title="Executado em paralelo">‖</span>{% endif %}
-          {% if mov.reps is defined %}<span class="mr-reps-inline">({{ mov.reps }})</span>{% endif %}{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}
+          {% if mov.max %}<span class="mr-max-badge">MAX</span>{% endif %}
+          {% if mov.reps is defined %}<span class="mr-reps-inline">({{ mov.reps }})</span>{% endif %}{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}{% if mov.executantes %} <span class="mr-exec">{{ mov.executantes }}</span>{% endif %}
         </div>
         {% if mov.reps is defined %}
           <div class="mr-reps">{{ mov.reps }}</div>
@@ -1447,7 +1486,41 @@ AMRAP_TABLE_MACRO = r"""
 SCORE_BOX_MACRO = r"""
 {% macro score_box(tipo, wkt=none) %}
 {% set tb_text = wkt.tiebreak if (wkt is not none and wkt.tiebreak) else none %}
-{% if tipo == 'for_time' %}
+{% set scores = wkt.scores if (wkt is not none and wkt.scores) else none %}
+{% set unidade_score = {'tempo': 'm:s', 'carga': 'carga total', 'reps': 'total de reps'} %}
+{% if scores and scores|length > 1 %}
+{# Workout multi-score: o juiz anota uma pontuação por score declarado, em vez
+   do par Tempo/Reps genérico. Cada campo carrega rótulo, nome e peso — sem
+   isso o juiz não sabe qual número vai em qual score. #}
+<div class="score-section">
+  <span class="sc-t">Resultado</span>
+  <span class="sc-s">{{ scores|length }} pontuações independentes — preencher todas</span>
+</div>
+<div class="score-box">
+  <div class="sb-lbl-col">
+    <span class="sb-lbl-tag">Multi-Score</span>
+    <span class="sb-lbl-name">Pontuação</span>
+  </div>
+  {% for sc in scores %}
+  <div class="sb-field sb-field-score">
+    <div class="sb-score-hd">
+      <span class="sb-score-badge">{{ sc.label }}</span>
+      <span class="sb-score-name">{{ sc.nome }}</span>
+      {% if sc.pontos %}<span class="sb-score-pts">{{ sc.pontos }} pts</span>{% endif %}
+    </div>
+    <span class="sb-score-unit">{{ unidade_score.get(sc.tipo, 'total') }}</span>
+    <div class="sb-field-line"></div>
+  </div>
+  {% endfor %}
+  {% if wkt.time_cap %}
+  <div class="sb-tc-col">
+    <div class="sb-tc-box"></div>
+    <span class="sb-tc-lbl">Time Cap</span>
+    <span class="sb-tc-sub">marcar se atingido</span>
+  </div>
+  {% endif %}
+</div>
+{% elif tipo == 'for_time' %}
 <div class="score-section">
   <span class="sc-t">Resultado</span>
   <span class="sc-s">Preencher após o workout</span>

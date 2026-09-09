@@ -121,7 +121,13 @@ def padronizar_movimento(nome: str) -> str:
     else:
         prefixo_out = ''
     sufixo_out = (' ' + sufixo.strip()) if sufixo else ''
-    return f"{prefixo_out}{canonical}{sufixo_out}".strip()
+    saida = f"{prefixo_out}{canonical}{sufixo_out}".strip()
+    # Preserva o CAIXA-ALTA da entrada: 'SYNC. THRUSTERS' não pode virar
+    # 'Sync. THRUSTERS'. O prefixo é normalizado pra 'Sync.'/'Alternating'
+    # (title case) e destoaria no meio de uma tabela toda em maiúsculas.
+    if not any(c.islower() for c in s):
+        return saida.upper()
+    return saida
 
 
 def padronizar_workouts(workouts: Iterable[dict]) -> None:

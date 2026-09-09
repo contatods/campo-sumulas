@@ -476,3 +476,64 @@ def test_render_amrap_multijanela_pwrd_loop(evento_basico, fonts_empty):
     assert "RESET EQUIPMENT" in html.upper()          # rest-bar entre janelas
     assert 'class="jan-scorebox"' in html             # score = soma das janelas
     assert '<div class="score-box' not in html        # não duplica o score AMRAP
+
+
+# ── Multi-score: um campo de anotação por pontuação declarada ───────────────
+def _multi_score_wkt(workout_for_time):
+    return {
+        **workout_for_time,
+        "nome": "FIRE BURNING 1, 2 & 3",
+        "movimentos": [
+            {"nome": "SYNC. THRUSTERS", "carga": "60/40 KG",
+             "max": True, "pontua": True, "executantes": "A/B"},
+            {"nome": "CAL ROW", "reps": 100, "executantes": "C/D"},
+            {"chegada": True},
+        ],
+        "scores": [
+            {"label": "A", "nome": "Fire Burning 1", "tipo": "reps",
+             "descricao": "reps de thruster do Bloco 1", "pontos": 100},
+            {"label": "B", "nome": "Fire Burning 2", "tipo": "reps",
+             "descricao": "reps de thruster do Bloco 3", "pontos": 100},
+            {"label": "C", "nome": "Fire Burning 3", "tipo": "tempo",
+             "descricao": "tempo total de conclusão", "pontos": 200},
+        ],
+    }
+
+
+def test_render_multi_score_um_campo_por_pontuacao(evento_basico, workout_for_time, fonts_empty):
+    """Workout que vale 3 pontuações rende 3 campos de anotação — um por score,
+    com rótulo, nome e peso. Com o score_box genérico (Tempo/Reps) o juiz não
+    teria onde escrever a 2ª e a 3ª pontuação."""
+    wkt = _multi_score_wkt(workout_for_time)
+    html = render_workout(evento_basico, wkt, fonts_empty, "")
+    campos = re.findall(r'<div class="sb-field sb-field-score">(.*?)<div class="sb-field-line">',
+                        html, re.S)
+    assert len(campos) == 3, f'esperava 3 campos, veio {len(campos)}'
+    for esperado in ('Fire Burning 1', 'Fire Burning 2', 'Fire Burning 3'):
+        assert esperado in html
+    assert '>A<' in html and '>B<' in html and '>C<' in html   # badges dos rótulos
+    assert '200 pts' in html and '100 pts' in html
+    # unidade por tipo: tempo escreve m:s, reps escreve total
+    assert 'm:s' in campos[2]
+    assert 'total de reps' in campos[0]
+    assert '3 pontuações independentes' in html
+
+
+def test_render_score_unico_mantem_score_box_do_tipo(evento_basico, workout_for_time, fonts_empty):
+    """Sem `scores`, nada muda: segue o score_box do tipo (For Time)."""
+    html = render_workout(evento_basico, workout_for_time, fonts_empty, "")
+    assert 'sb-field-score' not in html.split('</style>')[-1]
+    assert 'sb-field-tempo' in html and 'sb-field-reps' in html
+
+
+def test_render_badge_max_e_chip_de_executantes(evento_basico, workout_for_time, fonts_empty):
+    """A linha 'Max' precisa do badge MAX (é o que pontua) e do chip de quem
+    executa — sem eles o juiz vê uma caixa vazia sem saber o que anotar."""
+    wkt = _multi_score_wkt(workout_for_time)
+    html = render_workout(evento_basico, wkt, fonts_empty, "")
+    corpo = html.split('</style>')[-1]
+    assert '<span class="mr-max-badge">MAX</span>' in corpo
+    assert '<span class="mr-exec">A/B</span>' in corpo
+    assert '<span class="mr-exec">C/D</span>' in corpo
+    # o badge não pode duplicar o nome ('MAX MAX SYNC. THRUSTERS')
+    assert 'MAX SYNC. THRUSTERS' not in re.sub(r'<[^>]+>', '', corpo)

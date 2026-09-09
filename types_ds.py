@@ -34,6 +34,25 @@ class Movimento(TypedDict, total=False):
     reps_por_round: list[Union[int, str]]   # progressão de reps (ex: [10,12,14,16,'MAX'])
     tiebreak: bool      # checkpoint inline — render insere linha 'TIEBREAK · ___'
                         # após este mov (For Time multi-checkpoint)
+    max: bool           # linha 'Max <mov>' — sem reps prescritas, o juiz anota
+                        # o acumulado (render dá caixa em vez de nº de reps)
+    pontua: bool        # este movimento é o que gera pontuação do workout
+    executantes: str    # quem do time executa ('A/B') — vem do sufixo
+                        # '– Athletes A and B'. Render mostra como badge.
+
+
+class Score(TypedDict, total=False):
+    """Uma das pontuações independentes de um workout multi-score.
+
+    Um workout pode valer mais de um score — o organizador declara cada um na
+    seção Pontuação com um rótulo: `Fire Burning 1 (Score A): reps de thruster
+    do Bloco 1 (100 pontos)`. Workout de pontuação única não tem `scores`.
+    """
+    label: str          # rótulo curto do score ('A', 'B', 'C')
+    nome: str           # nome dado pelo organizador ('Fire Burning 1')
+    tipo: str           # 'reps' | 'tempo' | 'carga' — o que o juiz anota
+    descricao: str      # texto livre do critério, como escrito no Excel
+    pontos: int         # peso do score no ranking (ex: 100, 200)
 
 
 class Formula(TypedDict, total=False):
@@ -76,6 +95,9 @@ class Workout(TypedDict, total=False):
     goal_reps: int                # alvo total de reps acumuladas pra liberar chegada
     goal_movimento: str           # nome do movimento alvo (ex 'SNATCHES')
     goal_carga: str               # carga do movimento alvo (ex '75 LB', '75/55 LB')
+    # Multi-score: workout que vale 2+ pontuações independentes (ver Score).
+    # Ausente/vazio = pontuação única, e o render usa o score_box do tipo.
+    scores: list[Score]
 
 
 class Evento(TypedDict, total=False):

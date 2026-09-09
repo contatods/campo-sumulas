@@ -228,6 +228,8 @@ def _mov_resumo(m: dict) -> str:
         s = f"GOAL {s}"
     if m.get("pontua") is False:
         s += " (não pontua)"
+    if m.get("executantes"):
+        s += f" [atletas {m['executantes']}]"
     return s
 
 
@@ -257,6 +259,14 @@ def _resumo_parse_fidelidade(wkt: dict) -> dict:
     for k in ("rounds_fixos", "rounds_bloco", "goal_reps", "goal_movimento"):
         if wkt.get(k):
             d[k] = wkt[k]
+    # Multi-score: a IA precisa ver quantas pontuações o sistema entendeu, pra
+    # flagrar score declarado no Excel que o parse não capturou (ou o inverso).
+    if wkt.get("scores"):
+        d["scores"] = [
+            f"Score {sc.get('label')}: {sc.get('nome')} "
+            f"({sc.get('tipo')}{', ' + str(sc['pontos']) + ' pts' if sc.get('pontos') else ''})"
+            for sc in wkt["scores"]
+        ]
     return d
 
 
@@ -271,6 +281,10 @@ _SYSTEM_FIDELIDADE = (
     "- tipo errado (ex: era AMRAP de 2 janelas e leu como for time simples);\n"
     "- rounds não detectados; pontuação/score lido errado (ex: perdeu a linha "
     "  'Max' que conta pontos, ou contou reps que não pontuam);\n"
+    "- multi-score: o texto declara scores nomeados ('Fire Burning 1 (Score A): "
+    "  ... (100 pontos)') e o parse tem que trazer UM item em 'scores' por "
+    "  score declarado, com o tipo certo (reps/tempo/carga). Score declarado "
+    "  no texto e ausente do parse é ERRO — a súmula sai sem onde anotar;\n"
     "- time cap errado; chegada indevida ou faltando.\n\n"
     "IGNORE: diferenças de maiúsculas/formatação, ordem de metadados, notas de "
     "regulamento. Seja conservador — se está fiel, não reporte. Melhor 2 achados "

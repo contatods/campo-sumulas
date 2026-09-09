@@ -47,7 +47,12 @@ _ATLETA_HEADER_RE = re.compile(r'^\s*(?:atleta|athlete)\s+(\d+)\s*[:\.]?\s*$', r
 # Classe de traços "decorativos" usados como moldura de seção. Inclui U+2015
 # (―, HORIZONTAL BAR) além de U+2500/2014/2013 — o Pwrd usa `――― NOTAS ―――`
 # com U+2015, que antes escapava do corte.
-_TRACO = r'─—–―\-'
+# Cobre a família de traços horizontais usada como moldura de seção:
+# U+2500 (─ light), U+2501 (━ heavy), U+2504-U+254B (tracejados/duplos),
+# U+2550 (═ double), U+2014/2013/2015 (em/en dash, horizontal bar), '-' e
+# U+FF0D (－ fullwidth). Organizadores alternam entre eles sem critério —
+# `━━━ NOTAS ━━━` e `─── NOTAS ───` são o mesmo separador pro leitor humano.
+_TRACO = r'\u2500-\u257f\u2014\u2013\u2015\uff0d\-'
 _DESC_CUT_RE = re.compile(
     r'^\s*(?:[' + _TRACO + r']+\s*)?'
     r'(?:notas?|notes?|observa[çc][õo]es?|observations?|pontua[çc][ãa]o|tiebreak|'
@@ -96,6 +101,153 @@ _NOTA_LIKELY_RE = re.compile(
     r'before\s+(?:start|finishing)|after\s+(?:complet|finish))\b',
     re.IGNORECASE,
 )
+# Linha de pontuação que declara um score NOMEADO de um workout multi-score:
+#   '- Fire Burning 1 (Score A): reps de thruster do Bloco 1 (100 pontos).'
+#   '- Funky and Strong 2 (Score B): soma da melhor carga (100 pontos).'
+# O rótulo entre parênteses + os dois-pontos é o que separa uma DECLARAÇÃO de
+# score de uma observação que só menciona o score ('Caso não finalize, o Fire
+# Burning 3 (Score C) será 30:00 + 1s...' não casa: não tem ':' após o rótulo).
+_SCORE_DECL_RE = re.compile(
+    r'^\s*[-•*\u2013\u2014]?\s*'
+    r'(?P<nome>[^:]+?)\s*'
+    r'\(\s*(?:score|pontua[çc][ãa]o)\s+(?P<label>[A-Za-z0-9]{1,3})\s*\)\s*'
+    r':\s*(?P<resto>\S.*)$',
+    re.IGNORECASE,
+)
+# '(200 pontos)' / '(100 points)' no FIM da descrição — peso do score no ranking.
+# Ancorado no fim porque a descrição costuma ter outros parênteses no meio
+# ('(dupla A/B)', '(Athlete A + Athlete B)').
+_SCORE_PONTOS_RE = re.compile(
+    r'\s*\(\s*(\d+)\s*(?:pontos?|points?)\s*\)\s*\.?\s*$', re.IGNORECASE)
+
+
+def _tipo_do_score(descricao: str) -> str:
+    """Classifica o que o juiz anota nesse score: 'tempo' | 'carga' | 'reps'.
+
+    Vem da descrição em texto livre — o organizador escreve 'tempo total de
+    conclusão', 'soma da melhor carga válida', 'reps de thruster'. Default
+    'reps' (o caso mais comum e o campo mais neutro pra anotar).
+    """
+    d = (descricao or '').lower()
+    if re.search(r'\btempo\b|\btime\b|ordem\s+de\s+chegada|conclus[ãa]o', d):
+        return 'tempo'
+    if re.search(r'\bcargas?\b|\bpesos?\b|\bloads?\b|\bkg\b|\blbs?\b', d):
+        return 'carga'
+    return 'reps'
+
+
+def _extrair_scores(full: str) -> list[dict]:
+    """Extrai os scores nomeados de um workout multi-score.
+
+    Um workout pode valer mais de uma pontuação independente — o organizador
+    declara cada uma na seção Pontuação com um rótulo:
+
+        Pontuação
+        - Fire Burning 1 (Score A): reps de thruster do Bloco 1 (100 pontos).
+        - Fire Burning 3 (Score C): tempo total de conclusão (200 pontos).
+
+    Sem rótulos `(Score X):` devolve [] — o workout tem pontuação única e o
+    render segue pelo caminho normal. Rótulos repetidos ficam com a primeira
+    ocorrência (a declaração vem antes das observações que a citam).
+    """
+    scores: list[dict] = []
+    vistos: set[str] = set()
+    for linha in (full or '').splitlines():
+        m = _SCORE_DECL_RE.match(linha.strip())
+        if not m:
+            continue
+        label = m.group('label').upper()
+        if label in vistos:
+            continue
+        resto = m.group('resto').strip()
+        pontos = None
+        if (mp := _SCORE_PONTOS_RE.search(resto)):
+            pontos = _safe_int(mp.group(1))
+            resto = resto[:mp.start()].strip()
+        resto = resto.rstrip('.').strip()
+        if not resto:
+            continue
+        vistos.add(label)
+        score = {'label': label, 'nome': m.group('nome').strip(),
+                 'descricao': resto, 'tipo': _tipo_do_score(resto)}
+        if pontos is not None:
+            score['pontos'] = pontos
+        scores.append(score)
+    return scores
+
+
+def _split_movs_somados(linha: str) -> list[str]:
+    """Divide '100 Cal Row + 100 Cal Ski Erg' em dois movimentos.
+
+    Só divide quando o `+` está FORA de parênteses e o lado direito começa
+    com número — aí são duas prescrições somadas na mesma linha. Preserva
+    intactos os casos em que `+` faz parte do movimento:
+      '(2 Ring + 2 Bar)'                    → parêntese, não divide
+      'Wall-Ball Shots + Front Squats'      → sem reps à direita, é um combo
+      '(+10 reps per round)'                → parêntese, não divide
+    Sem divisão aplicável, devolve [linha].
+    """
+    partes: list[str] = []
+    atual: list[str] = []
+    prof = 0
+    for ch in linha:
+        if ch in '([':
+            prof += 1
+        elif ch in ')]':
+            prof = max(0, prof - 1)
+        if ch == '+' and prof == 0:
+            partes.append(''.join(atual))
+            atual = []
+            continue
+        atual.append(ch)
+    partes.append(''.join(atual))
+    if len(partes) < 2:
+        return [linha]
+    partes = [p.strip() for p in partes]
+    # Todo pedaço tem que ser uma prescrição própria (começa com número).
+    # Basta um não ser pra tratar a linha inteira como um movimento só.
+    if not all(re.match(r'^\d', p) for p in partes if p):
+        return [linha]
+    return [p for p in partes if p] or [linha]
+
+
+# Sufixo de ATRIBUIÇÃO: '– Athletes A and B', '— Atletas C e D', '- Athlete A'.
+# Diz QUEM do time executa aquela linha (não é parte do nome do movimento nem
+# carga). Vira mov['executantes'] pra súmula mostrar como badge — sem isso o
+# nome fica longo demais e o filtro de flex-mov descarta a linha inteira.
+_EXECUTANTES_RE = re.compile(
+    r'\s*[\u2013\u2014\u2015-]\s*(?:athletes?|atletas?)\s+'
+    r'(?P<quem>[A-Z](?:\s*(?:and|e|\+|/|,)\s*[A-Z])*)\s*$',
+    re.IGNORECASE,
+)
+
+
+def _extrair_executantes(linha: str) -> tuple[str, str]:
+    """Separa o sufixo '– Athletes A and B' do resto da linha.
+
+    Retorna (linha_sem_sufixo, executantes_normalizados). Executantes saem
+    como 'A/B' (separador único) pra render exibir compacto. Sem sufixo,
+    devolve (linha, '').
+    """
+    m = _EXECUTANTES_RE.search(linha)
+    if not m:
+        return linha, ''
+    # Tira os conectores ('and'/'e') ANTES de extrair — senão o 'e' de
+    # 'Atletas A e B' entra na lista como se fosse um atleta.
+    quem = re.sub(r'\b(?:and|e)\b', ' ', m.group('quem'), flags=re.I)
+    letras = re.findall(r'\b[A-Za-z]\b', quem)
+    if not letras:
+        return linha, ''
+    return linha[:m.start()].rstrip(), '/'.join(l.upper() for l in letras)
+
+
+# Parêntese que é CONTAGEM DE ATLETAS ('(4 athletes)', '(2 atletas)',
+# '(1 athlete to completion)') — não é carga nem variação do movimento.
+# Usado pra não deixar '(2 athletes)' virar goal_carga na súmula.
+_SUFIXO_ATLETAS_RE = re.compile(
+    r'^\s*\d+\s+(?:athletes?|atletas?)\b', re.IGNORECASE)
+
+
 # Headers de seção/parte que NÃO são movimento. Aparecem em workouts longos
 # como Simple Dimension/Mind: 'Part 1 (0:00-6:00)', 'Stage 2', 'Bloco 1'.
 # Detecção: começa com palavra-header + número, opcionalmente seguido de
@@ -647,11 +799,16 @@ def _detectar_directives(full: str, lines: list[str], wkt: Workout) -> None:
                       full, re.I)):
         wkt["tipo"] = "for_time_goal"
         # Carga do goal: primeira linha 'Max <mov> (carga)' que aparecer.
+        # Ignora parênteses de contagem de atletas — 'Max Sync. Pull-Ups
+        # (2 athletes)' não tem carga, e '2 athletes' na súmula confunde o juiz.
         for line in lines:
-            m_max = re.search(
-                r'\bmax\b\s+[A-Za-zÀ-ú][\w\s\-/.]+?\s*\(([^)]+)\)', line, re.I)
-            if m_max:
-                wkt["goal_carga"] = m_max.group(1).strip()
+            for m_max in re.finditer(
+                    r'\bmax\b\s+[A-Za-zÀ-ú][\w\s\-/.]+?\s*\(([^)]+)\)', line, re.I):
+                cand = m_max.group(1).strip()
+                if cand and not _SUFIXO_ATLETAS_RE.match(cand):
+                    wkt["goal_carga"] = cand
+                    break
+            if wkt.get("goal_carga"):
                 break
 
     # Último round vira MAX / AMRAP
@@ -755,32 +912,74 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
         line_clean = _MARKER_INLINE_RE.sub('', line_clean).rstrip()
         if _DIRECTIVE_PROG_RE.match(line_clean): continue   # '*Add N reps each round'
 
-        parsed = _parse_mov_line(line_clean)
-        if parsed:
-            reps, nome = parsed
-            nome_limpo, carga = _extrair_carga(nome)
-            mov: Movimento = {"nome": nome_limpo}
-            if reps is not None: mov["reps"] = reps
-            if carga: mov["carga"] = carga
+        # Sufixo '– Athletes A and B' sai da linha antes do parse: não é nome
+        # nem carga, e o seu tamanho fazia o filtro de flex-mov descartar a
+        # linha inteira (era assim que 'Max Sync. Thrusters ... – Athletes A
+        # and B' — o movimento que PONTUA — sumia da súmula).
+        line_clean, executantes = _extrair_executantes(line_clean)
+
+        # Uma linha pode carregar duas prescrições somadas ('100 Cal Row +
+        # 100 Cal Ski Erg'). Vira um movimento por parcela — senão o 1º número
+        # vira reps e o resto fica pendurado no nome.
+        # Uma linha pode carregar duas prescrições somadas ('100 Cal Row +
+        # 100 Cal Ski Erg'). Vira um movimento por parcela — senão o 1º número
+        # vira reps e o resto fica pendurado no nome.
+        for parcela in _split_movs_somados(line_clean):
+            mov = _montar_mov(parcela, has_goal, has_seps, block, in_paralelo)
+            if mov is None:
+                continue
+            if is_progressivo and "reps" in mov:
+                mov["progressivo"] = True
             if atleta_label:
                 mov["label"] = atleta_label
             elif has_then and not has_atleta and block in BLOCK_LABELS:
                 # Compat com workouts que usam só `then...` (sem header Atleta N)
                 mov["label"] = BLOCK_LABELS[block]
-            if in_paralelo: mov["paralelo"] = True
-            if is_progressivo: mov["progressivo"] = True
+            if executantes:
+                mov["executantes"] = executantes
             movs.append(mov)
-        elif has_goal:
-            # For Time com Goal: aceita movs sem reps líderes (Snatches 95/65 lb)
-            mov_flex = _tentar_flex_mov(line_clean, has_seps, block, in_paralelo)
-            if mov_flex:
-                if atleta_label:
-                    mov_flex["label"] = atleta_label
-                elif has_then and not has_atleta and block in BLOCK_LABELS:
-                    mov_flex["label"] = BLOCK_LABELS[block]
-                movs.append(mov_flex)
 
     return movs, time_cap
+
+
+def _montar_mov(line_clean: str, has_goal: bool, has_seps: bool,
+                block: int, in_paralelo: bool) -> Optional[Movimento]:
+    """Converte UMA linha já limpa num movimento (ou None se não for movimento).
+
+    Duas rotas:
+      a) `_parse_mov_line` — linha com reps líderes ('21 Thrusters');
+      b) fallback flex-mov — linha sem reps líderes, aceita quando o workout
+         tem Goal declarado OU quando a linha é um 'Max <mov>' (reps ilimitadas,
+         é o que pontua). A rota (b) por 'Max' existe porque nem todo workout
+         com linha Max declara 'Goal:' — um For Time de blocos pode ter dois
+         Max valendo Score A e Score B, e sem isso eles sumiam da súmula.
+
+    Não aplica label/executantes — quem chama sabe o contexto do bloco.
+    """
+    parsed = _parse_mov_line(line_clean)
+    if parsed:
+        reps, nome = parsed
+        nome_limpo, carga = _extrair_carga(nome)
+        mov: Movimento = {"nome": nome_limpo}
+        if reps is not None:
+            mov["reps"] = reps
+        if carga:
+            mov["carga"] = carga
+        if in_paralelo:
+            mov["paralelo"] = True
+        return mov
+    m_max = _MAX_MOV_RE.match(line_clean)
+    if not (has_goal or m_max):
+        return None
+    # O prefixo 'Max ' sai do NOME: vira a flag `max`, e o render desenha o
+    # badge MAX. Deixá-lo no nome imprime 'MAX MAX SYNC. THRUSTERS' na súmula.
+    corpo = m_max.group(1).strip() if m_max else line_clean
+    mov_flex = _tentar_flex_mov(corpo, has_seps, block, in_paralelo)
+    if mov_flex and m_max:
+        # Sem reps prescritas: o juiz anota o acumulado, e isso pontua.
+        mov_flex["max"] = True
+        mov_flex["pontua"] = True
+    return mov_flex
 
 
 def _tentar_flex_mov(line_clean: str, has_seps: bool,
@@ -863,8 +1062,9 @@ _COMPOSTO_TITULO_RE = re.compile(
     r'(?:[—–-]\s*(?:athlete|atleta)\s*\d+\s*)?$',           # '— Atleta N' opcional
     re.I,
 )
-# NOTAS com qualquer traço decorativo (inclui U+2015 do Pwrd).
-_COMPOSTO_NOTAS_RE = re.compile(r'[─―—–]{2,}\s*NOTAS\s*[─―—–]{2,}', re.I)
+# NOTAS com qualquer traço decorativo — mesma família de _TRACO.
+_COMPOSTO_NOTAS_RE = re.compile(
+    r'[' + _TRACO + r']{2,}\s*NOTAS\s*[' + _TRACO + r']{2,}', re.I)
 
 
 def _extrair_janela(texto: str, nome: str) -> str:
@@ -912,7 +1112,7 @@ def _detectar_composto(lines: list[str]) -> Optional[tuple[str, str, str, str]]:
         return None  # não acha o início da F2 → trata como workout simples
     # NOTAS marca fim dos blocos
     idx_notas = next((i for i, ln in enumerate(lines)
-                      if re.search(r'─{2,}\s*NOTAS\s*─{2,}', ln, re.I)), None)
+                      if _COMPOSTO_NOTAS_RE.search(ln)), None)
     fim_f2 = idx_notas if idx_notas is not None else len(lines)
     # F1 começa em 1 (pula header) e vai até início de F2
     texto_f1 = '\n'.join(lines[1:idx_f2])
@@ -953,6 +1153,23 @@ def _detectar_composto_por_titulos(
 
 def parse_workout_text(text: str, numero: int) -> Workout:
     """Converte texto livre de uma célula/seção num dict de workout.
+
+    Wrapper fino sobre `_parse_workout_text_core` que aplica o pós-processamento
+    de scores nomeados. Fica aqui (e não dentro do core) porque o core tem
+    vários pontos de saída — for_load, express, AMRAP multi-janela e composto
+    retornam cedo, e um workout de qualquer um desses tipos pode ser
+    multi-score (o Funky and Strong é um For Load com Score A e Score B).
+    """
+    wkt = _parse_workout_text_core(text, numero)
+    # Texto ORIGINAL (o core trabalha com uma cópia lowercased internamente) —
+    # os nomes dos scores vão pra súmula e precisam da capitalização do autor.
+    if (scores := _extrair_scores(text)):
+        wkt["scores"] = scores
+    return wkt
+
+
+def _parse_workout_text_core(text: str, numero: int) -> Workout:
+    """Núcleo do parse — detecta tipo, diretrizes e movimentos.
 
     Pipeline:
       1. Extrai nome (primeira linha entre aspas, ou texto livre não-numérico)
@@ -1066,7 +1283,7 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     if wkt["tipo"] == "for_time_goal":
         for mov in wkt["movimentos"]:
             nome_up = (mov.get("nome") or "").upper().strip()
-            if nome_up.startswith("MAX "):
+            if mov.get("max") or nome_up.startswith("MAX "):
                 mov["goal"] = True
         # 7) Identifica o mov-âncora do tiebreak ("último Pull-Up do Part 3"
         # → última linha PULL-UPS no '3º BLOCO'). Render usa pra colocar caixa
@@ -1312,8 +1529,11 @@ def validar_workout_schema(wkt: Workout, raw: str = '') -> list[tuple[str, str]]
       - tem conteúdo: movimentos | janelas | fórmula (express/composto) | for_load
       - `nome` não é a linha 'Arena:' nem o placeholder 'WKT N'
       - se o texto cru tem linha 'Max'/'Goal', o parse representa a pontuação
-        (goal_reps, janela.max ou movimento.goal) — não pode DROPAR o que pontua
+        (goal_reps, janela.max, movimento.goal ou movimento.max) — não pode
+        DROPAR o que pontua
       - se o texto tem 'Time cap: N' (não negado), `time_cap` é capturado
+      - se o texto declara scores nomeados ('(Score A):'), todos aparecem em
+        `scores` — score perdido = súmula sem campo pra anotar aquela pontuação
 
     Retorna lista de (codigo, detalhe); vazia = ok. Base do corpus de regressão
     e reutilizável pelo linter de import. NÃO garante correção semântica total
@@ -1337,12 +1557,25 @@ def validar_workout_schema(wkt: Workout, raw: str = '') -> list[tuple[str, str]]
         tem_score_par = (bool(wkt.get('goal_reps'))
                          or any(m.get('max') for j in (wkt.get('janelas') or [])
                                 for m in j.get('movimentos', []))
-                         or any(m.get('goal') for m in (wkt.get('movimentos') or [])))
+                         or any(m.get('goal') or m.get('max')
+                                for m in (wkt.get('movimentos') or [])))
         if tem_score_raw and not tem_score_par:
             probs.append(('pontuacao_perdida', 'texto tem Max/Goal e o parse não capturou'))
         if ('time cap' in rl and not _TC_NEGADO_RE.search(raw)
                 and not wkt.get('time_cap') and tipo not in ('for_load', 'composto')):
             probs.append(('timecap_perdido', 'texto tem Time cap e não foi capturado'))
+        # Multi-score: conta as declarações no texto e compara com o parse.
+        # Um score a menos na súmula é um campo que o juiz não tem pra anotar.
+        declarados = _extrair_scores(raw)
+        if len(declarados) > 1:
+            capturados = wkt.get('scores') or []
+            if len(capturados) < len(declarados):
+                faltam = ', '.join(
+                    sc['label'] for sc in declarados
+                    if sc['label'] not in {c.get('label') for c in capturados})
+                probs.append(('score_perdido',
+                              f'texto declara {len(declarados)} scores e o parse '
+                              f'capturou {len(capturados)} (faltam: {faltam or "?"})'))
     return probs
 
 

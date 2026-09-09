@@ -97,8 +97,9 @@ def test_robusto_usa_reparo_quando_regex_falha_no_schema(monkeypatch):
                                {"nome": "SNATCHES", "goal": True}], "descricao": []}
 
     registrar_reparador(fake_reparador)
-    # texto que a regex lê deixando problema de schema (Max dropado → pontuacao_perdida)
-    txt = '"X"\n\nFor time:\n21 Thrusters\nMax Snatches (75lb)'
+    # texto que a regex lê deixando problema de schema (time cap por
+    # extenso → timecap_perdido; a regex só capta 'Time cap: 15')
+    txt = '"X"\n\nFor time:\n21 Thrusters\nTime cap: quinze minutos'
     w_regex = parsers.parse_workout_text(txt, 1)
     assert validar_workout_schema(w_regex, txt), "pré-condição: regex deve falhar no schema"
     w = parse_workout_text_robusto(txt, 1)
@@ -114,7 +115,7 @@ def test_robusto_ignora_reparo_invalido(monkeypatch):
                 "modalidade": "individual", "movimentos": [], "descricao": []}
 
     registrar_reparador(reparador_ruim)
-    txt = '"X"\n\nFor time:\n21 Thrusters\nMax Snatches (75lb)'
+    txt = '"X"\n\nFor time:\n21 Thrusters\nTime cap: quinze minutos'
     w = parse_workout_text_robusto(txt, 1)
     assert w["nome"] != "WKT 1"   # não adotou o reparo inválido
     registrar_reparador(None)
@@ -125,7 +126,7 @@ def test_robusto_reparador_que_explode_nao_derruba(monkeypatch):
         raise RuntimeError("boom")
 
     registrar_reparador(reparador_bomba)
-    txt = '"X"\n\nFor time:\n21 Thrusters\nMax Snatches (75lb)'
+    txt = '"X"\n\nFor time:\n21 Thrusters\nTime cap: quinze minutos'
     w = parse_workout_text_robusto(txt, 1)   # não deve levantar
     assert w["tipo"] in ("for_time", "for_time_goal", "amrap")
     registrar_reparador(None)
@@ -153,22 +154,20 @@ def test_integracao_reparador_real_com_api_mockada(monkeypatch):
     """Cadeia completa: regex falha no schema → reparar_workout_ia (real) →
     _chamar_reparo_ia mockado devolve JSON → conversor → parser adota o reparo."""
     ai_parser.limpar_cache()
-    # texto que a regex lê perdendo a pontuação (Max dropado)
-    txt = '"Simple"\n\nFor time:\n21 Pull-Ups\nMax Snatches (75lb)\nTime cap: 6 min'
+    # texto que a regex lê perdendo o time cap (escrito por extenso)
+    txt = '"Simple"\n\nFor time:\n21 Pull-Ups\nTime cap: seis minutos'
     assert validar_workout_schema(parsers.parse_workout_text(txt, 1), txt)  # regex falha
 
     def fake_api(raw):
-        return {"nome": "Simple", "tipo": "for_time_goal", "time_cap": "6 min",
-                "goal_reps": 75, "goal_movimento": "Snatches",
-                "movimentos": [{"nome": "Pull-Ups", "reps": 21},
-                               {"nome": "Snatches", "goal": True}]}
+        return {"nome": "Simple", "tipo": "for_time", "time_cap": "6 min",
+                "movimentos": [{"nome": "Pull-Ups", "reps": 21}]}
 
     monkeypatch.setattr(ai_parser, "_chamar_reparo_ia", fake_api)
     registrar_reparador(ai_parser.reparar_workout_ia)
     try:
         w = parse_workout_text_robusto(txt, 1)
-        assert w["nome"] == "SIMPLE" and w["tipo"] == "for_time_goal"
-        assert w["goal_reps"] == 75
+        assert w["nome"] == "SIMPLE" and w["tipo"] == "for_time"
+        assert w["time_cap"] == "6 min"
         assert validar_workout_schema(w, txt) == []
     finally:
         registrar_reparador(None)

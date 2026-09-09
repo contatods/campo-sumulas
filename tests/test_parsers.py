@@ -1579,3 +1579,177 @@ def test_rounds_of_no_cabecalho_nao_vira_secao_repetida():
     sb = parse_workout_text('"SB"\n\nFor time:\n1000m Ski Erg\nthen, 2 rounds of:\n30 HSPU\nTime cap: 16 min', 1)
     assert sb.get("rounds_bloco") == 2 and not sb.get("rounds_fixos")
     assert any("2 ROUNDS OF" in m.get("secao", "") for m in sb["movimentos"])
+
+
+# ── Traço decorativo das NOTAS: qualquer variante corta o regulamento ────────
+def test_notas_cortam_com_traco_heavy_e_variantes():
+    """`━━━ NOTAS ━━━` (U+2501, box-drawings HEAVY) tem que cortar o regulamento
+    igual ao `─── NOTAS ───` (U+2500, LIGHT). Antes só o light casava, e toda
+    a seção de notas vazava pra dentro dos movimentos — 'PONTO DE PARTIDA' e
+    'SINCRONIA' viravam linhas de movimento na súmula impressa.
+    """
+    from parsers import _DESC_CUT_RE
+    for moldura in ('━', '─', '―', '—', '═', '-'):
+        linha = f'{moldura * 3} NOTAS {moldura * 3}'
+        assert _DESC_CUT_RE.match(linha), f'não cortou com {moldura!r} (U+{ord(moldura):04X})'
+
+    base = ('"W"\n\nFor time:\n21 Thrusters\n21 Pull-Ups\nTime cap: 8 min\n\n'
+            '{m} NOTAS {m}\n\nPonto de partida\n- O time estará atrás do rig.\n\n'
+            'Sincronia\n- Sincronia no lockout.')
+    for moldura in ('━━━', '───'):
+        w = parse_workout_text(base.format(m=moldura), 1)
+        nomes = ' | '.join((mv.get('nome') or '') for mv in w['movimentos'])
+        assert 'PONTO DE PARTIDA' not in nomes, f'nota vazou com {moldura!r}'
+        assert 'SINCRONIA' not in nomes, f'nota vazou com {moldura!r}'
+        assert 'NOTAS' not in nomes, f'moldura vazou com {moldura!r}'
+
+
+# ── Linha 'Max <mov>' sem 'Goal:' declarado ─────────────────────────────────
+def test_max_vira_movimento_mesmo_sem_goal():
+    """'Max <mov>' é o que PONTUA. O fallback que aceita movimento sem reps
+    líderes só rodava quando o workout declarava 'Goal:' — num For Time de
+    blocos com dois Max (Score A e B) as duas linhas eram descartadas em
+    silêncio e a súmula saía sem onde anotar a pontuação.
+    """
+    txt = ('"FB"\n\nFor time (3 blocos):\n\nBloco 1\n'
+           'Max Sync. Thrusters (60/40 kg) – Athletes A and B\n'
+           '100 Cal Row – Athletes C and D\n\nTime cap: 30 minutes')
+    w = parse_workout_text(txt, 1)
+    maxes = [m for m in w['movimentos'] if m.get('max')]
+    assert len(maxes) == 1, w['movimentos']
+    mv = maxes[0]
+    assert mv['pontua'] is True
+    assert mv['carga'] == '60/40 KG'
+    assert mv['executantes'] == 'A/B'
+    # o prefixo 'Max' vira flag, não fica no nome (senão sai 'MAX MAX ...')
+    assert not mv['nome'].startswith('MAX'), mv['nome']
+    assert 'THRUSTERS' in mv['nome']
+
+
+def test_executantes_saem_do_nome_do_movimento():
+    """'– Athletes A and B' é atribuição de quem executa, não parte do nome."""
+    from parsers import _extrair_executantes
+    assert _extrair_executantes('100 Cal Row – Athletes C and D') == ('100 Cal Row', 'C/D')
+    assert _extrair_executantes('20 Burpees — Atletas A e B') == ('20 Burpees', 'A/B')
+    assert _extrair_executantes('10 Snatches - Athlete A') == ('10 Snatches', 'A')
+    # o 'e'/'and' é conector, não um atleta
+    assert _extrair_executantes('15 Cleans – Athletes A, B and C') == ('15 Cleans', 'A/B/C')
+    # sem sufixo de atribuição, linha intacta
+    assert _extrair_executantes('30 Wall-Balls (9/6 kg)') == ('30 Wall-Balls (9/6 kg)', '')
+    assert _extrair_executantes('9 Pull Overs (Athlete A)') == ('9 Pull Overs (Athlete A)', '')
+
+
+# ── Duas prescrições somadas na mesma linha ─────────────────────────────────
+def test_split_de_movimentos_somados():
+    """'100 Cal Row + 100 Cal Ski Erg' são DOIS movimentos. Sem o split, o
+    primeiro número virava reps e o resto ficava pendurado no nome
+    ('CAL ROW + 100 CAL SKI ERG'), com o segundo 100 solto no meio.
+    """
+    from parsers import _split_movs_somados
+    assert _split_movs_somados('100 Cal Row + 100 Cal Ski Erg') == ['100 Cal Row', '100 Cal Ski Erg']
+    assert _split_movs_somados('50 Cal Row + 40 Cal Bike + 30 Cal Ski') == [
+        '50 Cal Row', '40 Cal Bike', '30 Cal Ski']
+    # '+' dentro de parênteses é parte do movimento — não divide
+    assert _split_movs_somados('Max Sync. Muscle-Ups (2 Ring + 2 Bar)') == [
+        'Max Sync. Muscle-Ups (2 Ring + 2 Bar)']
+    assert _split_movs_somados('30 Wall-Ball Shots (9/6 kg) (+10 reps per round)') == [
+        '30 Wall-Ball Shots (9/6 kg) (+10 reps per round)']
+    # combo sem reps do lado direito é UM movimento
+    assert _split_movs_somados('Max Wall-Ball Shots + Front Squats') == [
+        'Max Wall-Ball Shots + Front Squats']
+
+    w = parse_workout_text('"W"\n\nFor time:\n100 Cal Row + 100 Cal Ski Erg\nTime cap: 10 min', 1)
+    movs = [m for m in w['movimentos'] if m.get('nome')]
+    assert [m['nome'] for m in movs] == ['CAL ROW', 'CAL SKI ERG']
+    assert all(m['reps'] == 100 for m in movs)
+
+
+# ── Workout multi-score ─────────────────────────────────────────────────────
+_MULTI_SCORE_TXT = (
+    '"Fire Burning 1, 2 & 3"\n\nFor time (3 blocos):\n\n'
+    'Bloco 1\nMax Sync. Thrusters (60/40 kg) – Athletes A and B\n'
+    '100 Cal Row + 100 Cal Ski Erg – Athletes C and D\n\n'
+    'Bloco 2\n60 Sync. Worm Deadlifts (140 kg) (4 athletes)\n\n'
+    'Time cap: 30 minutes\n\n━━━ NOTAS ━━━\n\n'
+    'Pontuação\n'
+    '- Fire Burning 1 (Score A): reps de thruster do Bloco 1 (dupla A/B) (100 pontos).\n'
+    '- Fire Burning 3 (Score C): tempo total de conclusão do workout (200 pontos).\n'
+    '- Caso não finalize, o Fire Burning 3 (Score C) será 30:00 + 1s por caloria faltante.'
+)
+
+
+def test_extrai_scores_nomeados():
+    """Workout que vale mais de uma pontuação: cada '(Score X):' declarado na
+    seção Pontuação vira um item em `scores`, com tipo e peso.
+    """
+    w = parse_workout_text(_MULTI_SCORE_TXT, 1)
+    scores = w['scores']
+    assert [s['label'] for s in scores] == ['A', 'C']
+    a, c = scores
+    assert a['nome'] == 'Fire Burning 1' and a['tipo'] == 'reps' and a['pontos'] == 100
+    assert c['nome'] == 'Fire Burning 3' and c['tipo'] == 'tempo' and c['pontos'] == 200
+    # descrição sem o '(N pontos)' e sem o ponto final
+    assert a['descricao'] == 'reps de thruster do Bloco 1 (dupla A/B)'
+    # a observação que só CITA '(Score C)' (sem ':') não vira um score novo
+    assert len(scores) == 2
+
+
+def test_score_unico_nao_vira_multi_score():
+    """Workout de pontuação única não ganha `scores` — o render segue pelo
+    score_box do tipo, sem regressão visual pros eventos existentes."""
+    from parsers import _extrair_scores
+    assert _extrair_scores('Pontuação\n- Será o tempo de conclusão (200 pontos).') == []
+    w = parse_workout_text('"W"\n\nFor time:\n21 Thrusters\nTime cap: 8 min\n\n'
+                           '━━━ NOTAS ━━━\n\nPontuação\n- Será o tempo (200 pontos).', 1)
+    assert not w.get('scores')
+
+
+def test_scores_em_for_load():
+    """For Load também pode ser multi-score — o parse de for_load retorna cedo,
+    então a extração de scores roda como pós-processamento em TODOS os tipos."""
+    txt = ('"Funky and Strong 1 & 2"\n\nFor load:\n'
+           'Window 1 (0:00–3:00)\n1-RM Snatch (Athlete A)\n\n'
+           '━━━ NOTAS ━━━\n\nPontuação\n'
+           '- Funky and Strong 1 (Score A): soma da melhor carga no Snatch (100 pontos).\n'
+           '- Funky and Strong 2 (Score B): soma da melhor carga no Clean and Jerk (100 pontos).')
+    w = parse_workout_text(txt, 1)
+    assert w['tipo'] == 'for_load'
+    assert [s['label'] for s in w['scores']] == ['A', 'B']
+    assert all(s['tipo'] == 'carga' for s in w['scores'])
+
+
+def test_linter_acusa_score_declarado_e_nao_capturado():
+    """Score declarado no Excel que não chega ao parse = súmula sem campo pra
+    anotar aquela pontuação. O linter tem que pegar antes de imprimir."""
+    from parsers import validar_workout_schema
+    w = parse_workout_text(_MULTI_SCORE_TXT, 1)
+    assert validar_workout_schema(w, _MULTI_SCORE_TXT) == []
+    perdido = dict(w, scores=w['scores'][:1])
+    codigos = dict(validar_workout_schema(perdido, _MULTI_SCORE_TXT))
+    assert 'score_perdido' in codigos
+    assert 'C' in codigos['score_perdido']
+
+
+def test_goal_carga_ignora_contagem_de_atletas():
+    """'Max Sync. Pull-Ups (2 athletes)' não tem carga — '(2 athletes)' é
+    contagem de gente. Ia parar no banner do goal como se fosse peso."""
+    base = ('"S"\n\nFor time:\nRound 1 (0:00–5:00)\n  15 Sync. Burpees\n'
+            '  Max Sync. {mov}\n\nGoal: 50 Sync. {alvo} + finishing rep '
+            '(cross the line).\n\nTime cap: 15 minutes')
+    w = parse_workout_text(base.format(mov='Pull-Ups (2 athletes)', alvo='Pull-Ups'), 1)
+    assert w['tipo'] == 'for_time_goal'
+    assert not w.get('goal_carga'), w.get('goal_carga')
+    # já uma especificação real do movimento continua virando carga
+    w2 = parse_workout_text(
+        base.format(mov='Muscle-Ups (2 Ring + 2 Bar) (4 athletes)', alvo='Muscle-Ups'), 1)
+    assert w2['goal_carga'] == '2 Ring + 2 Bar'
+
+
+def test_padronizar_movimento_preserva_caixa_alta():
+    """'SYNC. THRUSTERS' não pode voltar como 'Sync. THRUSTERS' — o prefixo era
+    normalizado pra title case e destoava numa tabela toda em maiúsculas."""
+    from movimentos import padronizar_movimento
+    assert padronizar_movimento('SYNC. THRUSTERS') == 'SYNC. THRUSTERS'
+    assert padronizar_movimento('SYNC. MUSCLE-UPS') == 'SYNC. MUSCLE-UPS'
+    # entrada em caixa mista segue normalizando o prefixo como antes
+    assert padronizar_movimento('sync. thrusters').startswith('Sync.')
