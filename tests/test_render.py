@@ -636,7 +636,7 @@ def _elim_wkt():
     return {
         "numero": 13, "nome": "THE LAST OF US", "tipo": "eliminacao",
         "modalidade": "quarteto", "time_cap": "15 min",
-        "rounds_fixos": 5, "janela_round": "3", "eliminados_por_round": 2,
+        "emom_rounds": 5, "emom_janela": "3", "eliminados_por_round": 2,
         "movimentos": [
             {"nome": "20M HANDSTAND WALK", "reps": 20},
             {"nome": "SYNC. DUAL-DUMBBELL DEVIL PRESS", "carga": "22,5/15 KG", "reps": 15},

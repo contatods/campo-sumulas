@@ -1860,8 +1860,8 @@ def test_eliminacao_parse_completo():
     de tempo e perdia a estrutura inteira."""
     w = parse_workout_text(_ELIMINACAO_TXT, 1)
     assert w['tipo'] == 'eliminacao'
-    assert w['rounds_fixos'] == 5
-    assert w['janela_round'] == '3'
+    assert w['emom_rounds'] == 5
+    assert w['emom_janela'] == '3'
     assert w['eliminados_por_round'] == 2
     assert w['time_cap'] == '15 min'          # veio de 'Duração total'
     nomes = [m.get('nome') for m in w['movimentos']]
@@ -1886,7 +1886,7 @@ def test_eliminacao_nao_promove_for_time_comum():
     # e um workout com janela mas SEM regra de corte também não é eliminação
     w2 = parse_workout_text('"Y"\n\n5 rounds, every 3 minutes:\n10 Burpees', 1)
     assert w2['tipo'] != 'eliminacao'
-    assert w2['rounds_fixos'] == 5 and w2['janela_round'] == '3'
+    assert w2['emom_rounds'] == 5 and w2['emom_janela'] == '3'
 
 
 def test_eliminacao_aceita_pt_e_en():
@@ -1894,12 +1894,12 @@ def test_eliminacao_aceita_pt_e_en():
     pt = parse_workout_text(
         '"P"\n\n4 rounds, a cada 2 minutos:\n10 Burpees\nCorrida final\n\n'
         '━━━ NOTAS ━━━\n\nEliminação\n- Os 3 últimos são eliminados.', 1)
-    assert pt['tipo'] == 'eliminacao' and pt['rounds_fixos'] == 4
-    assert pt['janela_round'] == '2' and pt['eliminados_por_round'] == 3
+    assert pt['tipo'] == 'eliminacao' and pt['emom_rounds'] == 4
+    assert pt['emom_janela'] == '2' and pt['eliminados_por_round'] == 3
     en = parse_workout_text(
         '"E"\n\n3 rounds, every 2:30 minutes:\n10 Burpees\nSprint to finish\n\n'
         '━━━ NOTAS ━━━\n\nElimination\n- The last 2 teams are eliminated.', 1)
-    assert en['tipo'] == 'eliminacao' and en['janela_round'] == '2:30'
+    assert en['tipo'] == 'eliminacao' and en['emom_janela'] == '2:30'
 
 
 def test_linter_acusa_eliminacao_lida_como_for_time():
@@ -1909,7 +1909,7 @@ def test_linter_acusa_eliminacao_lida_como_for_time():
     w = parse_workout_text(_ELIMINACAO_TXT, 1)
     assert validar_workout_schema(w, _ELIMINACAO_TXT) == []
     ruim = dict(w, tipo='for_time')
-    ruim.pop('janela_round', None)
+    ruim.pop('emom_janela', None)
     assert 'eliminacao_perdida' in dict(validar_workout_schema(ruim, _ELIMINACAO_TXT))
     sem_corrida = dict(w, movimentos=[m for m in w['movimentos'] if not m.get('posicao')])
     assert 'chegada_corrida_perdida' in dict(
@@ -1926,3 +1926,52 @@ def test_unidade_de_distancia_separada_do_numero():
     # 'cal' fica de fora: '100 Cal Row' já era lido como 'CAL ROW'
     assert _parse_mov_line('100 Cal Row') == (100, 'CAL ROW')
     assert _parse_mov_line('21 Thrusters') == (21, 'THRUSTERS')
+
+
+def test_eliminacao_independe_da_ordem_da_prescricao():
+    """'5 rounds, every 3 minutes' e 'Every 3 minutes, for 5 rounds' são a
+    MESMA estrutura, escrita ao contrário — e o sistema já tinha o vocabulário
+    dela (emom_janela/emom_rounds). Um par de campos paralelo fazia só a
+    primeira redação virar eliminação; na outra o organizador recebia um AMRAP
+    e a súmula com campo de tempo em vez de posição de chegada.
+    """
+    notas = ('\n\n━━━ NOTAS ━━━\n\nEliminação\n'
+             '- A cada round os 2 últimos times são eliminados.')
+    corpo = '\n20 m Handstand Walk\nRun to finish'
+    a = parse_workout_text('"A"\n\n5 rounds, every 3 minutes:' + corpo + notas, 1)
+    b = parse_workout_text('"B"\n\nEvery 3 minutes, for 5 rounds:' + corpo + notas, 1)
+    for w in (a, b):
+        assert w['tipo'] == 'eliminacao'
+        assert w['emom_janela'] == '3'
+        assert w['emom_rounds'] == 5
+        assert w['eliminados_por_round'] == 2
+    # e o EMOM sem regra de corte segue como estava (scorecard AMRAP)
+    emom = parse_workout_text(
+        '"E"\n\nEvery 2:30 minutes, for 5 rounds:\n10 Burpees', 1)
+    assert emom['tipo'] == 'amrap' and emom['emom_janela'] == '2:30'
+
+
+def test_cutoff_por_round_nao_e_eliminacao():
+    """Um AMRAP pode ter cutoff ('não concluiu as reps no tempo do round →
+    eliminado') e seguir sendo pontuado por REPETIÇÕES. O formato de eliminação
+    é outro: o time é cortado por chegar ATRÁS dos outros, e o score é a ordem
+    de chegada. Confundir os dois entrega ao juiz uma súmula pedindo posição
+    onde ele precisa anotar reps. Caso real do corpus (Monstar Recap).
+    """
+    cutoff = ('"Recap"\n\nEvery 2:30 minutes, for 5 rounds:\n'
+              '50-metres Swim (2 athletes)\n10 Dumbbell Thrusters\n\n'
+              '─── NOTAS ───\n\nEliminação\n'
+              '- Caso o time não conclua todas as reps prescritas no tempo\n'
+              '  de um round, estará eliminado do workout.')
+    w = parse_workout_text(cutoff, 1)
+    assert w['tipo'] == 'amrap', w['tipo']
+    assert not w.get('eliminados_por_round')
+
+    # já o corte por POSIÇÃO relativa é o formato
+    from parsers import _extrair_eliminacao
+    assert _extrair_eliminacao('- os 2 últimos times a cruzar a linha são eliminados')
+    assert _extrair_eliminacao('- the last 3 teams are eliminated each round')
+    # ou a pontuação declarada como ordem de chegada
+    assert _extrair_eliminacao('- Será a ordem de chegada no Run to finish.')
+    # e a palavra solta não basta
+    assert _extrair_eliminacao('Eliminação\n- Quem não completar está eliminado.') is None

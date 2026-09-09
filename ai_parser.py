@@ -262,7 +262,7 @@ def _resumo_parse_fidelidade(wkt: dict) -> dict:
     else:
         d["movs"] = [_mov_resumo(m) for m in wkt.get("movimentos", [])]
     for k in ("rounds_fixos", "rounds_bloco", "goal_reps", "goal_movimento",
-              "janela_round", "eliminados_por_round"):
+              "emom_janela", "emom_rounds", "eliminados_por_round"):
         if wkt.get(k):
             d[k] = wkt[k]
     # Multi-score: a IA precisa ver quantas pontuações o sistema entendeu, pra
@@ -290,7 +290,7 @@ _SYSTEM_FIDELIDADE = (
     "- eliminação: texto com rounds de janela fixa ('5 rounds, every 3 minutes') "
     "  MAIS regra de corte ('os 2 últimos times são eliminados') é tipo "
     "  'eliminacao', não 'for_time' — ali o score é ORDEM DE CHEGADA, e o "
-    "  parse tem que trazer janela_round e o movimento de chegada por corrida "
+    "  parse tem que trazer emom_janela/emom_rounds e o movimento de chegada "
     "  ('Run to finish') marcado como posição;\n"
     "- multi-score: o texto declara scores nomeados ('Fire Burning 1 (Score A): "
     "  ... (100 pontos)') e o parse tem que trazer UM item em 'scores' por "

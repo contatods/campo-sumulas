@@ -91,8 +91,9 @@ class Workout(TypedDict, total=False):
     # Relay / EMOM / Tiebreak
     rounds_per_atleta: int        # For Time relay (N rounds = N atletas em sequência)
     rounds_fixos: int             # 'X rounds for time' — atleta repete sequência X vezes
-    emom_janela: str              # ex '2:30' — janela de cada round EMOM
-    emom_rounds: int              # nº de rounds EMOM
+    emom_janela: str              # ex '2:30' — janela de cada round com
+                                  # relógio próprio (EMOM e eliminação)
+    emom_rounds: int              # nº de rounds nessa estrutura
     tiebreak_por_round: bool      # mostra campo de tiebreak em cada round
     paralelo: bool                # quando movimento é executado simultaneamente
     # For Time Goal (Simple Dimension / Simple Mind):
@@ -105,7 +106,10 @@ class Workout(TypedDict, total=False):
     # Eliminação ('5 rounds, every 3 minutes' + corte por round): cada round
     # tem janela própria e os últimos a cruzar a linha saem. O que pontua é a
     # ordem de chegada, e quem foi eliminado é classificado pelo round de saída.
-    janela_round: str             # janela de cada round (ex: '3', '2:30')
+    # A ESTRUTURA de rounds com janela reusa `emom_janela`/`emom_rounds` acima —
+    # é a mesma prescrição do EMOM ('Every 3 minutes, for 5 rounds' e '5 rounds,
+    # every 3 minutes' são a mesma coisa escrita ao contrário). O tipo diz o que
+    # PONTUA; os campos dizem a estrutura.
     eliminados_por_round: int     # quantos times saem a cada round
 
 

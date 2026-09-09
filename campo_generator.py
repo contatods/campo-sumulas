@@ -1566,10 +1566,10 @@ ELIMINACAO_MACRO = r"""
    quantos caem por round. É o que o juiz precisa saber antes de largar. #}
 <div class="elim-banner">
   <span class="elim-bn-mark">Eliminação</span>
-  <span class="elim-bn-item">{{ wkt.rounds_fixos or '?' }} rounds</span>
-  {% if wkt.janela_round %}
+  <span class="elim-bn-item">{{ wkt.emom_rounds or '?' }} rounds</span>
+  {% if wkt.emom_janela %}
     <span class="elim-bn-sep">·</span>
-    <span class="elim-bn-item">janela {{ wkt.janela_round }}{% if ':' not in wkt.janela_round|string %}'{% endif %} por round</span>
+    <span class="elim-bn-item">janela {{ wkt.emom_janela }}{% if ':' not in wkt.emom_janela|string %}'{% endif %} por round</span>
   {% endif %}
   {% if wkt.eliminados_por_round %}
     <span class="elim-bn-sep">·</span>
@@ -1583,7 +1583,7 @@ ELIMINACAO_MACRO = r"""
 {# Uma linha por round: janela do relógio, posição de chegada e marcação de
    eliminado. Os movimentos aparecem UMA vez (tabela acima) — repetir a
    prescrição 5× encheria a página sem dar nada ao juiz. #}
-{% set n = wkt.rounds_fixos or (janelas | length) or 5 %}
+{% set n = wkt.emom_rounds or (janelas | length) or 5 %}
 {% set w_rnd = '16mm' %}{% set w_jan = '24mm' %}{% set w_elim = '20mm' %}
 <div class="elim-wrap">
   <div class="elim-hdr">
@@ -2598,8 +2598,8 @@ def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
                     if wkt.get('tipo') == 'amrap' and not wkt.get('emom_janela')
                     else 0)
     # Janelas de relógio por round (formato de eliminação).
-    janelas_round = janelas_de_round(wkt.get('janela_round', ''),
-                                     wkt.get('rounds_fixos') or 0)
+    janelas_round = janelas_de_round(wkt.get('emom_janela', ''),
+                                     wkt.get('emom_rounds') or 0)
     return _PAGE_TMPL.render(ev=ev, wkt=wkt,
                              logo_src=logo_src, logo_evento_src=logo_evento_src,
                              atleta=atleta, n_rounds_fit=n_rounds_fit,

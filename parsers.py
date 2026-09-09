@@ -144,16 +144,21 @@ def _extrair_eliminacao(texto: str) -> Optional[dict]:
     eliminados são classificados pelo round em que saíram. Nada a ver com um
     For Time (onde o score é o relógio), então precisa de tipo próprio.
 
-    Reconhece pela seção 'Eliminação' nas notas OU pela frase que descreve o
-    corte ('os 2 últimos times a cruzar a linha são eliminados'). Retorna
-    {'eliminados_por_round': int|None} ou None se não for esse formato.
+    Exige um dos dois sinais REAIS do formato:
+      - corte por posição relativa ('os 2 últimos a cruzar a linha saem'), ou
+      - pontuação declarada como ordem de chegada.
+
+    A palavra 'eliminação' sozinha não basta: um AMRAP comum pode ter cutoff
+    por não completar o round no tempo e seguir pontuando por repetições — ali
+    o juiz anota reps, e dar a ele uma súmula de posição de chegada seria pior
+    que o problema original.
+
+    Retorna {'eliminados_por_round': int|None} ou None se não for o formato.
     """
     if not texto:
         return None
-    linhas = texto.splitlines()
-    tem_secao = any(_ELIMINACAO_SECAO_RE.match(l.strip()) for l in linhas)
     m_n = _ELIMINADOS_POR_ROUND_RE.search(texto)
-    if not tem_secao and not m_n:
+    if not m_n and not _SCORE_ORDEM_CHEGADA_RE.search(texto):
         return None
     quantos = None
     if m_n:
@@ -414,6 +419,11 @@ _ROUNDS_BLOCK_RE = re.compile(
 )
 
 
+# EMOM clássico: 'Every 2:30 minutes, for 5 rounds'. Mesma estrutura que
+# `_ROUNDS_JANELA_RE` (abaixo), escrita na ordem inversa — as duas preenchem
+# `emom_janela`/`emom_rounds`.
+_EMOM_RE = re.compile(
+    r'every\s+(\d+(?::\d+)?)\s*minutes?\s*,?\s*for\s+(\d+)\s+rounds?', re.I)
 # Cabeçalho de rounds com JANELA fixa: '5 rounds, every 3 minutes:',
 # '5 rounds, a cada 3 minutos:'. Diferente de `_ROUNDS_BLOCK_RE` ('N rounds
 # of:'), que não tem janela — aqui cada round tem um relógio próprio e o time
@@ -441,18 +451,23 @@ _DURACAO_TOTAL_RE = re.compile(
     r'\s*[:\-]?\s*(\d+(?::\d+)?)\s*(?:min\w*|minutos?)?',
     re.I,
 )
-# Regra de ELIMINAÇÃO por round — o discriminante do formato. Cobre a seção
-# 'Eliminação' nas notas e a frase que descreve o corte.
-_ELIMINACAO_SECAO_RE = re.compile(
-    r'^\s*[' + _TRACO + r']*\s*(?:elimina[çc][ãa]o|elimination|corte)\s*'
-    r'[' + _TRACO + r']*\s*:?\s*$',
-    re.I,
-)
-# 'os 2 últimos times a cruzar a linha são eliminados' / 'the last 2 teams are
-# eliminated'. O número é quantos saem por round.
+# Corte por POSIÇÃO RELATIVA entre os times: 'os 2 últimos times a cruzar a
+# linha são eliminados' / 'the last 2 teams are eliminated'. O número diz
+# quantos saem por round.
+#
+# É este o discriminante do formato — NÃO a palavra 'eliminação' solta. Um
+# workout comum pode ter cutoff por não completar ('caso o time não conclua as
+# reps no tempo do round, está eliminado') e continuar sendo pontuado por reps;
+# ali o juiz anota repetições, não posição de chegada. O que caracteriza o
+# formato é o time ser cortado POR CHEGAR ATRÁS dos outros.
 _ELIMINADOS_POR_ROUND_RE = re.compile(
     r'(?:os\s+)?' + _NUM_TOKEN_RE + r'\s+[úu]ltimos?\b[^.]*?\belimin\w+'
     r'|\blast\s+' + _NUM_TOKEN_RE + r'\s+[\w\s]*?\belimin\w+',
+    re.I,
+)
+# Pontuação declarada como ORDEM DE CHEGADA — o outro sinal do formato.
+_SCORE_ORDEM_CHEGADA_RE = re.compile(
+    r'ordem\s+de\s+chegada|order\s+of\s+finish|posi[çc][ãa]o\s+de\s+chegada',
     re.I,
 )
 
@@ -813,7 +828,7 @@ def _detectar_directives(full: str, lines: list[str], wkt: Workout) -> None:
             wkt["tipo"] = "for_time"
 
     # EMOM (`every X minutes, for Y rounds`) — usa scorecard AMRAP
-    m_emom = re.search(r'every\s+(\d+(?::\d+)?)\s*minutes?\s*,?\s*for\s+(\d+)\s+rounds?', full, re.I)
+    m_emom = _EMOM_RE.search(full)
     if m_emom:
         wkt["tipo"] = "amrap"
         wkt["emom_janela"] = m_emom.group(1)
@@ -976,11 +991,16 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
         # 'N rounds, every M minutes:' — cada round tem relógio próprio. Sem
         # isso o cabeçalho virava um movimento ('ROUNDS, EVERY 3 MINUTES:'
         # com 5 reps) e a janela do round sumia da súmula.
+        #
+        # Preenche `emom_janela`/`emom_rounds`: é a MESMA estrutura que
+        # 'Every M minutes, for N rounds' (detectada em _detectar_directives),
+        # só escrita na ordem inversa. Campos separados fariam a mesma
+        # prescrição ser lida de dois jeitos conforme a redação do organizador.
         if (m_rj := _ROUNDS_JANELA_RE.match(s_clean)):
             n_rj = _num_ext(m_rj.group(1))
             if n_rj:
-                wkt["rounds_fixos"] = n_rj
-            wkt["janela_round"] = m_rj.group(2)
+                wkt["emom_rounds"] = n_rj
+            wkt["emom_janela"] = m_rj.group(2)
             continue
         if (m_rb := _ROUNDS_BLOCK_RE.match(s_clean)):
             n_rb = _num_ext(m_rb.group(1)) or 2
@@ -1291,7 +1311,7 @@ def parse_workout_text(text: str, numero: int) -> Workout:
     # ordem de chegada. Só promove um workout que TEM a estrutura de rounds
     # com janela — a regra de eliminação sozinha (numa nota solta) não muda o
     # tipo de um For Time comum.
-    if wkt.get("janela_round") and (elim := _extrair_eliminacao(text)):
+    if wkt.get("emom_janela") and (elim := _extrair_eliminacao(text)):
         wkt["tipo"] = "eliminacao"
         if elim.get("eliminados_por_round"):
             wkt["eliminados_por_round"] = elim["eliminados_por_round"]
@@ -1715,12 +1735,13 @@ def validar_workout_schema(wkt: Workout, raw: str = '') -> list[tuple[str, str]]
             probs.append(('timecap_perdido', 'texto tem Time cap e não foi capturado'))
         # Eliminação: o formato muda o que o juiz anota (posição de chegada,
         # não tempo). Ler como For Time entrega a súmula errada.
-        if _extrair_eliminacao(raw) and _ROUNDS_JANELA_RE.search(raw):
+        if _extrair_eliminacao(raw) and (_ROUNDS_JANELA_RE.search(raw)
+                                        or _EMOM_RE.search(raw)):
             if tipo != 'eliminacao':
                 probs.append(('eliminacao_perdida',
                               f'texto tem rounds com janela + regra de eliminação, '
                               f'mas o tipo ficou {tipo!r}'))
-            elif not wkt.get('janela_round'):
+            elif not wkt.get('emom_janela'):
                 probs.append(('janela_round_perdida',
                               'tipo eliminacao sem a janela de cada round'))
             if not any(m.get('posicao') for m in (wkt.get('movimentos') or [])):
