@@ -1043,11 +1043,13 @@ def _parse_movimentos(lines: list[str], wkt: Workout) -> tuple[list[Movimento], 
         # nem carga, e o seu tamanho fazia o filtro de flex-mov descartar a
         # linha inteira (era assim que 'Max Sync. Thrusters ... – Athletes A
         # and B' — o movimento que PONTUA — sumia da súmula).
-        # Chegada por corrida: define a ORDEM em que os times cruzam a linha.
-        # Não tem reps, então o parse normal a descartava — e é justamente ela
-        # que gera a pontuação num workout de eliminação.
+        # Chegada por corrida ('Run to finish'). Duas coisas ao mesmo tempo:
+        # define a ORDEM em que os times cruzam a linha (base da eliminação) e
+        # CONTA 1 repetição no acumulado do time. O parse normal a descartava
+        # por não ter reps líderes.
         if _CHEGADA_CORRIDA_RE.match(line_clean.strip()):
-            movs.append({"nome": line_clean.strip().upper(), "posicao": True})
+            movs.append({"nome": line_clean.strip().upper(),
+                         "reps": 1, "posicao": True})
             continue
 
         line_clean, executantes = _extrair_executantes(line_clean)
@@ -1427,9 +1429,8 @@ def _parse_workout_text_core(text: str, numero: int) -> Workout:
     # 5) For Time / For Time Goal fecham com chegada — A MENOS que o Excel diga
     #    que a chegada não conta como repetição (a especificidade vem do texto).
     chegada_nao_conta = bool(_CHEGADA_NEGADA_RE.search(full))
-    tem_chegada_corrida = any(m.get("posicao") for m in movs)
     if (wkt["tipo"] in ("for_time", "for_time_goal") and movs
-            and not chegada_nao_conta and not tem_chegada_corrida):
+            and not chegada_nao_conta):
         movs.append({"chegada": True})
     wkt["movimentos"] = movs
     _aplicar_progressao_reps(wkt)

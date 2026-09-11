@@ -640,7 +640,8 @@ def _elim_wkt():
         "movimentos": [
             {"nome": "20M HANDSTAND WALK", "reps": 20},
             {"nome": "SYNC. DUAL-DUMBBELL DEVIL PRESS", "carga": "22,5/15 KG", "reps": 15},
-            {"nome": "RUN TO FINISH", "posicao": True},
+            {"nome": "RUN TO FINISH", "reps": 1, "posicao": True},
+            {"chegada": True},
         ],
     }
 
@@ -689,9 +690,11 @@ def test_render_eliminacao_banner_e_score(evento_basico, fonts_empty):
     corpo = html.split('</style>')[-1]
     assert '5 rounds' in corpo and '2 eliminados por round' in corpo
     campos = re.findall(r'<span class="sb-field-lbl">(.*?)<', corpo)
-    assert any('Posição Final' in c for c in campos), campos
+    # pontuação tem natureza de For Time: tempo + reps acumuladas, mais o
+    # round de saída pra classificar quem foi eliminado
+    assert any('Tempo' in c for c in campos), campos
+    assert any('Reps' in c for c in campos), campos
     assert any('Round de Saída' in c for c in campos), campos
-    assert not any('Tempo' in c for c in campos), 'tempo não é o score aqui'
     assert 'POSIÇÃO' in corpo                  # badge no movimento de chegada
     assert 'Eliminação' in corpo               # rótulo do tipo no cabeçalho
 

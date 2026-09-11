@@ -1867,13 +1867,18 @@ def test_eliminacao_parse_completo():
     nomes = [m.get('nome') for m in w['movimentos']]
     # cabeçalho não vira movimento
     assert not any('ROUNDS' in (n or '') for n in nomes), nomes
-    # 'Run to finish' preservado e marcado como posição
+    # 'Run to finish' preservado, marcado como posição E contando 1 rep:
+    # cruzar a linha vale repetição pro time, além de definir a ordem.
     corrida = [m for m in w['movimentos'] if m.get('posicao')]
     assert len(corrida) == 1 and corrida[0]['nome'] == 'RUN TO FINISH'
+    assert corrida[0]['reps'] == 1
     # unidade de distância gruda no número em vez de virar 'M HANDSTAND WALK'
     assert 'HANDSTAND WALK' in nomes[0] and nomes[0].startswith('20M')
-    # sem linha de CHEGADA extra — a corrida JÁ é a chegada
-    assert not [m for m in w['movimentos'] if m.get('chegada')]
+    # a chegada final também vale 1 rep — soma como em qualquer For Time
+    assert [m for m in w['movimentos'] if m.get('chegada')]
+    # reps do round: 20 + 15 + 20 + 1 (run to finish)
+    por_round = sum(m['reps'] for m in w['movimentos'] if isinstance(m.get('reps'), int))
+    assert por_round == 56, por_round
 
 
 def test_eliminacao_nao_promove_for_time_comum():

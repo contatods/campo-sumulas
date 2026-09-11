@@ -1711,7 +1711,7 @@ SCORE_BOX_MACRO = r"""
 {% elif tipo == 'eliminacao' %}
 <div class="score-section">
   <span class="sc-t">Resultado</span>
-  <span class="sc-s">Ordem de chegada — quem foi eliminado é classificado pelo round de saída</span>
+  <span class="sc-s">Reps acumuladas e tempo — quem foi eliminado é classificado pelo round de saída</span>
 </div>
 <div class="score-box">
   <div class="sb-lbl-col">
@@ -1719,7 +1719,11 @@ SCORE_BOX_MACRO = r"""
     <span class="sb-lbl-name">Pontuação</span>
   </div>
   <div class="sb-field sb-field-tempo">
-    <span class="sb-field-lbl">Posição Final <span class="sb-field-sub">se chegou ao fim</span></span>
+    <span class="sb-field-lbl">Tempo <span class="sb-field-sub">se completou os rounds</span></span>
+    <div class="sb-field-line"></div>
+  </div>
+  <div class="sb-field sb-field-reps">
+    <span class="sb-field-lbl">Reps <span class="sb-field-sub">total acumulado</span></span>
     <div class="sb-field-line"></div>
   </div>
   <div class="sb-field sb-field-reps">
@@ -2287,6 +2291,7 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
   {% if wkt.descricao %}<div class="desc">{% for l in wkt.descricao %}<div class="dl {% if loop.first %}dl-t{% endif %}">{{ l }}</div>{% endfor %}</div>{% endif %}
   {% set _n_elim = wkt.emom_rounds or 1 %}
   {% set _movs_elim = wkt.movimentos | rejectattr('chegada','defined') | list %}
+  {% set _teve_chegada = (wkt.movimentos | selectattr('chegada','defined') | list) | length > 0 %}
   {% set ns_el = namespace(out=[]) %}
   {% for r in range(1, _n_elim + 1) %}
     {% set ns_el.out = ns_el.out + [{
@@ -2294,7 +2299,11 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
         'round_janela': (janelas_round[r - 1] if (janelas_round and r <= janelas_round|length) else ''),
         'round_elim': true}] + _movs_elim %}
   {% endfor %}
-  {{ mov_table(ns_el.out, wkt.numero, hide_cum=true) }}
+  {% if _teve_chegada %}{% set ns_el.out = ns_el.out + [{'chegada': true}] %}{% endif %}
+  {# Acumulado VISÍVEL: todas as repetições somam, e é por elas que um time
+     eliminado é classificado dentro do round em que saiu. O 'Run to finish'
+     de cada round conta 1 rep, e a chegada final conta mais 1. #}
+  {{ mov_table(ns_el.out, wkt.numero) }}
 
 {% elif tipo == 'for_load' %}
   {# Descrição NÃO é exibida pra For Load: a banda 'Sequência' dentro da
