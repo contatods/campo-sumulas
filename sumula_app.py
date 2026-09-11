@@ -19,7 +19,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '2.20.0'
+VERSION = '2.21.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -108,11 +108,15 @@ def _mensagem_erro_ia(exc: Exception) -> str:
 
 
 def _to_int_or_max(v) -> int:
-    """Converte string/int em int pra ordenação. Não-numérico vai pro fim."""
-    try:
-        return int(str(v).strip())
-    except (ValueError, AttributeError, TypeError):
-        return 10**9
+    """Converte string/int em int pra ordenação. Não-numérico vai pro fim.
+
+    Ordena pelo PREFIXO numérico, não pela string inteira: um time pode ocupar
+    mais de uma raia física e a célula traz o par ('1–2', '9–10'). Exigir que
+    tudo fosse numérico mandava esses valores pro fim da lista, e a ordem de
+    impressão saía embaralhada.
+    """
+    m = re.match(r'^\s*(\d+)', str(v or ''))
+    return int(m.group(1)) if m else 10**9
 
 
 FOR_LOAD_TENTATIVAS_MIN = 1

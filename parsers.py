@@ -2225,8 +2225,7 @@ def _atleta_sort_key(a: Atleta) -> tuple:
     Raia é tratada numericamente quando possível ("10" depois de "2")."""
     bateria  = str(a.get('bateria', '') or '').strip().upper()
     raia_raw = str(a.get('raia', '') or '').strip()
-    m = re.match(r'^(\d+)', raia_raw)
-    raia_num = int(m.group(1)) if m else 10**9
+    raia_num = _primeira_raia(raia_raw)
     nome = str(a.get('nome', '') or '').strip().lower()
     return (bateria, raia_num, raia_raw.lower(), nome)
 
@@ -2518,9 +2517,32 @@ def _fmt_horario(v: Any) -> str:
     return s
 
 
+# Cabeçalho da coluna de raia na aba de Montagem. Aceita singular e plural
+# porque um time pode ocupar MAIS DE UMA raia física — um quarteto em duas
+# raias vira a coluna 'Raias' com o par '1–2'. Também aceita o termo em inglês.
+# Os valores já chegam normalizados (strip + lower) por `_parse_montagem_dia`.
+_HEADER_RAIA = frozenset({'raia', 'raias', 'lane', 'lanes'})
+
+
+def _e_header_raia(v: str) -> bool:
+    """A célula é o cabeçalho da coluna de raia ('Raia', 'Raias', 'Lane')?"""
+    return (v or '').strip().lower() in _HEADER_RAIA
+
+
+def _primeira_raia(raia: str) -> int:
+    """Número da PRIMEIRA raia, pra ordenar. '1–2' → 1, '9–10' → 9, '10' → 10.
+
+    Um time em duas raias traz o par como texto ('1–2', com en dash). Ordenar
+    por string mandaria '9–10' antes de '1–2', e converter pra int falharia —
+    nos dois casos a ordem de impressão sai errada. Não-numérico vai pro fim.
+    """
+    m = re.match(r'^\s*(\d+)', str(raia or ''))
+    return int(m.group(1)) if m else 10**9
+
+
 def _detectar_blocos_montagem(valores_linha: list[str]) -> list[dict[str, int | None]]:
-    """Procura TODAS as ocorrências de 'raia' numa linha e identifica colunas
-    relacionadas (numero, nome, box) à direita de cada uma.
+    """Procura TODAS as ocorrências do cabeçalho de raia numa linha e
+    identifica colunas relacionadas (numero, nome, box) à direita de cada uma.
 
     Suporta arenas paralelas (múltiplos blocos lado a lado na mesma aba).
     Retorna lista de dicts {'raia', 'numero', 'nome', 'box'} com posições.
@@ -2528,7 +2550,7 @@ def _detectar_blocos_montagem(valores_linha: list[str]) -> list[dict[str, int | 
     blocos: list[dict[str, int | None]] = []
     n = len(valores_linha)
     for col_raia, v in enumerate(valores_linha):
-        if v != 'raia':
+        if not _e_header_raia(v):
             continue
         # 'nome' deve aparecer até 4 colunas à direita de 'raia'
         col_nome = None
@@ -2633,7 +2655,7 @@ def _parse_montagem_dia(ws) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
                     break
                 # Ou quando aparece novo header (raia/nome) nessa coluna
                 vals_j = [str(c).strip().lower() if c else "" for c in r]
-                if col_raia < len(vals_j) and vals_j[col_raia] == 'raia':
+                if col_raia < len(vals_j) and _e_header_raia(vals_j[col_raia]):
                     break
                 nome_v = _cell(r, col_nome)
                 if nome_v is None:
@@ -2656,7 +2678,7 @@ def _parse_montagem_dia(ws) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
             if alocacoes:
                 resultado[(codigo, categoria, numero_bat)] = alocacoes
 
-        i += 1   # avança 1; loop natural pula linhas já processadas (col raia já não é 'raia')
+        i += 1   # avança 1; loop natural pula linhas já processadas
 
     return resultado
 

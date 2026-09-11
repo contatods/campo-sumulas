@@ -1980,3 +1980,98 @@ def test_cutoff_por_round_nao_e_eliminacao():
     assert _extrair_eliminacao('- Será a ordem de chegada no Run to finish.')
     # e a palavra solta não basta
     assert _extrair_eliminacao('Eliminação\n- Quem não completar está eliminado.') is None
+
+
+# ── Time em DUAS raias: cabeçalho plural e par '1–2' ────────────────────────
+def _ws_montagem(linhas, titulo="Sexta - Montagem"):
+    """Worksheet de Montagem a partir de linhas cruas (o que o parser recebe)."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = titulo
+    for linha in linhas:
+        ws.append(linha)
+    return ws
+
+
+# Layout real do BFO: 3 linhas de cabeçalho (horário + workout, número da
+# bateria + categoria, cabeçalho da grade) e o par de raias com EN DASH.
+_MONTAGEM_BFO = [
+    ["Arena"],
+    ["17:30:00", '"Fire Burning 1, 2 & 3"'],
+    [1, "Quarteto Intermediario Misto (Heat 1)"],
+    ["Raias", "Número", "Nome", "Box"],
+    ["1–2",  211, "FOUR TAI",            "TAI CROSSFIT"],
+    ["3–4",  212, "TEAM AVINCE",         "RHINO FORCE"],
+    ["5–6",  213, "NAO TEM NINGUEM BOM", "ELITE TRAINING CENTER"],
+    ["7–8",  214, "TEAM IMPROVISO",      "MACAW CROSSFIT"],
+    ["9–10", 215, "TEAM 09",             "BOX 09"],
+]
+
+
+def test_montagem_aceita_cabecalho_raia_no_plural():
+    """Um quarteto pode ocupar DUAS raias físicas, e aí o cabeçalho vira
+    'Raias'. A comparação era com o texto exato 'raia', então a aba inteira
+    devolvia 0 blocos e TODAS as súmulas do evento sairiam 'Aguardando
+    balizamento'.
+    """
+    from parsers import _parse_montagem_dia, _e_header_raia
+    for variante in ('Raia', 'Raias', 'raia', 'RAIAS', 'raias', 'Lane', 'Lanes'):
+        assert _e_header_raia(variante), variante
+    for nao in ('Nome', 'Box', 'Número', '', None):
+        assert not _e_header_raia(nao or ''), nao
+
+    m = _parse_montagem_dia(_ws_montagem(_MONTAGEM_BFO))
+    assert len(m) == 1, m
+    (codigo, cat, bat), alocs = next(iter(m.items()))
+    assert bat == '1'
+    assert 'Quarteto Intermediario Misto' in cat
+    assert len(alocs) == 5, 'uma linha por TIME — 5 times, não 10 raias'
+
+
+def test_montagem_preserva_par_de_raias_como_texto():
+    """A raia vai pra súmula exatamente como está na planilha: '1–2' é UM time
+    em duas raias. Converter pra int quebraria, e pegar só a primeira raia
+    imprimiria '1' — o juiz precisa saber que o time ocupa as duas.
+    """
+    from parsers import _parse_montagem_dia
+    alocs = next(iter(_parse_montagem_dia(_ws_montagem(_MONTAGEM_BFO)).values()))
+    assert [a['raia'] for a in alocs] == ['1–2', '3–4', '5–6', '7–8', '9–10']
+    assert all(isinstance(a['raia'], str) for a in alocs)
+    # EN DASH (U+2013) preservado — não vira hífen nem some
+    assert '–' in alocs[0]['raia']
+    assert [a['numero'] for a in alocs] == ['211', '212', '213', '214', '215']
+
+
+def test_montagem_uma_raia_por_atleta_continua_valendo():
+    """Outros eventos seguem com uma raia por atleta e cabeçalho 'Raia'."""
+    from parsers import _parse_montagem_dia
+    wb = _ws_montagem([
+        ["Arena"],
+        ["09:00:00", '"Simple"'],
+        [2, "Rx Masculino (Heat 1)"],
+        ["Raia", "Número", "Nome", "Box"],
+        [1, 601, "JOAO",  "BOX A"],
+        [2, 602, "PEDRO", "BOX B"],
+    ])
+    alocs = next(iter(_parse_montagem_dia(wb).values()))
+    assert [a['raia'] for a in alocs] == ['1', '2']
+
+
+def test_ordenacao_pela_primeira_raia_do_par():
+    """'9–10' vem depois de '7–8', e '1–2' antes de '3–4'. Ordenar por string
+    ou exigir valor todo numérico mandava o par pro fim da lista — a ordem de
+    impressão das súmulas saía embaralhada.
+    """
+    from parsers import _primeira_raia, _atleta_sort_key
+    assert _primeira_raia('1–2') == 1
+    assert _primeira_raia('9–10') == 9
+    assert _primeira_raia('10') == 10
+    assert _primeira_raia('Final') == 10**9
+    assert _primeira_raia('') == 10**9
+
+    pares = ['9–10', '1–2', '7–8', '3–4', '5–6']
+    assert sorted(pares, key=_primeira_raia) == ['1–2', '3–4', '5–6', '7–8', '9–10']
+
+    atletas = [{'raia': r, 'bateria': '1', 'nome': 'x'} for r in pares]
+    assert [a['raia'] for a in sorted(atletas, key=_atleta_sort_key)] == [
+        '1–2', '3–4', '5–6', '7–8', '9–10']

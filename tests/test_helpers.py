@@ -182,3 +182,29 @@ def test_estimar_rounds_fallbacks():
     # prescrição degenerada (round quase instantâneo) não explode a página
     leve = [{'nome': 'SINGLE UNDERS', 'reps': 1}]
     assert _estimar_rounds_algoritmico(leve, '60 min') <= ROUNDS_MAX_LINHAS
+
+
+# ── Ordenação com par de raias ('1–2') ──────────────────────────────────────
+def test_ordenacao_de_impressao_aceita_par_de_raias():
+    """As três camadas que ordenam raia têm que concordar. `_to_int_or_max`
+    (app: bateria → raia) e `chave_num` (PDF do dia) exigiam string toda
+    numérica, então '1–2' ia pro fim e a ordem de impressão saía embaralhada
+    justamente no evento em que cada time ocupa duas raias.
+    """
+    from sumula_app import _to_int_or_max
+    from gerar_pdfs import chave_num
+    from parsers import _primeira_raia
+
+    pares = ['9–10', '1–2', '7–8', '3–4', '5–6', '10', '2']
+    esperado = ['1–2', '2', '3–4', '5–6', '7–8', '9–10', '10']
+    for nome, chave in (('_to_int_or_max', _to_int_or_max),
+                        ('chave_num', chave_num),
+                        ('_primeira_raia', _primeira_raia)):
+        assert sorted(pares, key=chave) == esperado, nome
+
+    # não-numérico continua indo pro fim
+    assert sorted(['Final', '1–2'], key=chave_num) == ['1–2', 'Final']
+    assert _to_int_or_max('Final') == 10**9
+    assert _to_int_or_max(None) == 10**9
+    # raia simples (um atleta por raia) não regrediu
+    assert sorted(['10', '2', '1'], key=chave_num) == ['1', '2', '10']

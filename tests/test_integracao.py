@@ -5,6 +5,7 @@ Usam fixture xlsx in-memory pra evitar dependência de arquivos binários.
 """
 import io
 import json
+import re
 import zipfile
 
 import openpyxl
@@ -566,3 +567,84 @@ def test_validar_evento_multijanela_nao_falso_positivo_sem_movimentos():
                                {"titulo": "AMRAP", "movimentos": []}])
     cfg2 = {"dias": [{"label": "D", "categorias": [{"nome": "C", "workouts": [w_vazio]}]}]}
     assert [a for a in validar_evento(cfg2) if "sem movimento" in a["msg"].lower()]
+
+
+# ── #N: quarteto ocupando DUAS raias (layout BFO 2026) ──────────────────────
+def _xlsx_duas_raias_por_time() -> bytes:
+    """Evento em que cada time ocupa duas raias físicas do rack.
+
+    Reproduz o layout real do BFO 2026: cabeçalho de Montagem em 3 linhas
+    (horário + workout / número da bateria + categoria / grade) e a coluna
+    'Raias' no plural, com o par em EN DASH ('1–2').
+    """
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    ws = wb.create_sheet("Inscritos")
+    ws.append(["Nome", "Max. Insc.", "Qnt. Pago", "Nº. Inicial", "Nº. Final", "Individual"])
+    ws.append(["Quarteto Rx Misto", 15, 10, 101, 199, "Não"])
+    ws.append(["Quarteto Scaled Misto", 15, 10, 301, 399, "Não"])
+
+    _WKT = ('"Fire Burning"\nFor time:\n60 Sync. Worm Deadlifts (140 kg)\n'
+            'Time cap: 30 minutes')
+    ws = wb.create_sheet("Workouts - Quartetos")
+    ws.append([None, "Quarteto Rx Misto", "Quarteto Scaled Misto"])
+    ws.append(["Sexta\n21/05/2026", _WKT, _WKT])
+
+    ws = wb.create_sheet("Sexta")
+    ws.append(["Arena\nSexta"])
+    ws.append(["Eventos", "Categoria", "Bateria", "Arbitragem", "Quantidade",
+               "Aquecimento", "Duração Aquec.", "Fila", "Duração Fila", "Horário"])
+    ws.append(['"Fire Burning"', "Quarteto Rx Misto (Heat 1)", 1, None, "5 (5)",
+               "16:50:00", "00:40:00", "17:15:00", "00:15:00", "17:30:00"])
+
+    ws = wb.create_sheet("Sexta - Montagem")
+    ws.append(["Arena"])
+    ws.append(["17:30:00", '"Fire Burning"'])
+    ws.append([1, "Quarteto Rx Misto (Heat 1)"])
+    ws.append(["Raias", "Número", "Nome", "Box"])          # plural
+    ws.append(["1–2",  101, "TEAM UM",    "BOX A"])        # EN DASH
+    ws.append(["3–4",  102, "TEAM DOIS",  "BOX B"])
+    ws.append(["5–6",  103, "TEAM TRES",  "BOX C"])
+    ws.append(["7–8",  104, "TEAM QUATRO", "BOX D"])
+    ws.append(["9–10", 105, "TEAM CINCO", "BOX E"])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_import_quarteto_em_duas_raias_end_to_end():
+    """Cabeçalho 'Raias' + par '1–2' tem que produzir alocação normalmente.
+    Com a comparação exata por 'raia', a aba devolvia 0 blocos e TODAS as
+    súmulas do evento sairiam 'Aguardando balizamento'.
+    """
+    r = parse_excel(_xlsx_duas_raias_por_time())
+    dia = next(d for d in r['dias'] if d['label'].lower().startswith('sexta'))
+    cat = next(c for c in dia['categorias'] if 'Rx' in c['nome'])
+    bat = next(b for b in cat['baterias'] if b.get('alocacoes'))
+
+    # 5 TIMES na bateria — não 10 (o par de raias é um time só)
+    assert len(bat['alocacoes']) == 5, bat['alocacoes']
+    assert [a['raia'] for a in bat['alocacoes']] == [
+        '1–2', '3–4', '5–6', '7–8', '9–10']
+    assert [a['nome'] for a in bat['alocacoes']][0] == 'TEAM UM'
+
+
+def test_render_imprime_o_par_de_raias_no_campo_raia():
+    """A súmula imprime '1–2' — o time ocupa as duas raias, e mostrar só '1'
+    mandaria o juiz para a raia errada."""
+    r = parse_excel(_xlsx_duas_raias_por_time())
+    dia = next(d for d in r['dias'] if d['label'].lower().startswith('sexta'))
+    cat = next(c for c in dia['categorias'] if 'Rx' in c['nome'])
+    bat = next(b for b in cat['baterias'] if b.get('alocacoes'))
+    aloc = bat['alocacoes'][4]                     # o par '9–10'
+    atleta = {'nome': aloc['nome'], 'raia': aloc['raia'],
+              'numero': aloc['numero'], 'box': aloc.get('box', ''),
+              'bateria': bat['numero']}
+    html = render_workout({'nome': 'BFO', 'categoria': cat['nome']},
+                          cat['workouts'][0], {}, "", "", atleta=atleta)
+    corpo = html.split('</style>')[-1]
+    m = re.search(r'>Raia</div>\s*<div class="fline fline-filled">([^<]*)</div>', corpo)
+    assert m, 'campo Raia não foi preenchido'
+    assert m.group(1).strip() == '9–10', m.group(1)

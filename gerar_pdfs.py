@@ -138,7 +138,15 @@ def rotulo_bateria(b):
 
 
 def chave_num(b):
-    return (0, int(b)) if str(b).isdigit() else (1, str(b))
+    """Chave de ordenação numérica tolerante a par de raias.
+
+    Ordena pelo PREFIXO numérico ('1–2' → 1, '9–10' → 9): um time pode ocupar
+    duas raias físicas e a célula traz o par como texto. Exigir string toda
+    numérica jogava esses valores pro fim, bagunçando a ordem do PDF do dia.
+    Sem prefixo numérico ('Final'), continua indo pro fim, em ordem alfabética.
+    """
+    m = re.match(r'^\s*(\d+)', str(b or ''))
+    return (0, int(m.group(1)), str(b)) if m else (1, 10**9, str(b))
 
 
 def horarios_do_config(cfg):
