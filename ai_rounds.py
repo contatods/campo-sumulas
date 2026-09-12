@@ -233,8 +233,20 @@ def _estimar_rounds_algoritmico(movimentos: list[Movimento], duracao_str: str) -
 
 
 def _estimar_rounds_ia(movimentos: list[Movimento], duracao_str: str) -> int:
-    """Usa Claude Haiku para estimar rounds esperados num AMRAP.
-    Faz fallback algorítmico se IA não estiver disponível ou falhar.
+    """Rounds esperados num AMRAP: o MAIOR entre a estimativa da IA e a
+    simulação round a round. Fallback algorítmico se a IA falhar.
+
+    Os dois caminhos do app usavam contas diferentes — o preview chama só a
+    simulação (pra não pagar o timeout da IA) e a geração final passava por
+    aqui. Quando a IA devolvia menos, a súmula saía com MENOS linhas do que o
+    preview tinha mostrado: no Fast Relay do BFO, 6 no preview e 4 no arquivo.
+
+    Ficar com o maior resolve pelos dois lados: a súmula nunca tem menos linha
+    que o previsto, e faltar espaço pro juiz anotar é pior que sobrar. Também
+    cobre o ponto cego do prompt — a IA recebe os movimentos sem saber que as
+    reps progridem por round, então tende a superestimar o quanto cabe no
+    tempo e a devolver rounds a mais do que o time realmente faria... ou a
+    menos, dependendo do workout. A simulação conhece a progressão.
     """
     if not AI_ATIVO:
         return _estimar_rounds_algoritmico(movimentos, duracao_str)
@@ -263,7 +275,9 @@ def _estimar_rounds_ia(movimentos: list[Movimento], duracao_str: str) -> int:
         if not match:
             return _estimar_rounds_algoritmico(movimentos, duracao_str)
         n = int(match.group())
-        return max(2, n + 2)   # n esperados + 2 linhas de buffer no scorecard
+        n_ia = max(2, n + 2)          # n esperados + 2 linhas de buffer
+        # Nunca abaixo da simulação: ela é o que o preview mostrou.
+        return max(n_ia, _estimar_rounds_algoritmico(movimentos, duracao_str))
     except Exception as e:
         print(f"  ⚠  IA rounds: {e}")
         return _estimar_rounds_algoritmico(movimentos, duracao_str)

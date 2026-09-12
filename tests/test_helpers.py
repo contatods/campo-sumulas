@@ -224,3 +224,61 @@ def test_validacao_for_load_aceita_peso_repetido():
     with pytest.raises(BadRequest):
         _validate_for_load({'tipo': 'for_load', 'unidade': 'kg',
                             'anilhas': [20] * (FOR_LOAD_ANILHAS_MAX + 1)}, 0)
+
+
+# ── Preview e geração final têm que dar o MESMO número de rounds ────────────
+class _FakeResp:
+    def __init__(self, texto):
+        self.content = [type('C', (), {'text': texto})()]
+
+
+def _fake_anthropic(resposta):
+    """Cliente Anthropic de mentira que sempre devolve `resposta`."""
+    class _Client:
+        def __init__(self, **kw):
+            self.messages = self
+        def create(self, **kw):
+            return _FakeResp(resposta)
+    return type('A', (), {'Anthropic': _Client})
+
+
+def test_estimativa_final_nunca_fica_abaixo_do_preview(monkeypatch):
+    """O preview usa só a simulação (pra não pagar o timeout da IA) e a geração
+    final passava pela IA. Quando a IA devolvia menos, a súmula saía com MENOS
+    linhas do que o preview mostrou — no Fast Relay do BFO, 6 viraram 4, e o
+    juiz ficava sem onde anotar os rounds extras.
+    """
+    import ai_rounds
+    from ai_rounds import _estimar_rounds_algoritmico, _estimar_rounds_ia
+
+    movs = [{'nome': 'LEGLESS ROPE CLIMBS', 'reps': 2},
+            {'nome': 'DOUBLE UNDERS', 'reps': 30},
+            {'nome': 'STRICT HANDSTAND PUSH-UPS', 'reps': 20},
+            {'nome': 'WALL-BALL SHOTS', 'reps': 30, 'reps_delta': 10,
+             'reps_por_round': [30, 40, 50, 60, 70]}]
+    preview = _estimar_rounds_algoritmico(movs, '16 min')
+
+    monkeypatch.setattr(ai_rounds, 'AI_ATIVO', True)
+    monkeypatch.setattr(ai_rounds, 'AI_KEY', 'fake')
+
+    # IA subestimando: prevalece a simulação
+    monkeypatch.setattr(ai_rounds, 'anthropic', _fake_anthropic('2'))
+    assert _estimar_rounds_ia(movs, '16 min') == preview
+
+    # IA pedindo mais: o maior vence (faltar linha é pior que sobrar)
+    monkeypatch.setattr(ai_rounds, 'anthropic', _fake_anthropic('9'))
+    assert _estimar_rounds_ia(movs, '16 min') == 11        # 9 + 2 de buffer
+
+    # resposta ilegível cai no algoritmo
+    monkeypatch.setattr(ai_rounds, 'anthropic', _fake_anthropic('sei lá'))
+    assert _estimar_rounds_ia(movs, '16 min') == preview
+
+
+def test_estimativa_final_sem_ia_usa_a_simulacao(monkeypatch):
+    """Sem chave de API, os dois caminhos já coincidiam — não pode regredir."""
+    import ai_rounds
+    from ai_rounds import _estimar_rounds_algoritmico, _estimar_rounds_ia
+    monkeypatch.setattr(ai_rounds, 'AI_ATIVO', False)
+    movs = [{'nome': 'PULL-UPS', 'reps': 5}, {'nome': 'AIR SQUATS', 'reps': 15}]
+    assert (_estimar_rounds_ia(movs, '20 min')
+            == _estimar_rounds_algoritmico(movs, '20 min'))
