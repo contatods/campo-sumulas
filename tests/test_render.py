@@ -709,3 +709,43 @@ def test_render_nao_repete_distancia_no_nome(evento_basico, workout_for_time, fo
     corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
     assert '(900)' not in corpo
     assert '(20)' in corpo
+
+
+# ── For Load: peso repetido na régua de anilhas ─────────────────────────────
+def test_regua_desenha_uma_casa_por_item_incluindo_repetido(evento_basico, fonts_empty):
+    """Repetir um peso na lista significa DUAS anilhas daquele peso no mesmo
+    lado ('20, 20, 15' → duas de 20). A régua desenha uma casa por item, então
+    deduplicar a lista impedia montar barra com par repetido — e limitava a
+    carga máxima que a súmula conseguia representar.
+    """
+    wkt = {
+        "numero": 5, "nome": "FUNKY AND STRONG", "tipo": "for_load",
+        "modalidade": "quarteto", "unidade": "kg", "tentativas": 1,
+        "anilhas": [20.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.0],
+        "movimentos": [], "descricao": [],
+    }
+    html = render_workout({**evento_basico, 'unidade_default': 'kg'},
+                          wkt, fonts_empty, "")
+    corpo = html.split('</style>')[-1]
+    dir_ = re.search(r'fl-anilhas-dir">(.*?)</div>\s*</div>', corpo, re.S)
+    vals = re.findall(r'<span>([^<]*)</span>', dir_.group(1))
+    assert vals == ['20.0', '20.0', '15.0', '10.0', '5.0', '2.5', '1.0'], vals
+    assert vals.count('20.0') == 2
+
+    # o lado esquerdo espelha (ponta → barra)
+    esq = re.search(r'fl-anilhas-esq">(.*?)</div>\s*</div>', corpo, re.S)
+    assert re.findall(r'<span>([^<]*)</span>', esq.group(1)) == list(reversed(vals))
+
+
+def test_regua_sem_repeticao_nao_regride(evento_basico, fonts_empty):
+    """Lista sem peso repetido segue desenhando uma casa por peso."""
+    wkt = {
+        "numero": 5, "nome": "MAX SNATCH", "tipo": "for_load",
+        "modalidade": "individual", "unidade": "kg", "tentativas": 1,
+        "anilhas": [25.0, 20.0, 15.0, 10.0], "movimentos": [], "descricao": [],
+    }
+    corpo = render_workout({**evento_basico, 'unidade_default': 'kg'},
+                           wkt, fonts_empty, "").split('</style>')[-1]
+    dir_ = re.search(r'fl-anilhas-dir">(.*?)</div>\s*</div>', corpo, re.S)
+    assert re.findall(r'<span>([^<]*)</span>', dir_.group(1)) == [
+        '25.0', '20.0', '15.0', '10.0']

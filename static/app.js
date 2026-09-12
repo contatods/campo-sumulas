@@ -1927,7 +1927,10 @@ function _popularCamposPorTipo(wkt, tipo) {
     wkt.barra_feminina  = parseFloat(document.getElementById('edFlBarraF').value) || (isLb ? 35 : 15);
     const anilhasInp = document.getElementById('edFlAnilhas').value
       .split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0);
-    wkt.anilhas = [...new Set(anilhasInp)].sort((a, b) => b - a);   // dedup + grande → pequeno
+    // Repetir um peso é significativo: '20, 20, 15' = DUAS anilhas de 20 de
+    // cada lado. A régua desenha uma casa por item da lista, então deduplicar
+    // impedia montar barra com par repetido do mesmo peso.
+    wkt.anilhas = anilhasInp.sort((a, b) => b - a);                 // grande → pequeno
     if (!wkt.anilhas.length) wkt.anilhas = _anilhasDefault(wkt.unidade);
     wkt.movimentos = [];
     wkt.time_cap = '';

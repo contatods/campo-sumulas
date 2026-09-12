@@ -208,3 +208,19 @@ def test_ordenacao_de_impressao_aceita_par_de_raias():
     assert _to_int_or_max(None) == 10**9
     # raia simples (um atleta por raia) não regrediu
     assert sorted(['10', '2', '1'], key=chave_num) == ['1', '2', '10']
+
+
+def test_validacao_for_load_aceita_peso_repetido():
+    """O backend não pode recusar '20, 20, 15': duas anilhas do mesmo peso no
+    mesmo lado é montagem legítima de barra."""
+    from sumula_app import _validate_for_load, FOR_LOAD_ANILHAS_MAX
+    _validate_for_load({'tipo': 'for_load', 'unidade': 'kg',
+                        'anilhas': [20, 20, 15, 10, 5, 2.5, 1]}, 0)
+    _validate_for_load({'tipo': 'for_load', 'unidade': 'kg',
+                        'anilhas': [20, 20, 20, 15]}, 0)
+    # o cap horizontal do A4 continua valendo
+    import pytest
+    from sumula_app import BadRequest
+    with pytest.raises(BadRequest):
+        _validate_for_load({'tipo': 'for_load', 'unidade': 'kg',
+                            'anilhas': [20] * (FOR_LOAD_ANILHAS_MAX + 1)}, 0)
