@@ -4,7 +4,7 @@ Módulo de geração de súmulas HTML. Importado pelo servidor web.
 """
 
 import os, re, base64
-from jinja2 import Template
+from jinja2 import Environment
 
 
 def font_b64(path):
@@ -1418,7 +1418,10 @@ MOV_TABLE_MACRO = r"""
           {# Movimento de distância guarda a medida no próprio nome ('900M SKI
              ERG', '20M HANDSTAND WALK'); repetir o número na frente imprimiria
              '(20) 20M HANDSTAND WALK'. A coluna Reps segue mostrando o valor. #}
-          {% if mov.reps is defined and not mov.nome.startswith(mov.reps|string) %}<span class="mr-reps-inline">({{ mov.reps }})</span>{% endif %}{{ mov.nome }}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}{% if mov.executantes %} <span class="mr-exec">{{ mov.executantes }}</span>{% endif %}
+          {% set _med, _nc = mov.nome | split_medida %}
+          {% if _med %}<span class="mr-reps-inline">({{ _med }})</span>{{ _nc }}
+          {% elif mov.reps is defined and not mov.nome.startswith(mov.reps|string) %}<span class="mr-reps-inline">({{ mov.reps }})</span>{{ mov.nome }}
+          {% else %}{{ mov.nome }}{% endif %}{% if mov.carga %} <span class="mr-carga">({{ mov.carga }})</span>{% endif %}{% if mov.executantes %} <span class="mr-exec">{{ mov.executantes }}</span>{% endif %}
         </div>
         {% if mov.reps is defined %}
           <div class="mr-reps">{{ mov.reps }}</div>
@@ -1512,6 +1515,9 @@ AMRAP_TABLE_MACRO = r"""
     {% for m in data_movs %}
       {# Limpa o nome: remove parênteses com qty de atletas (ex: '(2 ATHLETES)') #}
       {% set nc = m.nome.split('(')[0].strip() %}
+      {# Medida de distância vira a quantidade, igual na tabela de movimentos —
+         senão sai '(250) 250-METRES SKI ERG', com o número duas vezes. #}
+      {% set _med, _nc = nc | split_medida %}
       <div class="ash{% if m.reps_por_round %} ash-prog{% endif %}" style="flex:1;border-left:1px solid var(--rule)">
         <span class="ash-nome">
           {% if m.reps_por_round %}
@@ -1520,10 +1526,12 @@ AMRAP_TABLE_MACRO = r"""
             {# Linha 'Max <mov>': sem reps prescritas, o juiz anota o que o
                atleta fez. Imprimir '({{ m.reps }})' daria '()' vazio. #}
             <span class="ash-reps">(MAX)</span>
+          {% elif _med %}
+            <span class="ash-reps">({{ _med }})</span>
           {% elif m.reps is defined %}
             <span class="ash-reps">({{ m.reps }})</span>
           {% endif %}
-          {{ nc }}{% if m.carga %} <span class="ash-carga">({{ m.carga }})</span>{% endif %}
+          {{ _nc if _med else nc }}{% if m.carga %} <span class="ash-carga">({{ m.carga }})</span>{% endif %}
         </span>
       </div>
     {% endfor %}
@@ -2481,13 +2489,38 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
 """
 
 
+# Medida de distância no INÍCIO do nome: '1000M EVO BIKE', '20M WALKING
+# LUNGES', '30-METER HANDSTAND WALK'. O parser mantém a medida no nome (é o
+# que o organizador escreveu, e o vocabulário de movimentos depende disso),
+# mas na súmula ela ocupa o lugar da quantidade — o mesmo papel do '(20)' de
+# '(20) THRUSTERS'. Separar na HORA DE IMPRIMIR deixa a coluna consistente
+# sem repetir o número nem reescrever o nome.
+_MEDIDA_LIDER_RE = re.compile(
+    r'^(\d+)\s*-?\s*(m|km|mi|ft|yd|metros?|metres?|meters?)\b\s*', re.I)
+
+
+def split_medida(nome: str) -> tuple[str, str]:
+    """('1000M EVO BIKE') → ('1000M', 'EVO BIKE'). Sem medida → ('', nome)."""
+    if not nome:
+        return '', nome or ''
+    m = _MEDIDA_LIDER_RE.match(str(nome))
+    if not m:
+        return '', nome
+    return str(nome)[:m.end()].strip(), str(nome)[m.end():].strip()
+
+
+# Environment único com os filtros do projeto. Jinja resolve filtro em tempo de
+# COMPILAÇÃO, então registrar depois de `from_string` não funciona — daí o
+# Environment explícito em vez de `Template(...)` solto.
+_ENV = Environment(autoescape=True)
+_ENV.filters['split_medida'] = split_medida
+
 # Templates compilados uma vez no import — recompilar a cada página de atleta
 # custava ~115ms × N na produção (80 páginas = ~9s só de Jinja compile).
-_PAGE_TMPL = Template(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + ELIMINACAO_MACRO
-                      + SCORE_BOX_MACRO + FOR_LOAD_TABLE_MACRO + PAGE_TMPL_STR,
-                      autoescape=True)
-_DOC_TMPL = Template(DOC_TMPL_STR, autoescape=True)
-_FOR_LOAD_TEAM_SUMMARY_PAGE_TMPL = Template(FOR_LOAD_TEAM_SUMMARY_TMPL, autoescape=True)
+_PAGE_TMPL = _ENV.from_string(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + ELIMINACAO_MACRO
+                              + SCORE_BOX_MACRO + FOR_LOAD_TABLE_MACRO + PAGE_TMPL_STR)
+_DOC_TMPL = _ENV.from_string(DOC_TMPL_STR)
+_FOR_LOAD_TEAM_SUMMARY_PAGE_TMPL = _ENV.from_string(FOR_LOAD_TEAM_SUMMARY_TMPL)
 
 
 def janelas_de_round(janela: str, n_rounds: int) -> list[str]:

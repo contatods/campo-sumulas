@@ -667,7 +667,9 @@ def test_render_eliminacao_expande_rounds_com_quantidades(evento_basico, fonts_e
     corpo = html.split('</style>')[-1]
     # 5 headers de round, cada um seguido dos 3 movimentos
     assert corpo.count('atleta-sep-pos') == 5
-    assert corpo.count('20M HANDSTAND WALK') == 5, 'prescrição tem que repetir por round'
+    # a medida de distância sai como quantidade entre parênteses: '(20M) HANDSTAND WALK'
+    assert corpo.count('HANDSTAND WALK') == 5, 'prescrição tem que repetir por round'
+    assert corpo.count('(20M)') == 5
     assert corpo.count('rd-elim-box') == 5      # caixa de eliminado por round
     assert corpo.count('>POSIÇÃO<') == 5        # chegada por corrida em cada round
     for janela in ('0:00–3:00', '3:00–6:00', '12:00–15:00'):
@@ -932,3 +934,50 @@ def test_for_load_dupla_masculina_usa_uma_barra(evento_basico, fonts_empty):
                            wkt, fonts_empty, "").split('</style>')[-1]
     assert 'Barras conforme atleta' not in corpo
     assert set(re.findall(r'<div class="fl-barra">([^<]*)</div>', corpo)) == {'45 lb'}
+
+
+# ── Distância ocupa o lugar da quantidade na coluna ─────────────────────────
+def test_split_medida():
+    """A medida de distância vive no nome (é o que o organizador escreveu e o
+    vocabulário de movimentos depende disso), mas na súmula ela ocupa o lugar
+    da quantidade. A separação é só na hora de imprimir."""
+    from campo_generator import split_medida
+    assert split_medida('1000M EVO BIKE (ATHLETE A)') == ('1000M', 'EVO BIKE (ATHLETE A)')
+    assert split_medida('900M SKI ERG') == ('900M', 'SKI ERG')
+    assert split_medida('5KM RUN') == ('5KM', 'RUN')
+    assert split_medida('20-METRES DB LUNGES') == ('20-METRES', 'DB LUNGES')
+    # sem medida líder, nome intacto
+    for n in ('THRUSTERS', 'CAL ROW', '30/24 CAL ROW', 'SYNC. WORM DEADLIFTS (140 KG)'):
+        assert split_medida(n) == ('', n), n
+    assert split_medida('') == ('', '')
+
+
+def test_distancia_mostra_a_medida_entre_parenteses(evento_basico, workout_for_time, fonts_empty):
+    """Antes a linha de distância era a única sem o '(N)' — quebrava o padrão
+    que o olho do juiz segue na coluna. Agora a medida ocupa esse lugar, sem
+    repetir o número ('(1000M) EVO BIKE', não '(1000) 1000M EVO BIKE')."""
+    wkt = {**workout_for_time, "movimentos": [
+        {"nome": "1000M EVO BIKE", "reps": 1000},
+        {"nome": "THRUSTERS", "reps": 20, "carga": "50 LB"},
+        {"chegada": True},
+    ]}
+    corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
+    assert '<span class="mr-reps-inline">(1000M)</span>EVO BIKE' in corpo
+    assert '(1000)' not in corpo, 'número não pode aparecer duas vezes'
+    # movimento normal mantém o (N)
+    assert '<span class="mr-reps-inline">(20)</span>THRUSTERS' in corpo
+    # a coluna Reps segue com o valor numérico pro acumulado
+    assert '<div class="mr-reps">1000</div>' in corpo
+
+
+def test_scorecard_amrap_tambem_nao_duplica_a_medida(evento_basico, fonts_empty):
+    """O subheader do AMRAP tinha o problema inverso da tabela: imprimia
+    '(250) 250-METRES SKI ERG', com o número duas vezes. Mesma regra vale lá."""
+    wkt = {"numero": 1, "nome": "X", "tipo": "amrap", "modalidade": "individual",
+           "time_cap": "10 min", "n_rounds": 3,
+           "movimentos": [{"nome": "250-METRES SKI ERG", "reps": 250},
+                          {"nome": "BURPEES", "reps": 10}]}
+    corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
+    assert '(250-METRES)' in corpo
+    assert '(250)' not in corpo, 'número não pode aparecer duas vezes'
+    assert '(10)' in corpo and 'BURPEES' in corpo
