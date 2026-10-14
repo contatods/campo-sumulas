@@ -2348,6 +2348,11 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
     {% endif %}
     {% if f.tipo == 'amrap' %}
       {{ amrap_table(f.movimentos, f_num, f.n_rounds|default(3), f) }}
+    {% elif f.tipo == 'for_load' %}
+      {# For Load guarda a prescrição em `sequencia_movimentos` e precisa da
+         régua de anilhas — `movimentos` está vazio, então a tabela de
+         movimentos imprimia um bloco em branco. #}
+      {{ for_load_table(f, atleta) }}
     {% else %}
       {{ mov_table(f.movimentos, f_num, goal_reps=(f.goal_reps | default(0)), hide_cum=(f.tipo == 'for_time_goal'), tb_col=(f.tipo == 'for_time_goal' and f.tiebreak)) }}
     {% endif %}
@@ -2570,42 +2575,77 @@ def linhas_amrap_que_cabem(wkt: dict) -> int:
     return max(_AMRAP_MIN_LINHAS, int(livre // AMRAP_ROW_MM))
 
 
+def _preparar_for_load(wkt: dict, ev: dict, modalidade_pai: str = '') -> dict:
+    """Completa um For Load com o que a régua de anilhas precisa pra desenhar.
+
+    Devolve uma CÓPIA com gênero da categoria, unidade, tentativas, anilhas,
+    barras e a sequência de movimentos. Sem isso a tabela sai sem régua e sem
+    campo de carga — o juiz não tem onde anotar.
+
+    `modalidade_pai` cobre o For Load que é sub-fórmula de um composto: a
+    modalidade (dupla/trio/quarteto) está no workout de cima, e é ela que
+    define quantos blocos de atleta a régua precisa.
+    """
+    from types_ds import (detectar_genero_categoria, anilhas_default,
+                          barra_default, n_atletas_da_modalidade)
+    wkt = dict(wkt)
+    wkt['_genero'] = detectar_genero_categoria(ev.get('categoria', ''))
+    wkt.setdefault('unidade', ev.get('unidade_default', 'lb'))
+    wkt.setdefault('tentativas', 3)
+    wkt.setdefault('anilhas', anilhas_default(wkt['unidade']))
+    wkt.setdefault('barra_masculina', barra_default('M', wkt['unidade']))
+    wkt.setdefault('barra_feminina',  barra_default('F', wkt['unidade']))
+    modalidade = wkt.get('modalidade') or modalidade_pai or 'individual'
+    if modalidade_pai and wkt.get('modalidade', 'individual') == 'individual':
+        # Sub-fórmula herda a modalidade do composto: o parser marca cada
+        # fórmula como 'individual' por padrão, e um Hausport dentro de um
+        # composto de dupla precisa dos dois blocos de atleta.
+        modalidade = modalidade_pai
+    wkt['modalidade'] = modalidade
+    wkt['_n_atletas_time'] = wkt.get('n_atletas_time') or n_atletas_da_modalidade(modalidade)
+    # MISTO em team: define vetor de gênero por posição. Convenção CrossFit
+    # BR — mulheres ocupam as primeiras posições. Trio misto = [F, M, M].
+    # Dupla misto = [F, M]. Quarteto misto = [F, F, M, M].
+    if wkt['_genero'] == 'MISTO' and wkt['_n_atletas_time'] > 1:
+        n = wkt['_n_atletas_time']
+        n_f = n // 2 if n % 2 == 0 else (n // 2) + (1 if n == 3 else 0)
+        # 2 → [F,M] ; 3 → [F,M,M] ; 4 → [F,F,M,M]
+        if n == 2:   n_f = 1
+        elif n == 3: n_f = 1
+        elif n == 4: n_f = 2
+        wkt['_genero_por_atleta'] = ['F'] * n_f + ['M'] * (n - n_f)
+    # Fallback: se workout não veio do parser de texto (criado direto na UI),
+    # tenta inferir sequência do nome (ex: 'MAX CLEAN & JERK' → CLEAN, JERK).
+    if not wkt.get('sequencia_movimentos'):
+        from parsers import _extrair_sequencia_for_load
+        lines = wkt.get('descricao') or []
+        seq = _extrair_sequencia_for_load(lines, wkt.get('nome', ''))
+        if seq:
+            wkt['sequencia_movimentos'] = seq
+    return wkt
+
+
 def _render_page(ev, wkt, logo_src, logo_evento_src, atleta=None):
     # autoescape: nomes de evento/atleta/box/movimento são input do usuário e
     # podem conter `<`, `>`, `&` ou aspas — escapar previne quebra de layout e
     # XSS quando a súmula HTML é aberta no browser.
     # For Load precisa saber o gênero da categoria pra escolher barra M/F.
     if wkt.get('tipo') == 'for_load' and not wkt.get('_genero'):
-        from types_ds import (detectar_genero_categoria, anilhas_default,
-                              barra_default, n_atletas_da_modalidade)
-        wkt = dict(wkt)
-        wkt['_genero']  = detectar_genero_categoria(ev.get('categoria', ''))
-        wkt.setdefault('unidade', ev.get('unidade_default', 'lb'))
-        wkt.setdefault('tentativas', 3)
-        wkt.setdefault('anilhas', anilhas_default(wkt['unidade']))
-        wkt.setdefault('barra_masculina', barra_default('M', wkt['unidade']))
-        wkt.setdefault('barra_feminina',  barra_default('F', wkt['unidade']))
-        modalidade = wkt.get('modalidade', 'individual')
-        wkt['_n_atletas_time'] = wkt.get('n_atletas_time') or n_atletas_da_modalidade(modalidade)
-        # MISTO em team: define vetor de gênero por posição. Convenção CrossFit
-        # BR — mulheres ocupam as primeiras posições. Trio misto = [F, M, M].
-        # Dupla misto = [F, M]. Quarteto misto = [F, F, M, M].
-        if wkt['_genero'] == 'MISTO' and wkt['_n_atletas_time'] > 1:
-            n = wkt['_n_atletas_time']
-            n_f = n // 2 if n % 2 == 0 else (n // 2) + (1 if n == 3 else 0)
-            # 2 → [F,M] ; 3 → [F,M,M] ; 4 → [F,F,M,M]
-            if n == 2:   n_f = 1
-            elif n == 3: n_f = 1
-            elif n == 4: n_f = 2
-            wkt['_genero_por_atleta'] = ['F'] * n_f + ['M'] * (n - n_f)
-        # Fallback: se workout não veio do parser de texto (criado direto na UI),
-        # tenta inferir sequência do nome (ex: 'MAX CLEAN & JERK' → CLEAN, JERK).
-        if not wkt.get('sequencia_movimentos'):
-            from parsers import _extrair_sequencia_for_load
-            lines = wkt.get('descricao') or []
-            seq = _extrair_sequencia_for_load(lines, wkt.get('nome', ''))
-            if seq:
-                wkt['sequencia_movimentos'] = seq
+        wkt = _preparar_for_load(wkt, ev)
+    # Composto/Express com sub-fórmula For Load: ela também precisa da régua.
+    # Antes a fórmula caía na tabela de movimentos (que num For Load é vazia) e
+    # a súmula saía com o bloco em branco — sem complex, sem tentativas e sem
+    # campo de carga. Caso real: o "Hausport" dentro do composto do Hausday.
+    if wkt.get('tipo') in ('composto', 'express'):
+        copiado = False
+        for chave in ('f1', 'f2', 'formula1', 'formula2'):
+            sub = wkt.get(chave)
+            if (sub or {}).get('tipo') == 'for_load' and not (sub or {}).get('_genero'):
+                if not copiado:
+                    wkt = dict(wkt)
+                    copiado = True
+                wkt[chave] = _preparar_for_load(
+                    sub, ev, modalidade_pai=wkt.get('modalidade', ''))
     # Fallback For Time relay: se workout veio do front-end sem rounds_per_atleta
     # mas a descricao tem 'N round per athlete' / 'N round por atleta', infere.
     if wkt.get('tipo') == 'for_time' and not wkt.get('rounds_per_atleta'):

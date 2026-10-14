@@ -788,3 +788,68 @@ def test_amrap_sem_max_mantem_rotulo_de_reps(evento_basico, fonts_empty):
     corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
     assert '20 reps / round' in corpo
     assert 'MAX' not in corpo
+
+
+# ── Composto com sub-fórmula For Load ──────────────────────────────────────
+def _composto_com_for_load(modalidade='individual'):
+    return {
+        "numero": 1, "numero_f2": 2, "nome": "HAUSPORT + ISABEL",
+        "tipo": "composto", "modalidade": modalidade, "time_cap": "12 min",
+        "movimentos": [], "descricao": [],
+        "f1": {"numero": 1, "nome": "HAUSPORT", "tipo": "for_load",
+               "modalidade": "individual", "time_cap": "", "movimentos": [],
+               "descricao": [], "janela": "00:00–06:00",
+               "sequencia_movimentos": {
+                   "buy_in": None,
+                   "complex": "1 CLEAN + 1 HANG CLEAN + 2 FRONT SQUAT",
+                   "janelas": []}},
+        "f2": {"numero": 2, "nome": "ISABEL", "tipo": "for_time",
+               "modalidade": "individual", "time_cap": "12 min",
+               "movimentos": [{"nome": "SNATCHES", "reps": 30, "carga": "135 LBS"},
+                              {"chegada": True}],
+               "descricao": [], "janela": "07:00–12:00"},
+        "descanso": "",
+    }
+
+
+def test_composto_com_for_load_desenha_a_regua(evento_basico, fonts_empty):
+    """Um For Load guarda a prescrição em `sequencia_movimentos` e precisa da
+    régua de anilhas — `movimentos` está vazio. Como sub-fórmula de composto
+    ele caía na tabela de movimentos e a súmula saía com o bloco EM BRANCO:
+    sem complex, sem tentativas e sem campo de carga, nada pro juiz anotar.
+    Caso real: o "Hausport" do Hausday.
+    """
+    corpo = render_workout({**evento_basico, 'unidade_default': 'lb'},
+                           _composto_com_for_load(), fonts_empty, "").split('</style>')[-1]
+    assert 'fl-row' in corpo, 'régua de For Load ausente'
+    assert '1 CLEAN + 1 HANG CLEAN + 2 FRONT SQUAT' in corpo
+    # tentativas com campo de carga + o resumo da melhor
+    assert len(re.findall(r'class="fl-row-hdr">T\d+', corpo)) == 3
+    assert 'Melhor' in corpo
+    # a outra fórmula (For Time) segue com a tabela de movimentos e seu score
+    assert 'SNATCHES' in corpo
+    assert 'For Time' in corpo
+
+
+def test_for_load_em_composto_herda_modalidade_do_pai(evento_basico, fonts_empty):
+    """O parser marca cada sub-fórmula como 'individual'. Num composto de
+    dupla, o For Load precisa dos blocos dos DOIS atletas — senão só um deles
+    tem onde registrar carga."""
+    corpo = render_workout({**evento_basico, 'unidade_default': 'lb'},
+                           _composto_com_for_load('dupla'),
+                           fonts_empty, "").split('</style>')[-1]
+    assert '2 Atletas' in corpo, 'não herdou a modalidade do composto'
+    # 2 atletas × 3 tentativas
+    assert len(re.findall(r'class="fl-row-hdr">T\d+', corpo)) == 6
+
+
+def test_composto_sem_for_load_nao_regride(evento_basico, fonts_empty):
+    """Composto de For Time + AMRAP segue usando as tabelas de sempre."""
+    wkt = _composto_com_for_load()
+    wkt['f1'] = {"numero": 1, "nome": "A", "tipo": "for_time",
+                 "modalidade": "individual", "time_cap": "5 min",
+                 "movimentos": [{"nome": "BURPEES", "reps": 20}],
+                 "descricao": []}
+    corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
+    assert 'fl-row' not in corpo
+    assert 'BURPEES' in corpo and 'SNATCHES' in corpo
