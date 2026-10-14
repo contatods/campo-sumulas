@@ -1196,13 +1196,17 @@ body{
   background:var(--dk);color:var(--w);padding:2.5mm 3mm;gap:3mm}
 .fl-melhor-lbl{font-size:10pt;font-weight:900;letter-spacing:.06em;
   text-transform:uppercase}
-.fl-melhor-line{flex:1;min-height:7mm;background:transparent;
-  border-bottom:1.5px solid var(--w)}
+/* Campo branco e escrevível dentro da banda escura: a caneta do árbitro não
+   marca sobre fundo impresso escuro. Mesmo princípio do `.fl-soma-time` em
+   team — aqui o individual tinha ficado de fora. */
+.fl-melhor-line{flex:1;min-height:7mm;background:var(--w);
+  border:1.5px solid var(--w);border-radius:2px}
 .fl-melhor-unidade{font-size:10pt;font-weight:700}
 .fl-melhor-ref{display:flex;align-items:center;gap:1.5mm;font-size:8.5pt;
   font-weight:600;color:#DDD;letter-spacing:.04em}
+/* Idem: o juiz anota aqui o número da tentativa que valeu. */
 .fl-melhor-ref-box{width:8mm;height:6.5mm;border:1.5px solid var(--w);
-  background:transparent}
+  background:var(--w)}
 
 /* ── For Load COMPACT — pra 5+ tentativas (cabe em A4 sem estourar) ──
    Estratégia: 1 linha por tentativa (em vez de 2), padding/fonts
@@ -1249,9 +1253,6 @@ body{
 .fl-zone-team .fl-atleta-melhor-unidade{font-size:8.5pt;font-weight:900;flex-shrink:0}
 .fl-zone-team .fl-soma-time{background:var(--ink);color:var(--w);
   border-top:3px double var(--w);padding:2.5mm}
-/* Campo branco e escrevível dentro do bloco escuro */
-.fl-zone-team .fl-soma-time .fl-melhor-line{background:var(--w);
-  border:1.5px solid var(--w);min-height:7mm;border-radius:2px}
 .fl-zone-team .fl-soma-time .fl-melhor-unidade{color:var(--w)}
 /* Em team, esconde campo "Obs" por tentativa (juiz registra obs no fim, não por tents) */
 .fl-zone-team .fl-obs{display:none}

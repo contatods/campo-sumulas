@@ -853,3 +853,52 @@ def test_composto_sem_for_load_nao_regride(evento_basico, fonts_empty):
     corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
     assert 'fl-row' not in corpo
     assert 'BURPEES' in corpo and 'SNATCHES' in corpo
+
+
+# ── Campos de escrita precisam de fundo claro ───────────────────────────────
+def test_nenhum_campo_de_escrita_com_fundo_escuro():
+    """A caneta do árbitro não marca sobre fundo impresso escuro. Qualquer área
+    de escrita (tem borda ou altura reservada) tem que ter fundo claro, mesmo
+    quando fica dentro de uma banda escura — era o caso da 'Melhor Carga' do
+    For Load individual e da caixa 'Ref. T', que saíam cinza-escuro e o juiz
+    não tinha como preencher.
+    """
+    import re
+    from campo_generator import CSS
+
+    # só o bloco de CSS (antes dos macros), sem comentários
+    css = re.sub(r'/\*.*?\*/', '', CSS, flags=re.S)
+    CLAROS = {'var(--w)', 'var(--field)', 'var(--paper)', '#fff', '#FFF', 'white'}
+    suspeitos = []
+    for m in re.finditer(r'(?:^|\})\s*(\.[^{}]*?)\{([^}]*)\}', css, re.M):
+        sel, body = m.group(1).strip(), ' '.join(m.group(2).split())
+        if not re.search(r'border|min-height', body):
+            continue                       # não é área de escrita
+        mb = re.search(r'background:\s*([^;}]+)', body)
+        if not mb:
+            continue                       # herda — fora do escopo deste teste
+        fundo = mb.group(1).strip()
+        if fundo == 'transparent' and re.search(r'line|box|field|write', sel):
+            suspeitos.append((sel, fundo))
+    assert not suspeitos, (
+        'campo de escrita sem fundo claro (ilegível à caneta se cair sobre '
+        f'banda escura): {suspeitos}')
+
+
+def test_melhor_carga_do_for_load_e_escrevivel(evento_basico, fonts_empty):
+    """A banda 'Melhor Carga' é escura por design (hierarquia visual), mas o
+    campo dentro dela tem que ser branco."""
+    import re
+    from campo_generator import CSS
+    wkt = {"numero": 5, "nome": "MAX SNATCH", "tipo": "for_load",
+           "modalidade": "individual", "unidade": "kg", "tentativas": 3,
+           "anilhas": [20.0, 15.0, 10.0], "movimentos": [], "descricao": []}
+    corpo = render_workout({**evento_basico, 'unidade_default': 'kg'},
+                           wkt, fonts_empty, "").split('</style>')[-1]
+    assert 'fl-melhor-line' in corpo and 'fl-melhor-ref-box' in corpo
+
+    css = re.sub(r'/\*.*?\*/', '', CSS, flags=re.S)
+    for sel in ('.fl-melhor-line', '.fl-melhor-ref-box'):
+        m = re.search(r'(?:^|\})\s*' + re.escape(sel) + r'\s*\{([^}]*)\}', css, re.M)
+        assert m, f'{sel} sumiu do CSS'
+        assert 'background:var(--w)' in ' '.join(m.group(1).split()), sel
