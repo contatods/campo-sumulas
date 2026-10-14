@@ -902,3 +902,33 @@ def test_melhor_carga_do_for_load_e_escrevivel(evento_basico, fonts_empty):
         m = re.search(r'(?:^|\})\s*' + re.escape(sel) + r'\s*\{([^}]*)\}', css, re.M)
         assert m, f'{sel} sumiu do CSS'
         assert 'background:var(--w)' in ' '.join(m.group(1).split()), sel
+
+
+def test_for_load_dupla_mista_barra_por_atleta(evento_basico, fonts_empty):
+    """A súmula tem que dar barra feminina à atleta e masculina ao atleta —
+    com o gênero visível em cada bloco, pro juiz conferir a montagem."""
+    wkt = {"numero": 5, "nome": "MAX COMPLEX", "tipo": "for_load",
+           "modalidade": "dupla", "unidade": "lb", "tentativas": 3,
+           "anilhas": [45.0, 25.0, 10.0], "movimentos": [], "descricao": [],
+           "sequencia_movimentos": {"buy_in": None, "complex": "1 CLEAN", "janelas": []}}
+    corpo = render_workout({**evento_basico, 'categoria': 'Dupla Intermediária Mista',
+                            'unidade_default': 'lb'},
+                           wkt, fonts_empty, "").split('</style>')[-1]
+    assert 'Barras conforme atleta' in corpo
+    barras = re.findall(r'<div class="fl-barra">([^<]*)</div>', corpo)
+    assert barras == ['35 lb'] * 3 + ['45 lb'] * 3, barras
+    # o gênero de cada bloco fica explícito
+    assert '(F)' in corpo and '(M)' in corpo
+
+
+def test_for_load_dupla_masculina_usa_uma_barra(evento_basico, fonts_empty):
+    """Categoria de um gênero só mantém a barra única pro time todo."""
+    wkt = {"numero": 5, "nome": "MAX COMPLEX", "tipo": "for_load",
+           "modalidade": "dupla", "unidade": "lb", "tentativas": 2,
+           "anilhas": [45.0, 25.0], "movimentos": [], "descricao": [],
+           "sequencia_movimentos": {"buy_in": None, "complex": "1 CLEAN", "janelas": []}}
+    corpo = render_workout({**evento_basico, 'categoria': 'Dupla Scaled Masculina',
+                            'unidade_default': 'lb'},
+                           wkt, fonts_empty, "").split('</style>')[-1]
+    assert 'Barras conforme atleta' not in corpo
+    assert set(re.findall(r'<div class="fl-barra">([^<]*)</div>', corpo)) == {'45 lb'}

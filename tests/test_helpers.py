@@ -282,3 +282,35 @@ def test_estimativa_final_sem_ia_usa_a_simulacao(monkeypatch):
     movs = [{'nome': 'PULL-UPS', 'reps': 5}, {'nome': 'AIR SQUATS', 'reps': 15}]
     assert (_estimar_rounds_ia(movs, '20 min')
             == _estimar_rounds_algoritmico(movs, '20 min'))
+
+
+# ── Gênero da categoria concorda com a modalidade em português ──────────────
+def test_detecta_misto_com_concordancia_feminina():
+    """'Quarteto Misto' mas 'Dupla MISTA' — o gênero concorda com a modalidade
+    em português. Casar só a forma masculina fazia a dupla mista ser lida como
+    MASCULINA, e na súmula do For Load a atleta recebia barra de homem
+    (45 lb em vez de 35 lb). Caso real: 'Dupla Intermediária Mista' do Hausday.
+    """
+    from types_ds import detectar_genero_categoria as g
+    for nome in ('Dupla Intermediária Mista', 'Dupla Mista', 'Duplas Mistas',
+                 'Quarteto Rx Misto', 'Trio Misto', 'Dupla Rx Mixed',
+                 'Dupla Mixta'):
+        assert g(nome) == 'MISTO', nome
+    for nome in ('Dupla Scaled Feminina', 'Rx Feminino', 'Women Rx'):
+        assert g(nome) == 'F', nome
+    for nome in ('Dupla Scaled Masculina', 'Rx Masculino', 'Master 40+ Masculino'):
+        assert g(nome) == 'M', nome
+    # sem indicação de gênero segue no default conservador
+    assert g('Rx') == 'M'
+    assert g('') == 'M'
+
+
+def test_barras_por_atleta_em_dupla_mista():
+    """Dupla mista: homem na barra de 45 lb, mulher na de 35 lb. O vetor de
+    gênero por posição é o que faz a régua dar a barra certa a cada atleta."""
+    from types_ds import detectar_genero_categoria, barra_default
+    assert detectar_genero_categoria('Dupla Intermediária Mista') == 'MISTO'
+    assert barra_default('M', 'lb') == 45
+    assert barra_default('F', 'lb') == 35
+    assert barra_default('M', 'kg') == 20
+    assert barra_default('F', 'kg') == 15

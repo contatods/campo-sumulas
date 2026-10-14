@@ -7,6 +7,7 @@ de workout é feita explicitamente em sumula_app._validate_workout_tipos.
 Nome do módulo é `types_ds` (não `types`) para não colidir com o stdlib `types`.
 """
 from __future__ import annotations
+import re
 from typing import TypedDict, Union
 
 
@@ -148,15 +149,21 @@ def barra_default(genero: str, unidade: str) -> float:
 def detectar_genero_categoria(nome_categoria: str) -> str:
     """Retorna 'M', 'F' ou 'MISTO' a partir do nome da categoria.
 
-    Heurística simples por palavras em PT-BR/EN. 'Misto' usa barra masculina
-    como default (escolha conservadora — maior carga possível).
+    Heurística por palavras em PT-BR/EN. 'MISTO' faz o For Load dar barra
+    masculina aos homens e feminina às mulheres (ver `_genero_por_atleta`);
+    'M'/'F' usam uma barra só pro time todo.
+
+    O gênero concorda com a MODALIDADE em português — 'Quarteto Misto' mas
+    'Dupla Mista', 'Dupla Masculina', 'Duplas Mistas'. Casar só a forma
+    masculina fazia uma dupla mista ser lida como masculina, e a atleta
+    recebia barra de homem na súmula.
     """
     s = (nome_categoria or '').lower()
-    if 'misto' in s or 'mixed' in s:
+    if re.search(r'\bmist[oa]s?\b', s) or 'mixed' in s or 'mixt' in s:
         return 'MISTO'
-    if 'feminin' in s or 'female' in s or "women" in s:
+    if 'feminin' in s or 'female' in s or 'women' in s or 'woman' in s:
         return 'F'
-    if 'masculin' in s or 'male' in s or "men" in s:
+    if 'masculin' in s or 'male' in s or 'men' in s:
         return 'M'
     return 'M'   # default conservador
 
