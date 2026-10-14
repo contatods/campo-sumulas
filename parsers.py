@@ -513,6 +513,24 @@ _MAX_MOV_RE = re.compile(r'^\s*max[.:\s]+(?:reps?\s+(?:of|de)\s+)?(.+)$', re.I)
 
 
 # ── Texto livre de workout ──────────────────────────────────────────────────────
+# Separador de MILHAR no número líder: '1.000m Evo Bike', '2.000m Run'.
+# Convenção pt-BR (ponto agrupa milhar), mas aceita vírgula também porque o
+# organizador pode digitar no formato en-US. Exige grupos de exatamente 3
+# dígitos — é o que distingue milhar de decimal: '1.000' é mil, '1.5' é um e
+# meio. Sem isso a linha não casava NENHUM formato numérico e o movimento era
+# descartado em silêncio: a súmula saía sem a prova.
+_NUM_MILHAR_RE = re.compile(r'^(\d{1,3}(?:[.,]\d{3})+)(?=\D|$)')
+
+
+def _normalizar_milhar(linha: str) -> str:
+    """'1.000m Evo Bike' → '1000m Evo Bike'. Sem separador, devolve igual."""
+    m = _NUM_MILHAR_RE.match(linha.strip())
+    if not m:
+        return linha
+    puro = re.sub(r'[.,]', '', m.group(1))
+    return puro + linha.strip()[m.end():]
+
+
 def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     """Extrai (reps, nome_upper) de uma linha de movimento.
 
@@ -526,7 +544,7 @@ def _parse_mov_line(line: str) -> Optional[tuple[int, str]]:
     Rejeita linhas que parecem frase explicativa (`2 atletas nadarão...`)
     pra evitar que virem movimentos.
     """
-    s = line.strip()
+    s = _normalizar_milhar(line.strip())
     # 4 formatos: NUM/NUM resto (gendered), NUM+unit+ESP, NUM-resto, NUM ESP resto
     tem_unidade = False   # NUM colado a unidade (1000m, 20cal) — distância válida ≥1000
     m = re.match(r'^(\d{1,4})/(\d{1,4})\s+(.+)$', s)            # 30/24 cal Row
@@ -1688,6 +1706,39 @@ _TC_NEGADO_RE = re.compile(
     r'n[ãa]o\s+(?:ter[áa]|tem|h[áa])\s+time\s*cap|sem\s+time\s*cap|no\s+time\s*cap', re.I)
 
 
+def _linhas_prescricao_perdidas(wkt: Workout, raw: str) -> list[str]:
+    """Linhas de prescrição do Excel que não viraram NADA no parse.
+
+    Movimento descartado em silêncio é a pior falha deste parser: a súmula sai
+    sem a prova e nada avisa — já aconteceu com linhas 'Max <mov>', com o
+    'Run to finish' e com distância em formato pt-BR ('1.000m Evo Bike', onde
+    o ponto de milhar não casava nenhum formato numérico).
+
+    Considera só linhas que começam com número (é como a prescrição é escrita)
+    e descarta o que legitimamente não é movimento: cabeçalho de estrutura,
+    frase explicativa e metadata de tempo. For Load fica de fora — ali a
+    prescrição vive em `sequencia_movimentos`, não em linhas de movimento.
+    """
+    if not raw or wkt.get('tipo') == 'for_load':
+        return []
+    perdidas: list[str] = []
+    for linha in _truncar_descricao_em_notas(raw.splitlines()):
+        s = linha.strip()
+        if not re.match(r'^\d', s):
+            continue
+        if _parse_mov_line(s):
+            continue
+        if (_SECTION_HEADER_RE.match(s) or _ROUNDS_BLOCK_RE.match(s)
+                or _ROUNDS_JANELA_RE.match(s) or _AMRAP_JANELA_RE.match(s)):
+            continue
+        if _FRASE_NAO_MOVIMENTO_RE.search(s):
+            continue
+        if re.search(r'time\s*cap|dura[çc][ãa]o|tempo\s+total', s, re.I):
+            continue
+        perdidas.append(s)
+    return perdidas
+
+
 def validar_workout_schema(wkt: Workout, raw: str = '') -> list[tuple[str, str]]:
     """Valida invariantes estruturais de um workout parseado (schema canônico).
 
@@ -1699,6 +1750,8 @@ def validar_workout_schema(wkt: Workout, raw: str = '') -> list[tuple[str, str]]
         (goal_reps, janela.max, movimento.goal ou movimento.max) — não pode
         DROPAR o que pontua
       - se o texto tem 'Time cap: N' (não negado), `time_cap` é capturado
+      - nenhuma linha de prescrição do Excel ficou de fora do parse (movimento
+        dropado em silêncio = súmula sem a prova, sem nada avisar)
       - se o texto declara scores nomeados ('(Score A):'), todos aparecem em
         `scores` — score perdido = súmula sem campo pra anotar aquela pontuação
       - se o texto tem regra de eliminação + rounds com janela, o tipo é
@@ -1741,6 +1794,12 @@ def validar_workout_schema(wkt: Workout, raw: str = '') -> list[tuple[str, str]]
         if ('time cap' in rl and not _TC_NEGADO_RE.search(raw)
                 and not wkt.get('time_cap') and tipo not in ('for_load', 'composto')):
             probs.append(('timecap_perdido', 'texto tem Time cap e não foi capturado'))
+        # Linha de prescrição que não virou movimento nem estrutura.
+        if (perdidas := _linhas_prescricao_perdidas(wkt, raw)):
+            probs.append(('movimento_perdido',
+                          'linha(s) de prescrição não reconhecida(s): '
+                          + '; '.join(repr(l[:60]) for l in perdidas[:3])))
+
         # Eliminação: o formato muda o que o juiz anota (posição de chegada,
         # não tempo). Ler como For Time entrega a súmula errada.
         if _extrair_eliminacao(raw) and (_ROUNDS_JANELA_RE.search(raw)

@@ -2105,3 +2105,62 @@ def test_linter_ve_o_max_dentro_das_subformulas():
                'f1': {'movimentos': [{'nome': 'THRUSTERS', 'reps': 20}]},
                'f2': {'movimentos': []}}
     assert 'pontuacao_perdida' in dict(validar_workout_schema(perdido, raw))
+
+
+# ── Distância com separador de milhar ('1.000m') ────────────────────────────
+def test_distancia_com_separador_de_milhar():
+    """'1.000m Evo Bike' — ponto agrupando milhar (pt-BR). Não casava NENHUM
+    formato numérico e o movimento era descartado em silêncio: a súmula saía
+    sem a prova. Caso real: o Evo Bike do Sweatox no Hausday.
+    """
+    from parsers import _parse_mov_line
+    assert _parse_mov_line('1.000m Evo Bike (Athlete A)') == (1000, '1000M EVO BIKE (ATHLETE A)')
+    assert _parse_mov_line('2.000m Run') == (2000, '2000M RUN')
+    assert _parse_mov_line('1.000 m Row') == (1000, '1000M ROW')
+    # vírgula como agrupador (formato en-US) também
+    assert _parse_mov_line('1,000m Row') == (1000, '1000M ROW')
+    # exige grupo de 3 dígitos — é o que separa milhar de decimal
+    from parsers import _normalizar_milhar
+    assert _normalizar_milhar('1.000m Row') == '1000m Row'
+    assert _normalizar_milhar('1.5km Run') == '1.5km Run'      # decimal, intacto
+    assert _normalizar_milhar('900m Ski Erg') == '900m Ski Erg'
+    # formatos que já funcionavam não podem regredir
+    assert _parse_mov_line('900m Ski Erg') == (900, '900M SKI ERG')
+    assert _parse_mov_line('5km Run') == (5000, '5000M RUN')
+    assert _parse_mov_line('100 Cal Row') == (100, 'CAL ROW')
+    assert _parse_mov_line('21 Thrusters') == (21, 'THRUSTERS')
+
+
+def test_linter_acusa_linha_de_prescricao_perdida():
+    """Movimento dropado em silêncio é a pior falha do parser — a súmula sai
+    sem a prova e nada avisa. O linter passa a comparar as linhas do Excel com
+    o que o parse reconheceu.
+    """
+    from parsers import validar_workout_schema, _linhas_prescricao_perdidas
+    raw_ok = '"W"\n\nFor time:\n1.000m Evo Bike\n20 Thrusters\nTime cap: 12 minutes'
+    w = parse_workout_text(raw_ok, 1)
+    assert validar_workout_schema(w, raw_ok) == []
+
+    # linha de prescrição em formato que o parser não entende
+    raw_ruim = '"W"\n\nFor time:\n1.5km Evo Bike\n20 Thrusters\nTime cap: 12 minutes'
+    w2 = parse_workout_text(raw_ruim, 1)
+    codigos = dict(validar_workout_schema(w2, raw_ruim))
+    assert 'movimento_perdido' in codigos
+    assert 'Evo Bike' in codigos['movimento_perdido']
+
+
+def test_linter_nao_acusa_cabecalho_nem_regra():
+    """A regra não pode virar ruído: cabeçalho de estrutura, frase explicativa
+    e metadata de tempo começam com número e legitimamente não são movimento.
+    """
+    from parsers import _linhas_prescricao_perdidas
+    for linha in ('3 rounds for time of:', '2 rounds of:',
+                  '5 rounds, every 3 minutes:', 'AMRAP 16 minutes:',
+                  '4 teams eliminated per window', 'Time cap: 12 minutes',
+                  'Duração total: 15 minutes'):
+        raw = f'"W"\n\nFor time:\n20 Thrusters\n{linha}'
+        w = {'tipo': 'for_time', 'movimentos': [{'nome': 'THRUSTERS', 'reps': 20}]}
+        assert _linhas_prescricao_perdidas(w, raw) == [], linha
+    # For Load fica fora: a prescrição vive em sequencia_movimentos
+    raw_fl = '"T"\n\nFor load:\n12-calorie Air Bike\nthen...\n1 Squat Clean'
+    assert _linhas_prescricao_perdidas({'tipo': 'for_load'}, raw_fl) == []
