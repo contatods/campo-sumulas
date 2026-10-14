@@ -2075,3 +2075,33 @@ def test_ordenacao_pela_primeira_raia_do_par():
     atletas = [{'raia': r, 'bateria': '1', 'nome': 'x'} for r in pares]
     assert [a['raia'] for a in sorted(atletas, key=_atleta_sort_key)] == [
         '1–2', '3–4', '5–6', '7–8', '9–10']
+
+
+def test_linter_ve_o_max_dentro_das_subformulas():
+    """Composto e Express guardam movimentos em f1/f2 (formula1/formula2), não
+    no topo. O checador de pontuação olhava só o topo, então um 'Max' na F1
+    parecia perdido e o import acusava erro num parse que estava correto —
+    ruído que faz o organizador caçar problema inexistente.
+    """
+    from parsers import validar_workout_schema
+    raw = ('"A" (00:00 - 06:00)\n\nAMRAP 6 minutes:\n20 Thrusters\n'
+           'Max Front Squats (65lbs)\n\n"B" (07:00 - 12:00)\n\nFor time:\n'
+           '60 Snatches (95lbs)\n\nTime cap: 12 minutes')
+    composto = {'tipo': 'composto', 'nome': 'A + B', 'time_cap': '12 min',
+                'f1': {'movimentos': [{'nome': 'THRUSTERS', 'reps': 20},
+                                      {'nome': 'FRONT SQUATS', 'max': True,
+                                       'pontua': True}]},
+                'f2': {'movimentos': [{'nome': 'SNATCHES', 'reps': 60}]}}
+    assert validar_workout_schema(composto, raw) == []
+
+    # Express usa formula1/formula2 — mesma regra
+    express = {'tipo': 'express', 'nome': 'E', 'time_cap': '12 min',
+               'formula1': {'movimentos': [{'nome': 'X', 'max': True}]},
+               'formula2': {'movimentos': []}}
+    assert validar_workout_schema(express, raw) == []
+
+    # e se o Max REALMENTE não foi capturado em lugar nenhum, segue acusando
+    perdido = {'tipo': 'composto', 'nome': 'A + B', 'time_cap': '12 min',
+               'f1': {'movimentos': [{'nome': 'THRUSTERS', 'reps': 20}]},
+               'f2': {'movimentos': []}}
+    assert 'pontuacao_perdida' in dict(validar_workout_schema(perdido, raw))

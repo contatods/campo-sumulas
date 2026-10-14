@@ -1473,7 +1473,13 @@ AMRAP_TABLE_MACRO = r"""
                      | map(attribute='reps_delta') | list | unique | list %}
 {% set delta = (wkt.reps_delta_por_round if (wkt is not none and wkt.reps_delta_por_round)
                 else (_deltas_mov[0] if _deltas_mov | length == 1 else 0)) | default(0) %}
-{% set reps_round = data_movs | map(attribute='reps') | list | sum %}
+{# Soma só as reps PRESCRITAS. Um AMRAP pode ter linha 'Max <mov>' (reps
+   ilimitadas até o tempo acabar, o que pontua), e aí o movimento não tem
+   `reps` — somar um Undefined derrubava o render inteiro com
+   UndefinedError, e a súmula da categoria não saía. #}
+{% set _tem_max_mov = data_movs | selectattr('max','defined') | selectattr('max') | list | length > 0 %}
+{% set reps_round = data_movs | selectattr('reps','defined')
+                    | map(attribute='reps') | select('number') | list | sum %}
 {# Calcula tempo total EMOM (ex: 2:30 × 5 = 12:30) — info útil pro juiz. #}
 {% set tempo_total = '' %}
 {% if is_emom and wkt.emom_janela %}
@@ -1494,6 +1500,8 @@ AMRAP_TABLE_MACRO = r"""
     {% endif %}
     {% if has_progressao %}
       <div class="ah-ref ah-ref-prog">{% if delta %}+{{ delta }} reps/round{% else %}reps progridem por round{% endif %}{% if wkt.ultimo_round_max %} · último MAX{% endif %}</div>
+    {% elif _tem_max_mov %}
+      <div class="ah-ref">{{ reps_round }} reps + MAX / round</div>
     {% else %}
       <div class="ah-ref">{{ reps_round }} reps / round</div>
     {% endif %}
@@ -1507,7 +1515,11 @@ AMRAP_TABLE_MACRO = r"""
         <span class="ash-nome">
           {% if m.reps_por_round %}
             <span class="ash-prog-seq" title="Reps progridem por round">({{ m.reps_por_round | join(' · ') }})</span>
-          {% else %}
+          {% elif m.max %}
+            {# Linha 'Max <mov>': sem reps prescritas, o juiz anota o que o
+               atleta fez. Imprimir '({{ m.reps }})' daria '()' vazio. #}
+            <span class="ash-reps">(MAX)</span>
+          {% elif m.reps is defined %}
             <span class="ash-reps">({{ m.reps }})</span>
           {% endif %}
           {{ nc }}{% if m.carga %} <span class="ash-carga">({{ m.carga }})</span>{% endif %}

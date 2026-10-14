@@ -749,3 +749,42 @@ def test_regua_sem_repeticao_nao_regride(evento_basico, fonts_empty):
     dir_ = re.search(r'fl-anilhas-dir">(.*?)</div>\s*</div>', corpo, re.S)
     assert re.findall(r'<span>([^<]*)</span>', dir_.group(1)) == [
         '25.0', '20.0', '15.0', '10.0']
+
+
+# ── AMRAP com linha 'Max' direto em movimentos ──────────────────────────────
+def test_amrap_com_max_sem_reps_nao_derruba_o_render(evento_basico, fonts_empty):
+    """Regressão: desde que linhas 'Max <mov>' passaram a ser aceitas em
+    qualquer workout, um AMRAP pode ter movimento SEM `reps` — e a soma de
+    reps/round do header fazia `sum` num Undefined, estourando UndefinedError.
+    A súmula da categoria simplesmente não era gerada (caso real: Hausport nas
+    Duplas Iniciante do Hausday).
+    """
+    wkt = {
+        "numero": 1, "nome": "HAUSPORT", "tipo": "amrap",
+        "modalidade": "dupla", "time_cap": "6 min", "n_rounds": 3,
+        "movimentos": [
+            {"nome": "SYNC. BURPEES OVER THE BARBELL (2 ATHLETES)", "reps": 30},
+            {"nome": "SYNC. THRUSTERS (65LBS) (2 ATHLETES)", "reps": 20},
+            {"nome": "FRONT SQUATS", "carga": "65 LBS", "max": True, "pontua": True},
+        ],
+    }
+    html = render_workout(evento_basico, wkt, fonts_empty, "")   # não pode levantar
+    corpo = html.split('</style>')[-1]
+    # header soma só as reps PRESCRITAS e sinaliza o Max
+    assert '50 reps + MAX / round' in corpo, re.findall(r'ah-ref[^>]*>([^<]*)', corpo)
+    # a coluna do Max mostra '(MAX)', não '()' vazio
+    assert '(MAX)' in corpo
+    assert '()' not in corpo
+
+
+def test_amrap_sem_max_mantem_rotulo_de_reps(evento_basico, fonts_empty):
+    """AMRAP comum (todos os movs com reps) não muda de rótulo."""
+    wkt = {
+        "numero": 1, "nome": "X", "tipo": "amrap", "modalidade": "individual",
+        "time_cap": "10 min", "n_rounds": 3,
+        "movimentos": [{"nome": "PULL-UPS", "reps": 5},
+                       {"nome": "AIR SQUATS", "reps": 15}],
+    }
+    corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
+    assert '20 reps / round' in corpo
+    assert 'MAX' not in corpo
