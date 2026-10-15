@@ -1035,3 +1035,27 @@ def test_janela_unica_dentro_de_composto(evento_basico, fonts_empty):
     assert 'amrap-row' not in corpo
     assert 'reps · conta' in corpo and 'passagem única' in corpo
     assert 'SNATCHES' in corpo          # a outra fórmula segue normal
+
+
+def test_composto_com_janelas_tem_uma_area_de_pontuacao(evento_basico, fonts_empty):
+    """Fórmula com janelas já traz o placar dentro de `janelas_table`. O laço do
+    composto chamava `score_box` sem condição, então a mesma prova saía com DUAS
+    áreas de pontuação — o juiz com dois lugares pra anotar o mesmo número e
+    nenhuma pista de qual vale. O caminho do topo já tinha essa guarda.
+    """
+    wkt = {"numero": 1, "numero_f2": 2, "nome": "HAUSPORT + ISABEL",
+           "tipo": "composto", "modalidade": "dupla", "time_cap": "12 min",
+           "movimentos": [], "descricao": [],
+           "f1": _wkt_janela_unica(),
+           "f2": {"numero": 2, "nome": "ISABEL", "tipo": "for_time",
+                  "modalidade": "individual", "time_cap": "12 min",
+                  "movimentos": [{"nome": "SNATCHES", "reps": 60}, {"chegada": True}],
+                  "descricao": []}}
+    corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
+    # a F1 (janelas) tem só o jan-scorebox; a F2 (For Time) só o score_box
+    assert corpo.count('jan-scorebox') == 1
+    assert corpo.count('<div class="score-box"') == 1
+    # e o score_box que sobrou é o da F2
+    assert 'For Time' in corpo
+    # badge de cada fórmula com o número próprio
+    assert re.findall(r'<div class="sbn-badge">([^<]*)</div>', corpo) == ['1', '2']

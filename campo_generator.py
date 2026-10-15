@@ -2388,7 +2388,10 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
     {% else %}
       {{ mov_table(f.movimentos, f_num, goal_reps=(f.goal_reps | default(0)), hide_cum=(f.tipo == 'for_time_goal'), tb_col=(f.tipo == 'for_time_goal' and f.tiebreak)) }}
     {% endif %}
-    {{ score_box(f.tipo, f) }}
+    {# Fórmula com janelas já traz o próprio placar dentro de `janelas_table`
+       (soma dos MAX / total do MAX) — chamar o score_box aqui daria DUAS
+       áreas de pontuação pra mesma prova. Mesma guarda do caminho do topo. #}
+    {% if not f.janelas %}{{ score_box(f.tipo, f) }}{% endif %}
     {% if loop.first and wkt.descanso %}
       <div class="rest-bar">{{ wkt.descanso|capitalize }}</div>
     {% endif %}
