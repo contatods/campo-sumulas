@@ -1942,17 +1942,26 @@ def _enriquecer_roster_com_categoria(roster: list[dict],
 def _aplicar_equipamento_a_for_load(result: dict[str, Any], equip: dict[str, Any]) -> None:
     """Itera dias→categorias→workouts e injeta anilhas + unidade nos For Load.
 
-    Só seta se o workout ainda não tiver valor explícito — config manual
-    posterior (no front) sobrescreve.
+    Alcança também o For Load que é SUB-FÓRMULA de composto/express: sem isso
+    a régua caía nas anilhas default da unidade, que não são as do evento — no
+    Hausday aparecia uma de 55 lb que não existia na relação de equipamento, e
+    o juiz via na súmula um peso que não tinha pra montar.
+
+    Só seta se ainda não houver valor explícito — config manual posterior (no
+    front) sobrescreve.
     """
     anilhas = equip['anilhas']
     unidade = equip['unidade']
     for dia in result.get('dias', []) or []:
         for cat in dia.get('categorias', []) or []:
             for wkt in cat.get('workouts', []) or []:
-                if wkt.get('tipo') != 'for_load': continue
-                wkt.setdefault('anilhas', anilhas)
-                wkt.setdefault('unidade', unidade)
+                alvos = [wkt] if wkt.get('tipo') == 'for_load' else []
+                if wkt.get('tipo') in ('composto', 'express'):
+                    alvos = [sub for k in ('f1', 'f2', 'formula1', 'formula2')
+                             if (sub := wkt.get(k)) and sub.get('tipo') == 'for_load']
+                for alvo in alvos:
+                    alvo.setdefault('anilhas', anilhas)
+                    alvo.setdefault('unidade', unidade)
 
 
 def _adaptar_categoria_grid_para_multidia(

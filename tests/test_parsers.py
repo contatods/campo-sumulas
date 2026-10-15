@@ -2164,3 +2164,66 @@ def test_linter_nao_acusa_cabecalho_nem_regra():
     # For Load fica fora: a prescrição vive em sequencia_movimentos
     raw_fl = '"T"\n\nFor load:\n12-calorie Air Bike\nthen...\n1 Squat Clean'
     assert _linhas_prescricao_perdidas({'tipo': 'for_load'}, raw_fl) == []
+
+
+def test_equipamento_alcanca_for_load_dentro_de_composto():
+    """As anilhas da aba Equipamentos têm que chegar ao For Load que é
+    SUB-FÓRMULA de composto. Sem isso a régua caía no default da unidade, que
+    não é a relação do evento: no Hausday imprimia uma anilha de 55 lb que o
+    organizador não tinha — o juiz via na súmula um peso inexistente.
+    """
+    from parsers import _aplicar_equipamento_a_for_load
+    equip = {'anilhas': [45.0, 35.0, 25.0, 15.0, 10.0, 5.0, 2.5], 'unidade': 'lb'}
+    result = {'dias': [{'categorias': [{'workouts': [
+        {'tipo': 'composto',
+         'f1': {'tipo': 'for_load'},
+         'f2': {'tipo': 'for_time', 'movimentos': []}},
+        {'tipo': 'for_load'},                       # avulso segue funcionando
+        {'tipo': 'express',
+         'formula1': {'tipo': 'amrap', 'movimentos': []},
+         'formula2': {'tipo': 'for_load'}},
+    ]}]}]}
+    _aplicar_equipamento_a_for_load(result, equip)
+    wkts = result['dias'][0]['categorias'][0]['workouts']
+    assert wkts[0]['f1']['anilhas'] == equip['anilhas']
+    assert wkts[0]['f1']['unidade'] == 'lb'
+    assert wkts[1]['anilhas'] == equip['anilhas']
+    assert wkts[2]['formula2']['anilhas'] == equip['anilhas']
+    # a fórmula que NÃO é for_load fica intocada
+    assert 'anilhas' not in wkts[0]['f2']
+    assert 'anilhas' not in wkts[2]['formula1']
+
+
+def test_equipamento_nao_sobrescreve_config_manual():
+    """Anilhas configuradas à mão no front têm precedência sobre a aba."""
+    from parsers import _aplicar_equipamento_a_for_load
+    equip = {'anilhas': [45.0, 25.0], 'unidade': 'lb'}
+    result = {'dias': [{'categorias': [{'workouts': [
+        {'tipo': 'composto', 'f1': {'tipo': 'for_load', 'anilhas': [20.0, 10.0],
+                                    'unidade': 'kg'}},
+    ]}]}]}
+    _aplicar_equipamento_a_for_load(result, equip)
+    f1 = result['dias'][0]['categorias'][0]['workouts'][0]['f1']
+    assert f1['anilhas'] == [20.0, 10.0] and f1['unidade'] == 'kg'
+
+
+def test_anilhas_do_hausday_batem_com_a_relacao_do_evento():
+    """Regressão com o Excel real: a régua não pode conter peso que o evento
+    não declarou na aba Equipamentos."""
+    import openpyxl
+    from pathlib import Path
+    f = Path('/Users/fernandomiranda/Library/CloudStorage/OneDrive-DigitalScore'
+             '/Haus Games/2026/[Hausday] Programação.xlsx')
+    if not f.exists():
+        import pytest
+        pytest.skip('Excel do Hausday não disponível neste ambiente')
+    from parsers import _parse_equipamento, parse_excel
+    declaradas = set(_parse_equipamento(openpyxl.load_workbook(f, data_only=True))['anilhas'])
+    r = parse_excel(f.read_bytes())
+    for d in r['dias']:
+        for c in d['categorias']:
+            for w in c['workouts']:
+                for k in ('f1', 'f2', 'formula1', 'formula2'):
+                    sub = w.get(k) or {}
+                    if sub.get('tipo') == 'for_load':
+                        assert set(sub['anilhas']) <= declaradas, (c['nome'], sub['anilhas'])
