@@ -1402,8 +1402,14 @@ def _parse_workout_text_core(text: str, numero: int) -> Workout:
     # 2) Tipo — Express, AMRAP multi-janela e For Load têm paths dedicados
     if any(re.search(r'express formula', l, re.I) for l in lines):
         return _parse_express(lines, wkt)
-    # AMRAP de 2+ janelas ('AMRAP N min' repetido), ex.: PWRD Loop
-    if sum(1 for l in lines if _AMRAP_JANELA_RE.match(l)) >= 2:
+    # AMRAP de janela com reps prescritas + linha 'Max' (o que pontua).
+    # 2+ janelas é o PWRD Loop; UMA janela com Max é passagem ÚNICA — o time
+    # faz as reps prescritas e acumula o Max até o tempo acabar. Tratar como
+    # AMRAP comum dava um scorecard de N rounds, como se a sequência se
+    # repetisse, e escondia que o Max é o score.
+    _n_janelas = sum(1 for l in lines if _AMRAP_JANELA_RE.match(l))
+    if _n_janelas >= 2 or (_n_janelas == 1
+                           and any(_MAX_MOV_RE.match(l) for l in lines)):
         return _parse_amrap_multijanela(lines, wkt, '\n'.join(lines))
     full = '\n'.join(lines).lower()
     if ('for load' in full or 'max lift' in full or 'max load' in full

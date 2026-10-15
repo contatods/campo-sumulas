@@ -1631,6 +1631,64 @@ ELIMINACAO_MACRO = r"""
 
 """
 
+JANELAS_MACRO = r"""
+{% macro janelas_table(wkt) %}
+{# Janela com reps PRESCRITAS (não pontuam) + linha MAX (o que conta).
+   Com 2+ janelas é o AMRAP multi-janela (PWRD Loop), com descanso entre elas
+   e score = soma dos MAX. Com UMA janela é passagem única: o time faz as reps
+   prescritas e acumula o MAX até o tempo acabar — nesse caso o banner de
+   round e a soma não fazem sentido e saem de cena. #}
+{% set _uma = (wkt.janelas | length) == 1 %}
+{% if wkt.score_regra %}<div class="jan-rule"><span class="jan-rule-tag">Pontuação</span>{{ wkt.score_regra }}</div>{% endif %}
+{% for jan in wkt.janelas %}
+  {% if not _uma %}
+  <div class="section-banner">
+    <div style="display:flex;align-items:center">
+      <div class="sbn-badge">{{ loop.index }}</div>
+      <span class="sbn-t">Round {{ loop.index }}</span>
+    </div>
+    <span class="sbn-s">{{ jan.titulo|upper }}</span>
+  </div>
+  {% elif jan.titulo %}
+  <div class="jan-rule"><span class="jan-rule-tag">Janela</span>{{ jan.titulo|upper }} · passagem única</div>
+  {% endif %}
+  <div class="jan-tbl">
+    {% for m in jan.movimentos %}
+      {% if m.max %}
+        <div class="jan-row jan-row-max">
+          <div class="jan-max-tag">MAX</div>
+          <div class="jan-name">{{ m.nome }}</div>
+          <div class="jan-count"><span class="jan-count-lbl">reps · conta</span></div>
+        </div>
+      {% else %}
+        <div class="jan-row jan-row-presc">
+          <div class="jan-check"></div>
+          <div class="jan-name">{% if m.reps %}<b>{{ m.reps }}</b> {% endif %}{{ m.nome }}</div>
+          <div class="jan-presc-tag">prescrito · não pontua</div>
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% if not loop.last %}<div class="rest-bar">{{ (jan.rest_depois or wkt.rest_entre or 'Descanso')|upper }} &nbsp;·&nbsp; Reset Equipment</div>{% endif %}
+{% endfor %}
+<div class="jan-scorebox">
+  <div class="jan-sb-lbl"><span class="jan-sb-lbl-tag">For Reps</span><span class="jan-sb-lbl-name">Pontuação</span></div>
+  <div class="jan-sb-calc">
+    {% if _uma %}
+      <div class="jan-sb-cell jan-sb-total"><span class="jan-sb-cell-lbl">Total de reps do MAX</span><div class="jan-sb-field"></div></div>
+    {% else %}
+      {% for jan in wkt.janelas %}
+        {% if not loop.first %}<div class="jan-sb-op">+</div>{% endif %}
+        <div class="jan-sb-cell"><span class="jan-sb-cell-lbl">Round {{ loop.index }}</span><div class="jan-sb-field"></div></div>
+      {% endfor %}
+      <div class="jan-sb-op">=</div>
+      <div class="jan-sb-cell jan-sb-total"><span class="jan-sb-cell-lbl">Total</span><div class="jan-sb-field"></div></div>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+"""
+
 SCORE_BOX_MACRO = r"""
 {% macro score_box(tipo, wkt=none) %}
 {% set tb_text = wkt.tiebreak if (wkt is not none and wkt.tiebreak) else none %}
@@ -2255,46 +2313,7 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
   {# AMRAP multi-janela (PWRD Loop): cada janela tem reps PRESCRITAS (não
      pontuam) + uma linha MAX (o que conta). Descanso entre janelas.
      Pontuação = soma das reps MAX das janelas. #}
-  {% if wkt.score_regra %}<div class="jan-rule"><span class="jan-rule-tag">Pontuação</span>{{ wkt.score_regra }}</div>{% endif %}
-  {% for jan in wkt.janelas %}
-    <div class="section-banner">
-      <div style="display:flex;align-items:center">
-        <div class="sbn-badge">{{ loop.index }}</div>
-        <span class="sbn-t">Round {{ loop.index }}</span>
-      </div>
-      <span class="sbn-s">{{ jan.titulo|upper }}</span>
-    </div>
-    <div class="jan-tbl">
-      {% for m in jan.movimentos %}
-        {% if m.max %}
-          <div class="jan-row jan-row-max">
-            <div class="jan-max-tag">MAX</div>
-            <div class="jan-name">{{ m.nome }}</div>
-            <div class="jan-count"><span class="jan-count-lbl">reps · conta</span></div>
-          </div>
-        {% else %}
-          <div class="jan-row jan-row-presc">
-            <div class="jan-check"></div>
-            <div class="jan-name">{% if m.reps %}<b>{{ m.reps }}</b> {% endif %}{{ m.nome }}</div>
-            <div class="jan-presc-tag">prescrito · não pontua</div>
-          </div>
-        {% endif %}
-      {% endfor %}
-    </div>
-    {% if not loop.last %}<div class="rest-bar">{{ (jan.rest_depois or wkt.rest_entre or 'Descanso')|upper }} &nbsp;·&nbsp; Reset Equipment</div>{% endif %}
-  {% endfor %}
-  {# Score box: soma das MAX de cada janela #}
-  <div class="jan-scorebox">
-    <div class="jan-sb-lbl"><span class="jan-sb-lbl-tag">For Reps</span><span class="jan-sb-lbl-name">Pontuação</span></div>
-    <div class="jan-sb-calc">
-      {% for jan in wkt.janelas %}
-        {% if not loop.first %}<div class="jan-sb-op">+</div>{% endif %}
-        <div class="jan-sb-cell"><span class="jan-sb-cell-lbl">Round {{ loop.index }}</span><div class="jan-sb-field"></div></div>
-      {% endfor %}
-      <div class="jan-sb-op">=</div>
-      <div class="jan-sb-cell jan-sb-total"><span class="jan-sb-cell-lbl">Total</span><div class="jan-sb-field"></div></div>
-    </div>
-  </div>
+  {{ janelas_table(wkt) }}
 
 {% elif tipo == 'amrap' %}
   {# Em EMOM, descrição é redundante (rítmo, movs, progressão e tiebreak já
@@ -2355,7 +2374,11 @@ PAGE_TMPL_STR = r"""{# Densidade do composto: F1+F2 movs (descontando os separad
         <span class="goal-banner-sub">bater o alvo libera a chegada</span>
       </div>
     {% endif %}
-    {% if f.tipo == 'amrap' %}
+    {% if f.tipo == 'amrap' and f.janelas %}
+      {# Janela com reps prescritas + MAX: passagem única, não scorecard de
+         rounds (ver `janelas_table`). #}
+      {{ janelas_table(f) }}
+    {% elif f.tipo == 'amrap' %}
       {{ amrap_table(f.movimentos, f_num, f.n_rounds|default(3), f) }}
     {% elif f.tipo == 'for_load' %}
       {# For Load guarda a prescrição em `sequencia_movimentos` e precisa da
@@ -2518,7 +2541,8 @@ _ENV.filters['split_medida'] = split_medida
 # Templates compilados uma vez no import — recompilar a cada página de atleta
 # custava ~115ms × N na produção (80 páginas = ~9s só de Jinja compile).
 _PAGE_TMPL = _ENV.from_string(MOV_TABLE_MACRO + AMRAP_TABLE_MACRO + ELIMINACAO_MACRO
-                              + SCORE_BOX_MACRO + FOR_LOAD_TABLE_MACRO + PAGE_TMPL_STR)
+                              + JANELAS_MACRO + SCORE_BOX_MACRO
+                              + FOR_LOAD_TABLE_MACRO + PAGE_TMPL_STR)
 _DOC_TMPL = _ENV.from_string(DOC_TMPL_STR)
 _FOR_LOAD_TEAM_SUMMARY_PAGE_TMPL = _ENV.from_string(FOR_LOAD_TEAM_SUMMARY_TMPL)
 

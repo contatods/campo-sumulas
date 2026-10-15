@@ -2227,3 +2227,43 @@ def test_anilhas_do_hausday_batem_com_a_relacao_do_evento():
                     sub = w.get(k) or {}
                     if sub.get('tipo') == 'for_load':
                         assert set(sub['anilhas']) <= declaradas, (c['nome'], sub['anilhas'])
+
+
+def test_amrap_de_uma_janela_com_max_e_passagem_unica():
+    """'AMRAP 6 min' com reps prescritas + linha 'Max' é passagem ÚNICA: o time
+    faz as reps prescritas e acumula o Max até o tempo acabar. Lido como AMRAP
+    comum, a súmula dava um scorecard de N rounds — como se a sequência se
+    repetisse — e escondia que o Max é o score. Caso real: o Hausport das
+    Duplas Iniciante do Hausday.
+    """
+    txt = ('"Hausport" (00:00 - 06:00)\n\nAMRAP 6 minutes:\n'
+           '30 Sync. Burpees Over the Barbell (2 athletes)\n'
+           '20 Sync. Thrusters (65lbs) (2 athletes)\n'
+           'Max Front Squats (65lbs)')
+    w = parse_workout_text(txt, 1)
+    assert w['tipo'] == 'amrap'
+    assert len(w['janelas']) == 1
+    movs = w['janelas'][0]['movimentos']
+    assert [m.get('reps') for m in movs[:2]] == [30, 20]
+    assert all(m['pontua'] is False for m in movs[:2]), 'prescritas não pontuam'
+    assert movs[2]['max'] is True and movs[2]['pontua'] is True
+    assert 'FRONT SQUATS' in movs[2]['nome']
+
+
+def test_amrap_sem_max_continua_scorecard_de_rounds():
+    """AMRAP que de fato se repete (sem linha Max) mantém o scorecard — é o
+    caso do Fast Relay. A regra nova não pode engolir esse."""
+    txt = ('"Fast Relay"\n\nAMRAP 16 minutes:\n2 Rope Climbs (15 ft)\n'
+           '30 Double Unders\n30 Wall-Ball Shots (9/6 kg) (+10 reps per round)')
+    w = parse_workout_text(txt, 1)
+    assert w['tipo'] == 'amrap'
+    assert not w.get('janelas'), 'sem Max, segue AMRAP de rounds'
+    assert len(w['movimentos']) == 3
+
+
+def test_amrap_de_duas_janelas_nao_regride():
+    """2+ janelas segue sendo o AMRAP multi-janela, com soma dos Max."""
+    txt = ('"Loop"\n\nAMRAP 3 minutes:\n10 Burpees\nMax Wall-Balls (20lb)\n\n'
+           'Rest 1 minute\n\nAMRAP 3 minutes:\n10 Burpees\nMax Wall-Balls (20lb)')
+    w = parse_workout_text(txt, 1)
+    assert len(w['janelas']) == 2

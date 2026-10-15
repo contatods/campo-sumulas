@@ -981,3 +981,57 @@ def test_scorecard_amrap_tambem_nao_duplica_a_medida(evento_basico, fonts_empty)
     assert '(250-METRES)' in corpo
     assert '(250)' not in corpo, 'número não pode aparecer duas vezes'
     assert '(10)' in corpo and 'BURPEES' in corpo
+
+
+# ── Janela única com Max: passagem única, não scorecard de rounds ───────────
+def _wkt_janela_unica():
+    return {"numero": 1, "nome": "HAUSPORT", "tipo": "amrap",
+            "modalidade": "dupla", "time_cap": "6 min",
+            "movimentos": [], "descricao": [],
+            "janelas": [{"titulo": "AMRAP 6 minutes", "movimentos": [
+                {"nome": "SYNC. BURPEES OVER THE BARBELL", "reps": 30, "pontua": False},
+                {"nome": "SYNC. THRUSTERS (65LBS)", "reps": 20, "pontua": False},
+                {"nome": "FRONT SQUATS (65LBS)", "max": True, "pontua": True}]}]}
+
+
+def test_janela_unica_nao_mostra_rounds(evento_basico, fonts_empty):
+    """Uma janela com Max é passagem única: sem banner de round, sem scorecard
+    de N linhas, e o score é o total de reps do Max."""
+    corpo = render_workout(evento_basico, _wkt_janela_unica(),
+                           fonts_empty, "").split('</style>')[-1]
+    assert 'amrap-row' not in corpo, 'não pode usar o scorecard de rounds'
+    assert 'Round 1' not in corpo, 'passagem única não tem banner de round'
+    assert 'passagem única' in corpo
+    # distinção de pontuação explícita pro juiz
+    assert corpo.count('prescrito · não pontua') == 2
+    assert 'reps · conta' in corpo
+    assert 'Total de reps do MAX' in corpo
+    assert 'jan-sb-op' not in corpo, 'sem soma de janelas quando há só uma'
+
+
+def test_duas_janelas_mantem_rounds_e_soma(evento_basico, fonts_empty):
+    """Multi-janela (PWRD Loop) segue com banner por round e soma dos Max."""
+    wkt = _wkt_janela_unica()
+    wkt['janelas'] = wkt['janelas'] * 2
+    corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
+    assert 'Round 1' in corpo and 'Round 2' in corpo
+    assert 'jan-sb-op' in corpo, 'soma das janelas ausente'
+    assert 'rest-bar' in corpo
+    assert 'passagem única' not in corpo
+
+
+def test_janela_unica_dentro_de_composto(evento_basico, fonts_empty):
+    """O Hausport é sub-fórmula de composto — o caminho de janelas tem que
+    valer lá também, senão volta o scorecard de rounds."""
+    wkt = {"numero": 1, "numero_f2": 2, "nome": "HAUSPORT + ISABEL",
+           "tipo": "composto", "modalidade": "dupla", "time_cap": "12 min",
+           "movimentos": [], "descricao": [],
+           "f1": _wkt_janela_unica(),
+           "f2": {"numero": 2, "nome": "ISABEL", "tipo": "for_time",
+                  "modalidade": "individual", "time_cap": "12 min",
+                  "movimentos": [{"nome": "SNATCHES", "reps": 60}, {"chegada": True}],
+                  "descricao": []}}
+    corpo = render_workout(evento_basico, wkt, fonts_empty, "").split('</style>')[-1]
+    assert 'amrap-row' not in corpo
+    assert 'reps · conta' in corpo and 'passagem única' in corpo
+    assert 'SNATCHES' in corpo          # a outra fórmula segue normal
