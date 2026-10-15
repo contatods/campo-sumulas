@@ -2267,3 +2267,40 @@ def test_amrap_de_duas_janelas_nao_regride():
            'Rest 1 minute\n\nAMRAP 3 minutes:\n10 Burpees\nMax Wall-Balls (20lb)')
     w = parse_workout_text(txt, 1)
     assert len(w['janelas']) == 2
+
+
+def test_todos_movimentos_cobre_os_quatro_niveis():
+    """Um workout guarda movimentos em até 4 lugares: topo, janelas,
+    sub-fórmulas e janelas das sub-fórmulas. Quem procura num subconjunto
+    conclui que o parse perdeu algo que está logo ali — foi o que fez o import
+    acusar erro em parse CORRETO duas vezes (Max na F1, e depois Max na janela
+    da F1).
+    """
+    from parsers import todos_movimentos
+    wkt = {
+        'movimentos': [{'nome': 'TOPO'}],
+        'janelas': [{'movimentos': [{'nome': 'JANELA_TOPO'}]}],
+        'f1': {'movimentos': [{'nome': 'F1'}],
+               'janelas': [{'movimentos': [{'nome': 'JANELA_F1'}]}]},
+        'f2': {'movimentos': [{'nome': 'F2'}]},
+        'formula1': {'movimentos': [{'nome': 'FORM1'}]},
+    }
+    nomes = {m['nome'] for m in todos_movimentos(wkt)}
+    assert nomes == {'TOPO', 'JANELA_TOPO', 'F1', 'JANELA_F1', 'F2', 'FORM1'}
+    assert todos_movimentos({}) == []
+
+
+def test_linter_ve_o_max_na_janela_da_subformula():
+    """O Hausport é F1 de um composto E usa janelas — o Max fica em
+    f1.janelas[].movimentos. O checador de pontuação tem que achar ali."""
+    from parsers import validar_workout_schema
+    raw = ('"A" (00:00 - 06:00)\n\nAMRAP 6 minutes:\n20 Thrusters\n'
+           'Max Front Squats (65lbs)\n\n"B"\n\nFor time:\n60 Snatches\n\n'
+           'Time cap: 12 minutes')
+    w = {'tipo': 'composto', 'nome': 'A + B', 'time_cap': '12 min',
+         'f1': {'tipo': 'amrap', 'movimentos': [],
+                'janelas': [{'movimentos': [
+                    {'nome': 'THRUSTERS', 'reps': 20, 'pontua': False},
+                    {'nome': 'FRONT SQUATS', 'max': True, 'pontua': True}]}]},
+         'f2': {'tipo': 'for_time', 'movimentos': [{'nome': 'SNATCHES', 'reps': 60}]}}
+    assert validar_workout_schema(w, raw) == []

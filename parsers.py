@@ -1712,6 +1712,32 @@ _TC_NEGADO_RE = re.compile(
     r'n[ãa]o\s+(?:ter[áa]|tem|h[áa])\s+time\s*cap|sem\s+time\s*cap|no\s+time\s*cap', re.I)
 
 
+_SUBFORMULAS = ('f1', 'f2', 'formula1', 'formula2')
+
+
+def todos_movimentos(wkt: Workout) -> list[Movimento]:
+    """Todo movimento do workout, de QUALQUER nível da estrutura.
+
+    Um workout guarda movimentos em até quatro lugares: no topo
+    (`movimentos`), nas janelas de AMRAP (`janelas[].movimentos`), nas
+    sub-fórmulas de composto/express (`f1`/`f2`/`formula1`/`formula2`) e nas
+    janelas DESSAS sub-fórmulas. Quem procura num subconjunto acaba
+    concluindo que o parse perdeu algo que está logo ali — foi o que fez o
+    import acusar erro em parse correto duas vezes (v2.22.2 e v2.26.0).
+    """
+    def _do_nivel(d: dict) -> list[Movimento]:
+        movs = list(d.get('movimentos') or [])
+        for j in (d.get('janelas') or []):
+            movs += list(j.get('movimentos') or [])
+        return movs
+
+    out = _do_nivel(wkt)
+    for k in _SUBFORMULAS:
+        if sub := wkt.get(k):
+            out += _do_nivel(sub)
+    return out
+
+
 def _linhas_prescricao_perdidas(wkt: Workout, raw: str) -> list[str]:
     """Linhas de prescrição do Excel que não viraram NADA no parse.
 
@@ -1783,18 +1809,11 @@ def validar_workout_schema(wkt: Workout, raw: str = '') -> list[tuple[str, str]]
     if raw:
         rl = raw.lower()
         tem_score_raw = bool(re.search(r'(?m)^\s*max\.?\s', rl)) or 'goal:' in rl
-        # Composto/Express guardam os movimentos nas sub-fórmulas (f1/f2,
-        # formula1/formula2), não no topo — sem olhar lá dentro, um 'Max' na
-        # F1 parecia perdido e o aviso saía mesmo com o parse correto.
-        sub_movs = [m
-                    for k in ('f1', 'f2', 'formula1', 'formula2')
-                    for m in ((wkt.get(k) or {}).get('movimentos') or [])]
+        # Procura o que pontua em TODOS os níveis (topo, janelas, sub-fórmulas
+        # e janelas das sub-fórmulas) — ver `todos_movimentos`.
         tem_score_par = (bool(wkt.get('goal_reps'))
-                         or any(m.get('max') for j in (wkt.get('janelas') or [])
-                                for m in j.get('movimentos', []))
                          or any(m.get('goal') or m.get('max')
-                                for m in (wkt.get('movimentos') or []))
-                         or any(m.get('goal') or m.get('max') for m in sub_movs))
+                                for m in todos_movimentos(wkt)))
         if tem_score_raw and not tem_score_par:
             probs.append(('pontuacao_perdida', 'texto tem Max/Goal e o parse não capturou'))
         if ('time cap' in rl and not _TC_NEGADO_RE.search(raw)
