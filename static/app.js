@@ -29,6 +29,10 @@ const SCHEMA_VERSION = 3;
 
 // Evento ativo no momento. ID é gerado quando o evento é criado/migrado.
 let eventoAtivoId = null;
+// Vínculo do evento ativo com a versão compartilhada (null = só neste navegador):
+// { evento, revisao, sha, gravadoEm, por, marca } — marca = assinatura do config
+// na última busca/envio, pra saber se há mudança daqui ainda não enviada.
+let compartilhadaAtiva = null;
 
 const TIPO_LABEL = { for_time: 'For Time', for_time_goal: 'For Time Goal', amrap: 'AMRAP', express: 'Express', for_load: 'For Load', composto: 'Composto' };
 
@@ -309,10 +313,11 @@ function cfgTab(tab) {
   // usam .cfg-tab mas com data-ajuda-tab em vez de data-tab).
   document.querySelectorAll('#configModal .cfg-tab').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tab));
-  ['evento','dias','importar'].forEach(t => {
+  ['evento','dias','importar','compartilhar'].forEach(t => {
     const pane = document.getElementById('cfgPane' + t.charAt(0).toUpperCase() + t.slice(1));
     if (pane) pane.style.display = (t === tab) ? '' : 'none';
   });
+  if (tab === 'compartilhar') renderCompartilhada();
 }
 
 // Limpar tudo a partir do modal (chama a função existente e fecha o modal)
@@ -2012,7 +2017,11 @@ function getMovTableArray(section) {
     } else {
       const nome = row.querySelector('.mi-nome').value.trim().toUpperCase();
       if (!nome) return;
-      const mov = { nome };
+      // Parte do original que a tabela não mostra (carga, paralelo, max,
+      // pontua, executantes, posicao…) fica: antes, salvar um WOD apagava isso
+      // e a súmula saía diferente da gerada direto da planilha.
+      const mov = { ...(row._orig || {}), nome };
+      ['reps', 'label', 'tiebreak', 'progressivo', 'goal'].forEach(k => delete mov[k]);
       const repsEl = row.querySelector('.mi-reps');
       const reps = parseInt(repsEl.value);
       if (!isNaN(reps) && reps > 0) mov.reps = reps;
@@ -2062,6 +2071,7 @@ function appendMovRow(section, mov) {
   } else {
     row.className = 'mov-row';
     row.dataset.type = 'normal';
+    row._orig = mov;   // getMovTableArray devolve o que a tabela não edita
     row.innerHTML = `
       <input class="mi-nome" value="${esc(mov.nome || '')}" placeholder="Nome do movimento">
       <div class="mi-reps-stepper">
@@ -2577,6 +2587,7 @@ function _persistNow() {
     config, diaAtual,
     nome: config.evento.nome || multi.events[eventoAtivoId]?.nome || 'Evento sem nome',
     atualizadoEm: new Date().toISOString(),
+    ...(compartilhadaAtiva ? { compartilhada: compartilhadaAtiva } : {}),
   };
   let ok = false;
   try {
@@ -2683,6 +2694,7 @@ function _carregarEventoAtivo(multi, id) {
   const ev = multi.events[id];
   if (!ev || !ev.config) return;
   eventoAtivoId = id;
+  compartilhadaAtiva = ev.compartilhada || null;
   if (!ev.config.evento.logo_empresa) ev.config.evento.logo_empresa = DS_LOGO_PADRAO;
   config = { ...config, ...ev.config };
   diaAtual = typeof ev.diaAtual === 'number' ? ev.diaAtual : 0;
@@ -2715,6 +2727,7 @@ function clearState() {
     }
   }
   eventoAtivoId = null;
+  compartilhadaAtiva = null;
   try { localStorage.removeItem(IMPORT_KEY); } catch (e) {}
   setSaveIndicator(null);
 }
@@ -2772,6 +2785,7 @@ function novoEvento() {
   // Salva o estado atual antes de criar novo
   if (eventoAtivoId) _persistNow();
   eventoAtivoId = _gerarIdEvento(nomeFinal);
+  compartilhadaAtiva = null;
   config = {
     evento: { nome: nomeFinal, categoria: '', data: '', logo_empresa: DS_LOGO_PADRAO, logo_evento: '' },
     dias: [], roster: [],
@@ -2931,6 +2945,190 @@ function toast(msg, type = 'ok') {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  VERSÃO COMPARTILHADA (compartilhada.py no servidor)
+// ═══════════════════════════════════════════════════════════════════
+// Um evento pode ficar ligado a uma versão guardada fora do navegador (repo
+// privado), a mesma que o Cadastrador do Mac usa. Buscar traz a versão mais
+// nova; Enviar grava a daqui como revisão seguinte. Se alguém gravou no meio,
+// o envio é recusado e a pessoa escolhe. Só aparece quando o servidor tem a
+// parte ligada; gerar súmula não depende disso.
+const CODIGO_KEY = 'sumulas_codigo';
+let compartilhadaLigada = false;
+let _compartLista = null;     // eventos compartilhados (depois de entrar com o código)
+let _compartRemota = null;    // meta da versão remota do evento ligado
+let _compartMsg = '';
+
+function _marcaConfig() {
+  // assinatura curta do config (FNV-1a) pra saber se mudou desde a última troca
+  const t = JSON.stringify(config);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36) + ':' + t.length;
+}
+
+function compartFetch(caminho, opts = {}) {
+  opts.headers = { ...(opts.headers || {}), 'X-Codigo-Sumulas': (localStorage.getItem(CODIGO_KEY) || '').trim() };
+  return apiFetch('/api/compartilhada/' + caminho, opts).then(async r => {
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { localStorage.removeItem(CODIGO_KEY); _compartLista = null; }
+    return { status: r.status, ...j };
+  });
+}
+
+const _quando = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+const _onde = (por) => por === 'mac' ? 'no Mac' : por === 'site' ? 'no site' : '';
+
+function _aplicarSnapshot(snap) {
+  if (!snap.config.evento.logo_empresa) snap.config.evento.logo_empresa = DS_LOGO_PADRAO;
+  invalidatePreviewCache();
+  config = { evento: { nome: '', categoria: '', data: '', logo_empresa: DS_LOGO_PADRAO, logo_evento: '' }, dias: [], roster: [], ...snap.config };
+  diaAtual = typeof snap.diaAtual === 'number' && snap.diaAtual < config.dias.length ? snap.diaAtual : 0;
+  catSel = 0; catListOpen = false; previewPath = null; editingPath = null;
+  document.getElementById('evNome').value = config.evento.nome || '';
+  document.getElementById('evCat').value  = config.evento.categoria || '';
+  document.getElementById('evData').value = config.evento.data || '';
+  renderEventoDisplay(); renderDiaTabs(); renderCategoriasList();
+  atualizarBotaoGerar(); updateClearAllVisibility(); updateEmptyState();
+  document.getElementById('previewFrame').style.display = 'none';
+  document.getElementById('pbName').textContent = '—';
+}
+
+function _ligar(evento, meta, sha) {
+  compartilhadaAtiva = { evento, revisao: meta.revisao, sha, gravadoEm: meta.gravadoEm, por: meta.por, marca: _marcaConfig() };
+  _compartRemota = meta;
+  _persistNow();
+}
+
+async function compartEntrar() {
+  const el = document.getElementById('compartCodigo');
+  const codigo = (el?.value || '').trim();
+  if (!codigo) return;
+  localStorage.setItem(CODIGO_KEY, codigo);
+  const r = await compartFetch('_eventos');
+  if (r.status !== 200) { _compartMsg = r.error || 'Não deu pra entrar.'; renderCompartilhada(); return; }
+  _compartLista = r.eventos || [];
+  _compartMsg = '';
+  renderCompartilhada();
+  compartConferir();
+}
+
+async function compartConferir() {
+  if (!compartilhadaAtiva || !localStorage.getItem(CODIGO_KEY)) return;
+  const r = await compartFetch(compartilhadaAtiva.evento);
+  if (r.status !== 200) return;
+  _compartRemota = r.meta;
+  if (r.meta.revisao > compartilhadaAtiva.revisao) {
+    toast(`Tem versão compartilhada mais nova: revisão ${r.meta.revisao}, ${_onde(r.meta.por)} ${_quando(r.meta.gravadoEm)}. Busque em Configurar, Compartilhar.`, 'warn');
+  }
+  if (document.getElementById('cfgPaneCompartilhar')?.style.display !== 'none') renderCompartilhada();
+}
+
+async function compartAbrir(evento) {
+  const r = await compartFetch(evento);
+  if (r.status !== 200) { toast(r.error || 'Não deu pra abrir.', 'err'); return; }
+  if (eventoAtivoId) _persistNow();
+  // abre como evento novo neste navegador, ligado à versão compartilhada
+  eventoAtivoId = _gerarIdEvento(r.snapshot.config?.evento?.nome || evento);
+  _aplicarSnapshot(r.snapshot);
+  _ligar(evento, r.meta, r.sha);
+  renderCompartilhada();
+  toast(`Aberto: ${evento}, revisão ${r.meta.revisao}`, 'ok');
+}
+
+async function compartBuscar() {
+  if (!compartilhadaAtiva) return;
+  const sujo = compartilhadaAtiva.marca !== _marcaConfig();
+  if (sujo && !confirm('As mudanças feitas aqui desde o último envio vão ser substituídas pela versão compartilhada. Exporte um backup antes se quiser guardar. Continuar?')) return;
+  const r = await compartFetch(compartilhadaAtiva.evento);
+  if (r.status !== 200) { toast(r.error || 'Não deu pra buscar.', 'err'); return; }
+  _aplicarSnapshot(r.snapshot);
+  _ligar(compartilhadaAtiva.evento, r.meta, r.sha);
+  renderCompartilhada();
+  toast(`Revisão ${r.meta.revisao} carregada`, 'ok');
+}
+
+async function compartEnviar(eventoNovo) {
+  const evento = eventoNovo || compartilhadaAtiva?.evento;
+  if (!evento) return;
+  _persistNow();
+  const r = await compartFetch(evento, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ snapshot: { version: SCHEMA_VERSION, config, diaAtual }, sha: eventoNovo ? null : compartilhadaAtiva.sha }),
+  });
+  if (r.status === 409) {
+    const a = r.atual;
+    const quem = a ? `A revisão ${a.revisao} foi gravada ${_onde(a.por)} em ${_quando(a.gravadoEm)}` : 'Já existe uma versão com esse nome';
+    if (!eventoNovo && confirm(`${quem}, depois da sua. OK busca a versão nova (as mudanças daqui se perdem; exporte um backup antes se quiser guardar). Cancelar deixa tudo como está.`)) {
+      compartilhadaAtiva.marca = _marcaConfig();   // já confirmou que pode perder
+      await compartBuscar();
+    } else if (eventoNovo) toast(`${quem}. Escolha outro nome ou abra a que existe.`, 'err');
+    return;
+  }
+  if (r.status !== 200) { toast(r.error || 'Não deu pra enviar.', 'err'); return; }
+  _ligar(evento, r.meta, r.sha);
+  if (_compartLista && !_compartLista.includes(evento)) _compartLista.push(evento);
+  renderCompartilhada();
+  toast(`Enviado: revisão ${r.meta.revisao}`, 'ok');
+}
+
+function compartCriar() {
+  const el = document.getElementById('compartNome');
+  const evento = (el?.value || '').trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{1,59}$/.test(evento)) { toast('Use letras minúsculas, números e hífen (ex.: sun-niteroi-2027)', 'err'); return; }
+  compartEnviar(evento);
+}
+
+function compartDesligar() {
+  if (!confirm('Este evento deixa de seguir a versão compartilhada (fica só neste navegador). A versão compartilhada continua lá.')) return;
+  compartilhadaAtiva = null; _compartRemota = null;
+  _persistNow();
+  renderCompartilhada();
+}
+
+function renderCompartilhada() {
+  const box = document.getElementById('compartilhadaBox');
+  if (!box) return;
+  const temCodigo = !!localStorage.getItem(CODIGO_KEY);
+  const msg = _compartMsg ? `<p class="cfg-hint" style="color:var(--red)">${esc(_compartMsg)}</p>` : '';
+  if (!temCodigo) {
+    box.innerHTML = `<p class="cfg-hint">A versão compartilhada é a mesma que o Cadastrador da Digital Score usa no Mac: o que um grava, o outro busca. Gerar súmula não precisa disso.</p>
+      <div class="field"><label for="compartCodigo">Código de acesso</label>
+        <input id="compartCodigo" type="password" autocomplete="off" onkeydown="if(event.key==='Enter')compartEntrar()"></div>
+      ${msg}<button class="btn-import" style="width:100%" onclick="compartEntrar()">Entrar</button>`;
+    return;
+  }
+  if (_compartLista === null) { box.innerHTML = '<p class="cfg-hint">Lendo as versões compartilhadas…</p>'; compartEntrar_silencioso(); return; }
+  const lig = compartilhadaAtiva;
+  const sujo = lig && lig.marca !== _marcaConfig();
+  const nova = lig && _compartRemota && _compartRemota.revisao > lig.revisao;
+  const sugestao = (config.evento.nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  box.innerHTML = lig ? `
+      <p class="cfg-hint">Este evento segue a versão compartilhada <strong>${esc(lig.evento)}</strong>: revisão ${lig.revisao}, gravada ${_onde(lig.por)} em ${_quando(lig.gravadoEm)}.</p>
+      ${nova ? `<p class="cfg-hint" style="color:var(--blue)">Tem revisão mais nova: ${_compartRemota.revisao}, gravada ${_onde(_compartRemota.por)} em ${_quando(_compartRemota.gravadoEm)}.</p>` : ''}
+      ${sujo ? '<p class="cfg-hint">Há mudanças feitas aqui que ainda não foram enviadas.</p>' : ''}
+      ${msg}
+      <div class="field-row">
+        <button class="btn-import" style="flex:1" onclick="compartBuscar()">Buscar a versão mais nova</button>
+        <button class="btn-import" style="flex:1" onclick="compartEnviar()"${sujo ? '' : ' disabled'}>Enviar as mudanças daqui</button>
+      </div>
+      <div class="cfg-divider"></div>
+      <button class="btn-import" style="width:100%" onclick="compartDesligar()">Deixar de seguir</button>`
+    : `<p class="cfg-hint">Este evento está só neste navegador.</p>${msg}
+      <div class="field"><label for="compartNome">Compartilhar com o nome</label>
+        <input id="compartNome" type="text" value="${esc(sugestao)}" placeholder="ex.: sun-niteroi-2027"></div>
+      <button class="btn-import" style="width:100%" onclick="compartCriar()">Compartilhar este evento</button>
+      ${_compartLista.length ? `<div class="cfg-divider"></div><p class="cfg-hint">Ou abra uma versão que já existe (vira um evento novo neste navegador):</p>
+        ${_compartLista.map(e => `<button class="btn-import" style="width:100%;margin-bottom:6px" onclick="compartAbrir('${esc(e)}')">${esc(e)}</button>`).join('')}` : ''}`;
+}
+
+async function compartEntrar_silencioso() {
+  const r = await compartFetch('_eventos');
+  _compartLista = r.status === 200 ? (r.eventos || []) : [];
+  if (r.status !== 200) _compartMsg = r.error || '';
+  renderCompartilhada();
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  INIT (no FIM do arquivo: garante que todos os `let`/`const` já foram
 //  inicializados antes de loadState() / renderXxx() acessá-los)
 // ═══════════════════════════════════════════════════════════════════
@@ -2943,6 +3141,13 @@ function toast(msg, type = 'ok') {
     atualizarBotaoGerar();
     if (s.ai_ativo) document.getElementById('aiBadge').style.display = '';
   }).catch(()=>{});
+  // A aba Compartilhar só aparece quando o servidor tem a versão compartilhada ligada.
+  apiFetch('/api/compartilhada').then(r => r.json()).then(s => {
+    compartilhadaLigada = !!s.ligada;
+    const aba = document.getElementById('cfgTabCompartilhar');
+    if (aba) aba.style.display = compartilhadaLigada ? '' : 'none';
+    if (compartilhadaLigada) compartConferir();
+  }).catch(() => {});
   loadState();
   applyLabelColPref();
   // Ajusta diaAtual se ficou fora do range (caso state tenha mais dias do que config carregada)

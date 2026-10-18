@@ -414,6 +414,7 @@
       <button class="cfg-tab active" data-tab="evento" onclick="cfgTab('evento')">Evento</button>
       <button class="cfg-tab" data-tab="dias" onclick="cfgTab('dias')">Dias</button>
       <button class="cfg-tab" data-tab="importar" onclick="cfgTab('importar')">Importar</button>
+      <button class="cfg-tab" data-tab="compartilhar" id="cfgTabCompartilhar" style="display:none" onclick="cfgTab('compartilhar')">Compartilhar</button>
     </div>
 
     <!-- Aba Evento -->
@@ -458,6 +459,9 @@
       <div id="diasEditorList"></div>
       <button class="btn-mov" style="margin-top:8px" onclick="adicionarDia()">+ Adicionar dia</button>
     </div>
+
+    <!-- Aba Compartilhar (versão compartilhada com o Cadastrador do Mac) -->
+    <div class="cfg-pane" id="cfgPaneCompartilhar" style="display:none"><div id="compartilhadaBox"></div></div>
 
     <!-- Aba Importar -->
     <div class="cfg-pane" id="cfgPaneImportar" style="display:none">

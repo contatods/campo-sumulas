@@ -11,6 +11,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import compartilhada
 from campo_generator import render_workout, render_workout_combined, render_for_load_team_summary, render_grid, load_fonts, img_b64, sanitize
 
 PORT = int(os.environ.get('PORT', 8765))
@@ -19,7 +20,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '2.26.2'
+VERSION = '2.27.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -325,6 +326,8 @@ class SumulaHandler(BaseHTTPRequestHandler):
             self._send(200, 'text/css; charset=utf-8', APP_CSS.encode('utf-8'))
         elif path == '/app.js':
             self._send(200, 'application/javascript; charset=utf-8', APP_JS.encode('utf-8'))
+        elif path == '/api/compartilhada' or path.startswith('/api/compartilhada/'):
+            self._handle_compartilhada_get(path)
         elif path == '/api/status':
             payload = json.dumps({
                 "ai_ativo":    AI_ATIVO,
@@ -375,6 +378,8 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 '/api/ai/chat':            self._handle_chat,
             }
             handler = routes.get(self.path)
+            if not handler and self.path.startswith('/api/compartilhada/'):
+                handler = lambda b: self._handle_compartilhada_post(self.path, b)
             if not handler:
                 self._send(404, 'text/plain', b'Rota nao encontrada')
                 return
@@ -1145,6 +1150,52 @@ class SumulaHandler(BaseHTTPRequestHandler):
             return
         self._send(200, 'application/json; charset=utf-8',
                    json.dumps(result, ensure_ascii=False).encode('utf-8'))
+
+    # ─── Versão compartilhada (compartilhada.py) ─────────────────────────
+    def _json(self, code, obj):
+        self._send(code, 'application/json; charset=utf-8', json.dumps(obj, ensure_ascii=False).encode('utf-8'),
+                   {'Cache-Control': 'no-store'})
+
+    def _codigo_ok(self):
+        if not compartilhada.ligada():
+            self._json(503, {'desligada': True})
+            return False
+        if not compartilhada.codigo_ok(self.headers.get('X-Codigo-Sumulas')):
+            self._json(401, {'error': 'Código errado. Peça o código a quem cuida do evento.'})
+            return False
+        return True
+
+    def _handle_compartilhada_get(self, path):
+        if path == '/api/compartilhada':
+            return self._json(200, {'ligada': compartilhada.ligada()})
+        if not self._codigo_ok():
+            return
+        nome = path[len('/api/compartilhada/'):]
+        try:
+            if nome == '_eventos':
+                return self._json(200, {'eventos': compartilhada.listar()})
+            snap, sha = compartilhada.ler(nome)
+            if not snap:
+                return self._json(404, {'error': 'Este evento ainda não tem versão compartilhada.'})
+            return self._json(200, {'snapshot': snap, 'sha': sha, 'meta': compartilhada.meta(snap)})
+        except ValueError as e:
+            return self._json(400, {'error': str(e)})
+        except Exception as e:
+            return self._json(502, {'error': f'Não deu pra falar com o GitHub agora ({e}).'})
+
+    def _handle_compartilhada_post(self, path, body):
+        if not self._codigo_ok():
+            return
+        nome = path[len('/api/compartilhada/'):]
+        try:
+            m, sha = compartilhada.gravar(nome, body.get('snapshot'), body.get('sha') or None, 'site', VERSION)
+            return self._json(200, {'meta': m, 'sha': sha})
+        except compartilhada.Conflito as c:
+            return self._json(409, {'error': 'Alguém gravou uma versão mais nova.', 'atual': c.atual})
+        except ValueError as e:
+            return self._json(400, {'error': str(e)})
+        except Exception as e:
+            return self._json(502, {'error': f'Não deu pra gravar no GitHub agora ({e}).'})
 
     def _send(self, code, content_type, data, extra=None):
         self.send_response(code)

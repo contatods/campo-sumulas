@@ -26,6 +26,24 @@ fallbacks algorítmicos.
 `render.yaml` configura o serviço no Render.com com auto-deploy em push pra
 `main`. A var `ANTHROPIC_API_KEY` precisa ser definida via dashboard.
 
+## Versão compartilhada com o Cadastrador
+
+Cada evento pode ficar ligado a uma versão guardada no repositório privado
+`contatods/sumulas` (`<evento>/sumulas.json`, no formato do "Exportar JSON"),
+a mesma que o Cadastrador da Digital Score usa no Mac. No site: **Configurar →
+Compartilhar** (buscar a versão mais nova, enviar as mudanças daqui). Quem
+envia manda a versão que tinha; se alguém gravou no meio, o envio é recusado e
+a pessoa escolhe entre buscar a nova ou manter a dela. Código em
+`compartilhada.py` (servidor) e no bloco "VERSÃO COMPARTILHADA" do `app.js`.
+
+Fica desligado (a aba nem aparece) até existirem no Render:
+
+- `SUMULAS_GITHUB_TOKEN`: token fine-grained do GitHub com **Contents: Read and
+  write** só no repositório `contatods/sumulas`;
+- `SUMULAS_CODIGO`: o código de acesso que quem usa digita na aba (só essa
+  parte pede código; gerar súmula continua aberto);
+- `SUMULAS_REPO` (opcional): outro repositório no lugar do `contatods/sumulas`.
+
 ## Formatos de Excel suportados
 
 O parser detecta automaticamente 4 formatos:
