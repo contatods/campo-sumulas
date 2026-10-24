@@ -20,7 +20,7 @@ HOST = '0.0.0.0' if 'PORT' in os.environ else 'localhost'
 IS_CLOUD = HOST == '0.0.0.0'
 
 # Fonte única da versão. Atualize via `python3 bump_version.py [patch|minor|major]`.
-VERSION = '2.27.0'
+VERSION = '2.28.0'
 
 # Teto de body em POST (Excel + logos). 50 MB cobre o pior caso real do evento.
 MAX_BODY_BYTES = 50 * 1024 * 1024
@@ -77,6 +77,23 @@ def _ai_rate_limit_ok() -> tuple[bool, int]:
 
 # Aliases pra compat com handlers antigos que usavam _chat_rate_limit_ok
 _chat_rate_limit_ok = _ai_rate_limit_ok
+
+# Chamadas de IA que ninguém pediu por botão: gerar e pré-visualizar estimam os
+# rounds do AMRAP, e a leitura da planilha repara workout fora do padrão. Essas
+# rotas ficam abertas (gerar súmula não pede código), então têm um orçamento
+# próprio; passou dele, a conta sem IA responde. Segurança, 24/10/2026.
+AI_INTERNO_MAX = 120
+_ai_internas: list[float] = []
+
+
+def _ai_interno_ok() -> bool:
+    now = time.time()
+    with _ai_calls_lock:
+        _ai_internas[:] = [t for t in _ai_internas if now - t < AI_RATE_LIMIT_WINDOW_S]
+        if len(_ai_internas) >= AI_INTERNO_MAX:
+            return False
+        _ai_internas.append(now)
+        return True
 
 
 def _mensagem_erro_ia(exc: Exception) -> str:
@@ -246,8 +263,11 @@ if AI_ATIVO:
     # Fase 2 robustez: IA repara workouts que a regex lê errado (falham no schema).
     import parsers as _parsers
     import ai_parser as _ai_parser
-    _parsers.registrar_reparador(_ai_parser.reparar_workout_ia)
+    _parsers.registrar_reparador(
+        lambda *a, **k: _ai_parser.reparar_workout_ia(*a, **k) if _ai_interno_ok() else None)
     print("  ✓ IA como fallback de parsing (repara workouts fora do schema)")
+    import ai_rounds as _ai_rounds_orc
+    _ai_rounds_orc.registrar_orcamento(_ai_interno_ok)
 else:
     print("  ○  IA inativa (defina ANTHROPIC_API_KEY para ativar)")
 # PDFs por bateria: usa o Chrome headless da máquina (fidelidade do Ctrl+P).
@@ -337,6 +357,7 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 "python":      sys.version.split()[0],
                 "ambiente":    "cloud" if IS_CLOUD else "local",
                 "pdf_ativo":   bool(PDF_CHROME),
+                "ia_pede_codigo": compartilhada.codigo_definido(),
             })
             self._send(200, 'application/json; charset=utf-8', payload.encode())
         else:
@@ -390,6 +411,19 @@ class SumulaHandler(BaseHTTPRequestHandler):
                 if token_recebido != API_TOKEN:
                     self._send(401, 'application/json',
                                json.dumps({"error": "token inválido ou ausente — header X-Api-Token"}).encode('utf-8'))
+                    return
+            # IA paga, só pra equipe: com SUMULAS_CODIGO no servidor, os botões
+            # de IA pedem o mesmo código da aba Compartilhar (decisão de
+            # 24/10/2026). Gerar súmula segue aberto. Mesmo travamento de
+            # tentativas erradas da versão compartilhada.
+            # Sem código nenhum não conta como tentativa errada (é o 1º clique).
+            if self.path.startswith('/api/ai/') and compartilhada.codigo_definido():
+                recebido = (self.headers.get('X-Codigo-Sumulas') or '').strip()
+                if not recebido or not compartilhada.codigo_ok(recebido):
+                    msg = ('Código errado. Peça o código a quem cuida do evento.' if recebido
+                           else 'Os recursos de IA pedem o código de acesso da equipe.')
+                    self._send(401, 'application/json; charset=utf-8',
+                               json.dumps({"error": msg, "codigo": True}, ensure_ascii=False).encode('utf-8'))
                     return
             # Gate de rate limit: aplica a TODOS endpoints /api/ai/* — protege
             # quota Anthropic contra loops e abuso quando deployado público.

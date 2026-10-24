@@ -63,6 +63,11 @@ def ligada():
     return bool(TOKEN and CODIGO)
 
 
+def codigo_definido():
+    """Com o código no servidor, a IA do site também pede o código (só a equipe)."""
+    return bool(CODIGO)
+
+
 # Código errado demais em pouco tempo trava por um tempo (tentativa no chute).
 _erros = []
 _erros_lock = threading.Lock()

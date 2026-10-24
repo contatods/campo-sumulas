@@ -751,12 +751,12 @@
       </p>
       <div class="appdl-grid">
         <a class="appdl-btn" id="appdlMac"
-           href="https://github.com/contatods/campo-sumulas/releases/latest/download/DigitalScorePDFs-Mac.zip">
+           href="https://github.com/contatods/digital-score-pdfs/releases/latest/download/DigitalScorePDFs-Mac.zip">
           <span class="appdl-os"> Mac</span>
           <span class="appdl-sub">.zip · descompacte e arraste pra Aplicativos</span>
         </a>
         <a class="appdl-btn" id="appdlWin"
-           href="https://github.com/contatods/campo-sumulas/releases/latest/download/DigitalScorePDFs-Windows.exe">
+           href="https://github.com/contatods/digital-score-pdfs/releases/latest/download/DigitalScorePDFs-Windows.exe">
           <span class="appdl-os">⊞ Windows</span>
           <span class="appdl-sub">.exe · baixe e execute direto</span>
         </a>
@@ -766,9 +766,27 @@
         avisar, <strong>Mais informações → Executar assim mesmo</strong>. Requer o Google Chrome instalado.
       </p>
       <div class="cfg-divider"></div>
-      <a class="appdl-link" href="https://github.com/contatods/campo-sumulas/releases/latest" target="_blank" rel="noopener">
+      <a class="appdl-link" href="https://github.com/contatods/digital-score-pdfs/releases/latest" target="_blank" rel="noopener">
         Ver todas as versões e notas de release ↗
       </a>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: código de acesso da equipe, pedido pelos recursos de IA -->
+<div id="codigoModal" class="cfg-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="codigoModalTitle" aria-hidden="true">
+  <div class="cfg-overlay" onclick="fecharCodigo(null)"></div>
+  <div class="cfg-panel">
+    <div class="cfg-header">
+      <span class="cfg-title" id="codigoModalTitle">Código de acesso</span>
+      <button class="ed-close" onclick="fecharCodigo(null)" title="Fechar" aria-label="Fechar">×</button>
+    </div>
+    <div class="cfg-pane">
+      <p class="cfg-hint">Os recursos de IA são da equipe da Digital Score e usam o mesmo código da aba Compartilhar. Gerar súmula não precisa de código.</p>
+      <div class="field"><label for="codigoIA">Código de acesso</label>
+        <input id="codigoIA" type="password" autocomplete="off" onkeydown="if(event.key==='Enter')fecharCodigo(this.value)"></div>
+      <p class="cfg-hint" id="codigoModalErro" style="color:var(--red);display:none" role="alert"></p>
+      <button class="btn-import" style="width:100%" onclick="fecharCodigo(document.getElementById('codigoIA').value)">Entrar</button>
     </div>
   </div>
 </div>

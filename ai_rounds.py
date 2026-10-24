@@ -53,6 +53,16 @@ _carregar_env_local()
 AI_KEY: str = os.environ.get('ANTHROPIC_API_KEY', '')
 AI_ATIVO: bool = HAS_ANTHROPIC and bool(AI_KEY)
 
+# Orçamento das chamadas que gerar e pré-visualizar fazem sozinhas (rounds do
+# AMRAP). O servidor registra uma função que diz se ainda cabe uma chamada;
+# fora do orçamento, a conta própria (simulação) responde sem IA.
+_ORCAMENTO = None
+
+
+def registrar_orcamento(fn) -> None:
+    global _ORCAMENTO
+    _ORCAMENTO = fn
+
 # ── Constantes de tuning ──────────────────────────────────────────────────────
 # Timeouts da API: fast pra preview/cálculos, chat pra interações longas.
 AI_TIMEOUT_FAST_S: float = 15.0   # rounds estimation, time-cap suggestion
@@ -248,7 +258,7 @@ def _estimar_rounds_ia(movimentos: list[Movimento], duracao_str: str) -> int:
     tempo e a devolver rounds a mais do que o time realmente faria... ou a
     menos, dependendo do workout. A simulação conhece a progressão.
     """
-    if not AI_ATIVO:
+    if not AI_ATIVO or (_ORCAMENTO is not None and not _ORCAMENTO()):
         return _estimar_rounds_algoritmico(movimentos, duracao_str)
     mins = _extrair_minutos(duracao_str or '') or 5
     movs = [m for m in (movimentos or [])

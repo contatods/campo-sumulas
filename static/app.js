@@ -42,12 +42,50 @@ const TIPO_LABEL = { for_time: 'For Time', for_time_goal: 'For Time Goal', amrap
 // Pra setar: no DevTools, localStorage.setItem('camposumulas_token', 'XXX').
 // Pra limpar: localStorage.removeItem('camposumulas_token').
 const TOKEN_KEY = 'camposumulas_token';
-function apiFetch(url, opts = {}) {
+// IA da equipe (24/10/2026): com o código no servidor, /api/ai/* pede o mesmo
+// código da aba Compartilhar (CODIGO_KEY). O guardado vai junto; se o servidor
+// pedir, abre a janelinha uma vez e repete o pedido. Gerar súmula não passa aqui.
+async function apiFetch(url, opts = {}) {
   const token = (localStorage.getItem(TOKEN_KEY) || '').trim();
   if (token) {
     opts.headers = { ...(opts.headers || {}), 'X-Api-Token': token };
   }
-  return fetch(url, opts);
+  const ehIA = String(url).startsWith('/api/ai/');
+  const codigo = ehIA ? (localStorage.getItem(CODIGO_KEY) || '').trim() : '';
+  if (codigo) opts.headers = { ...(opts.headers || {}), 'X-Codigo-Sumulas': codigo };
+  let r = await fetch(url, opts);
+  if (ehIA && r.status === 401) {
+    const j = await r.clone().json().catch(() => ({}));
+    if (j.codigo) {
+      if (codigo) localStorage.removeItem(CODIGO_KEY);
+      const novo = await pedirCodigoIA(codigo ? j.error : '');
+      if (novo) {
+        localStorage.setItem(CODIGO_KEY, novo);
+        opts.headers = { ...(opts.headers || {}), 'X-Codigo-Sumulas': novo };
+        r = await fetch(url, opts);
+        if (r.status === 401) localStorage.removeItem(CODIGO_KEY);
+      }
+    }
+  }
+  return r;
+}
+
+let _codigoResolver = null;
+function pedirCodigoIA(erro) {
+  return new Promise((resolve) => {
+    _codigoResolver = resolve;
+    const aviso = document.getElementById('codigoModalErro');
+    aviso.textContent = erro || '';
+    aviso.style.display = erro ? '' : 'none';
+    document.getElementById('codigoIA').value = '';
+    setDialogOpen('codigoModal', true);
+  });
+}
+function fecharCodigo(valor) {
+  setDialogOpen('codigoModal', false);
+  const resolver = _codigoResolver;
+  _codigoResolver = null;
+  if (resolver) resolver((valor || '').trim() || null);
 }
 
 // ── Acessibilidade: sync de display + aria-hidden + foco em modais ──────────
@@ -3186,6 +3224,7 @@ async function compartEntrar_silencioso() {
       return el && el.style.display && el.style.display !== 'none';
     };
     if (aberto('hdrMenu')) { fecharHdrMenu(); return; }
+    if (aberto('codigoModal'))  { fecharCodigo(null); return; }
     if (aberto('appPdfModal'))  { fecharAppPdf();   return; }
     if (aberto('ajudaModal'))   { fecharAjuda();    return; }
     if (aberto('eventosModal')) { fecharEventos();  return; }

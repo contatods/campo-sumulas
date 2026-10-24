@@ -2,7 +2,11 @@
 #
 # Dispara: manualmente (aba Actions → Run workflow) ou ao empurrar uma tag
 # começando com "app-v" (ex: app-v2.7.0). Com tag, publica os dois
-# instaladores numa Release do GitHub — é de lá que a equipe baixa.
+# instaladores numa Release do repositório PÚBLICO contatods/digital-score-pdfs
+# (só os instaladores, sem código) — é de lá que a equipe baixa. Este
+# repositório é privado desde 24/10/2026 (segurança); publicar lá pede o
+# segredo DOWNLOADS_TOKEN: token fine-grained com Contents read/write só no
+# digital-score-pdfs.
 name: Build apps
 
 on:
@@ -83,6 +87,9 @@ jobs:
           path: dist
       - uses: softprops/action-gh-release@v2
         with:
+          repository: contatods/digital-score-pdfs
+          token: ${{ secrets.DOWNLOADS_TOKEN }}
+          tag_name: ${{ github.ref_name }}
           files: |
             dist/DigitalScorePDFs-Mac.zip
             dist/DigitalScorePDFs-Windows.exe
